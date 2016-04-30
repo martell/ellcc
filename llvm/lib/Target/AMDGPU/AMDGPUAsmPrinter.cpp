@@ -235,6 +235,11 @@ bool AMDGPUAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
       OutStreamer->emitRawComment(" LDSByteSize: " + Twine(KernelInfo.LDSSize) +
                                   " bytes/workgroup (compile time only)", false);
 
+      OutStreamer->emitRawComment(" ReservedVGPRFirst: " + Twine(KernelInfo.ReservedVGPRFirst),
+                                  false);
+      OutStreamer->emitRawComment(" ReservedVGPRCount: " + Twine(KernelInfo.ReservedVGPRCount),
+                                  false);
+
       OutStreamer->emitRawComment(" COMPUTE_PGM_RSRC2:USER_SGPR: " +
                                   Twine(G_00B84C_USER_SGPR(KernelInfo.ComputePGMRSrc2)),
                                   false);
@@ -472,6 +477,14 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
 
   MaxSGPR += ExtraSGPRs;
 
+  // Update necessary Reserved* fields and max VGPRs used if
+  // "amdgpu-debugger-reserve-trap-regs" attribute was specified.
+  if (STM.debuggerReserveTrapVGPRs()) {
+    ProgInfo.ReservedVGPRFirst = MaxVGPR + 1;
+    ProgInfo.ReservedVGPRCount = MFI->getDebuggerReserveTrapVGPRCount();
+    MaxVGPR += MFI->getDebuggerReserveTrapVGPRCount();
+  }
+
   // We found the maximum register index. They start at 0, so add one to get the
   // number of registers.
   ProgInfo.NumVGPR = MaxVGPR + 1;
@@ -489,6 +502,11 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
   if (MFI->NumUserSGPRs > STM.getMaxNumUserSGPRs()) {
     LLVMContext &Ctx = MF.getFunction()->getContext();
     Ctx.emitError("too many user SGPRs used");
+  }
+
+  if (MFI->LDSSize > static_cast<unsigned>(STM.getLocalMemorySize())) {
+    LLVMContext &Ctx = MF.getFunction()->getContext();
+    Ctx.emitError("LDS size exceeds device maximum");
   }
 
   ProgInfo.VGPRBlocks = (ProgInfo.NumVGPR - 1) / 4;
@@ -694,6 +712,8 @@ void AMDGPUAsmPrinter::EmitAmdKernelCodeT(const MachineFunction &MF,
   header.workitem_vgpr_count = KernelInfo.NumVGPR;
   header.workitem_private_segment_byte_size = KernelInfo.ScratchSize;
   header.workgroup_group_segment_byte_size = KernelInfo.LDSSize;
+  header.reserved_vgpr_first = KernelInfo.ReservedVGPRFirst;
+  header.reserved_vgpr_count = KernelInfo.ReservedVGPRCount;
 
   AMDGPUTargetStreamer *TS =
       static_cast<AMDGPUTargetStreamer *>(OutStreamer->getTargetStreamer());

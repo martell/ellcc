@@ -833,7 +833,7 @@ class InterleavedAccessInfo {
 public:
   InterleavedAccessInfo(PredicatedScalarEvolution &PSE, Loop *L,
                         DominatorTree *DT)
-      : PSE(PSE), TheLoop(L), DT(DT) {}
+      : PSE(PSE), TheLoop(L), DT(DT), RequiresScalarEpilogue(false) {}
 
   ~InterleavedAccessInfo() {
     SmallSet<InterleaveGroup *, 4> DelSet;
@@ -862,6 +862,10 @@ public:
     return nullptr;
   }
 
+  /// \brief Returns true if an interleaved group that may access memory
+  /// out-of-bounds requires a scalar epilogue iteration for correctness.
+  bool requiresScalarEpilogue() const { return RequiresScalarEpilogue; }
+
 private:
   /// A wrapper around ScalarEvolution, used to add runtime SCEV checks.
   /// Simplifies SCEV expressions in the context of existing SCEV assumptions.
@@ -870,6 +874,11 @@ private:
   PredicatedScalarEvolution &PSE;
   Loop *TheLoop;
   DominatorTree *DT;
+
+  /// True if the loop may contain non-reversed interleaved groups with
+  /// out-of-bounds accesses. We ensure we don't speculatively access memory
+  /// out-of-bounds by executing at least one scalar epilogue iteration.
+  bool RequiresScalarEpilogue;
 
   /// Holds the relationships between the members and the interleave group.
   DenseMap<Instruction *, InterleaveGroup *> InterleaveGroupMap;
@@ -1336,6 +1345,12 @@ public:
     return InterleaveInfo.getInterleaveGroup(Instr);
   }
 
+  /// \brief Returns true if an interleaved group requires a scalar iteration
+  /// to handle accesses with gaps.
+  bool requiresScalarEpilogue() const {
+    return InterleaveInfo.requiresScalarEpilogue();
+  }
+
   unsigned getMaxSafeDepDistBytes() { return LAI->getMaxSafeDepDistBytes(); }
 
   bool hasStride(Value *V) { return StrideSet.count(V); }
@@ -1548,8 +1563,7 @@ public:
 
   /// \return Returns information about the register usages of the loop for the
   /// given vectorization factors.
-  SmallVector<RegisterUsage, 8>
-  calculateRegisterUsage(const SmallVector<unsigned, 8> &VFs);
+  SmallVector<RegisterUsage, 8> calculateRegisterUsage(ArrayRef<unsigned> VFs);
 
 private:
   /// The vectorization cost is a combination of the cost itself and a boolean
@@ -2042,7 +2056,6 @@ struct LoopVectorize : public FunctionPass {
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
     AU.addPreserved<BasicAAWrapperPass>();
-    AU.addPreserved<AAResultsWrapperPass>();
     AU.addPreserved<GlobalsAAWrapperPass>();
   }
 
@@ -2867,12 +2880,26 @@ Value *InnerLoopVectorizer::getOrCreateVectorTripCount(Loop *L) {
   Value *TC = getOrCreateTripCount(L);
   IRBuilder<> Builder(L->getLoopPreheader()->getTerminator());
 
-  // Now we need to generate the expression for N - (N % VF), which is
-  // the part that the vectorized body will execute.
-  // The loop step is equal to the vectorization factor (num of SIMD elements)
-  // times the unroll factor (num of SIMD instructions).
+  // Now we need to generate the expression for the part of the loop that the
+  // vectorized body will execute. This is equal to N - (N % Step) if scalar
+  // iterations are not required for correctness, or N - Step, otherwise. Step
+  // is equal to the vectorization factor (number of SIMD elements) times the
+  // unroll factor (number of SIMD instructions).
   Constant *Step = ConstantInt::get(TC->getType(), VF * UF);
   Value *R = Builder.CreateURem(TC, Step, "n.mod.vf");
+
+  // If there is a non-reversed interleaved group that may speculatively access
+  // memory out-of-bounds, we need to ensure that there will be at least one
+  // iteration of the scalar epilogue loop. Thus, if the step evenly divides
+  // the trip count, we set the remainder to be equal to the step. If the step
+  // does not evenly divide the trip count, no adjustment is necessary since
+  // there will already be scalar iterations. Note that the minimum iterations
+  // check ensures that N >= Step.
+  if (VF > 1 && Legal->requiresScalarEpilogue()) {
+    auto *IsZero = Builder.CreateICmpEQ(R, ConstantInt::get(R->getType(), 0));
+    R = Builder.CreateSelect(IsZero, Step, R);
+  }
+
   VectorTripCount = Builder.CreateSub(TC, R, "n.vec");
 
   return VectorTripCount;
@@ -3170,6 +3197,11 @@ void InnerLoopVectorizer::createEmptyLoop() {
   LoopExitBlock = ExitBlock;
   LoopVectorBody.push_back(VecBody);
   LoopScalarBody = OldBasicBlock;
+
+  // Keep all loop hints from the original loop on the vector loop (we'll
+  // replace the vectorizer-specific hints below).
+  if (MDNode *LID = OrigLoop->getLoopID())
+    Lp->setLoopID(LID);
 
   LoopVectorizeHints Hints(Lp, true);
   Hints.setAlreadyVectorized();
@@ -4308,7 +4340,9 @@ void InnerLoopVectorizer::vectorizeBlockInLoop(BasicBlock *BB, PhiVector *PV) {
         }
         assert(VectorF && "Can't create vector function.");
 
-        CallInst *V = Builder.CreateCall(VectorF, Args);
+        SmallVector<OperandBundleDef, 1> OpBundles;
+        CI->getOperandBundlesAsDefs(OpBundles);
+        CallInst *V = Builder.CreateCall(VectorF, Args, OpBundles);
 
         if (isa<FPMathOperator>(V))
           V->copyFastMathFlags(CI);
@@ -4873,6 +4907,7 @@ bool LoopVectorizationLegality::blockNeedsPredication(BasicBlock *BB)  {
 
 bool LoopVectorizationLegality::blockCanBePredicated(BasicBlock *BB,
                                            SmallPtrSetImpl<Value *> &SafePtrs) {
+  const bool IsAnnotatedParallel = TheLoop->isAnnotatedParallel();
 
   for (BasicBlock::iterator it = BB->begin(), e = BB->end(); it != e; ++it) {
     // Check that we don't have a constant expression that can trap as operand.
@@ -4893,6 +4928,9 @@ bool LoopVectorizationLegality::blockCanBePredicated(BasicBlock *BB,
           MaskedOp.insert(LI);
           continue;
         }
+        // !llvm.mem.parallel_loop_access implies if-conversion safety.
+        if (IsAnnotatedParallel)
+          continue;
         return false;
       }
     }
@@ -4905,24 +4943,20 @@ bool LoopVectorizationLegality::blockCanBePredicated(BasicBlock *BB,
       if (!SI)
         return false;
 
+      // Build a masked store if it is legal for the target.
+      if (isLegalMaskedStore(SI->getValueOperand()->getType(),
+                             SI->getPointerOperand()) ||
+          isLegalMaskedScatter(SI->getValueOperand()->getType())) {
+        MaskedOp.insert(SI);
+        continue;
+      }
+
       bool isSafePtr = (SafePtrs.count(SI->getPointerOperand()) != 0);
       bool isSinglePredecessor = SI->getParent()->getSinglePredecessor();
 
       if (++NumPredStores > NumberOfStoresToPredicate || !isSafePtr ||
-          !isSinglePredecessor) {
-        // Build a masked store if it is legal for the target, otherwise
-        // scalarize the block.
-        bool isLegalMaskedOp =
-          isLegalMaskedStore(SI->getValueOperand()->getType(),
-                             SI->getPointerOperand()) ||
-          isLegalMaskedScatter(SI->getValueOperand()->getType());
-        if (isLegalMaskedOp) {
-          --NumPredStores;
-          MaskedOp.insert(SI);
-          continue;
-        }
+          !isSinglePredecessor)
         return false;
-      }
     }
     if (it->mayThrow())
       return false;
@@ -5104,11 +5138,20 @@ void InterleavedAccessInfo::analyzeInterleaving(
     if (Group->getNumMembers() != Group->getFactor())
       releaseGroup(Group);
 
-  // Remove interleaved load groups that don't have the first and last member.
-  // This guarantees that we won't do speculative out of bounds loads.
+  // If there is a non-reversed interleaved load group with gaps, we will need
+  // to execute at least one scalar epilogue iteration. This will ensure that
+  // we don't speculatively access memory out-of-bounds. Note that we only need
+  // to look for a member at index factor - 1, since every group must have a
+  // member at index zero.
   for (InterleaveGroup *Group : LoadGroups)
-    if (!Group->getMember(0) || !Group->getMember(Group->getFactor() - 1))
-      releaseGroup(Group);
+    if (!Group->getMember(Group->getFactor() - 1)) {
+      if (Group->isReverse()) {
+        releaseGroup(Group);
+      } else {
+        DEBUG(dbgs() << "LV: Interleaved group requires epilogue iteration.\n");
+        RequiresScalarEpilogue = true;
+      }
+    }
 }
 
 LoopVectorizationCostModel::VectorizationFactor
@@ -5467,8 +5510,7 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
 }
 
 SmallVector<LoopVectorizationCostModel::RegisterUsage, 8>
-LoopVectorizationCostModel::calculateRegisterUsage(
-    const SmallVector<unsigned, 8> &VFs) {
+LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
   // This function calculates the register usage by measuring the highest number
   // of values that are alive at a single location. Obviously, this is a very
   // rough estimation. We scan the loop in a topological order in order and
@@ -5560,6 +5602,8 @@ LoopVectorizationCostModel::calculateRegisterUsage(
 
   // A lambda that gets the register usage for the given type and VF.
   auto GetRegUsage = [&DL, WidestRegister](Type *Ty, unsigned VF) {
+    if (Ty->isTokenTy())
+      return 0U;
     unsigned TypeSize = DL.getTypeSizeInBits(Ty->getScalarType());
     return std::max<unsigned>(1, VF * TypeSize / WidestRegister);
   };

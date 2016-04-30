@@ -2702,6 +2702,7 @@ bool Sema::SemaBuiltinVAStartImpl(CallExpr *TheCall) {
   // block.
   QualType Type;
   SourceLocation ParamLoc;
+  bool IsCRegister = false;
 
   if (const DeclRefExpr *DR = dyn_cast<DeclRefExpr>(Arg)) {
     if (const ParmVarDecl *PV = dyn_cast<ParmVarDecl>(DR->getDecl())) {
@@ -2718,15 +2719,21 @@ bool Sema::SemaBuiltinVAStartImpl(CallExpr *TheCall) {
 
       Type = PV->getType();
       ParamLoc = PV->getLocation();
+      IsCRegister =
+          PV->getStorageClass() == SC_Register && !getLangOpts().CPlusPlus;
     }
   }
 
   if (!SecondArgIsLastNamedArgument)
     Diag(TheCall->getArg(1)->getLocStart(),
          diag::warn_second_arg_of_va_start_not_last_named_param);
-  else if (Type->isReferenceType()) {
-    Diag(Arg->getLocStart(),
-         diag::warn_va_start_of_reference_type_is_undefined);
+  else if (IsCRegister || Type->isReferenceType() ||
+           Type->isPromotableIntegerType() ||
+           Type->isSpecificBuiltinType(BuiltinType::Float)) {
+    unsigned Reason = 0;
+    if (Type->isReferenceType())  Reason = 1;
+    else if (IsCRegister)         Reason = 2;
+    Diag(Arg->getLocStart(), diag::warn_va_start_type_is_undefined) << Reason;
     Diag(ParamLoc, diag::note_parameter_type) << Type;
   }
 
@@ -7403,13 +7410,8 @@ void DiagnoseFloatingImpCast(Sema &S, Expr *E, QualType T,
   bool IsConstant =
     E->EvaluateAsFloat(Value, S.Context, Expr::SE_AllowSideEffects);
   if (!IsConstant) {
-    if (IsBool) {
-      return DiagnoseImpCast(S, E, T, CContext, diag::warn_impcast_float_bool,
-                             PruneWarnings);
-    } else {
-      return DiagnoseImpCast(S, E, T, CContext,
-                             diag::warn_impcast_float_integer, PruneWarnings);
-    }
+    return DiagnoseImpCast(S, E, T, CContext,
+                           diag::warn_impcast_float_integer, PruneWarnings);
   }
 
   bool isExact = false;
@@ -7418,17 +7420,14 @@ void DiagnoseFloatingImpCast(Sema &S, Expr *E, QualType T,
                             T->hasUnsignedIntegerRepresentation());
   if (Value.convertToInteger(IntegerValue, llvm::APFloat::rmTowardZero,
                              &isExact) == llvm::APFloat::opOK &&
-      isExact && !IsBool) {
+      isExact) {
     if (IsLiteral) return;
     return DiagnoseImpCast(S, E, T, CContext, diag::warn_impcast_float_integer,
                            PruneWarnings);
   }
 
   unsigned DiagID = 0;
-  if (IsBool) {
-    // Warn on all floating point to bool conversions
-    DiagID = diag::warn_impcast_float_to_bool;
-  } else if (IsLiteral) {
+  if (IsLiteral) {
     // Warn on floating point literal to integer.
     DiagID = diag::warn_impcast_literal_float_to_integer;
   } else if (IntegerValue == 0) {

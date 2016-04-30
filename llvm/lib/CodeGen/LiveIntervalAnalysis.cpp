@@ -9,8 +9,7 @@
 //
 // This file implements the LiveInterval analysis pass which is used
 // by the Linear Scan Register allocator. This pass linearizes the
-// basic blocks of the function in DFS order and uses the
-// LiveVariables pass to conservatively compute live intervals for
+// basic blocks of the function in DFS order and computes live intervals for
 // each virtual and physical register.
 //
 //===----------------------------------------------------------------------===//
@@ -46,7 +45,6 @@ char &llvm::LiveIntervalsID = LiveIntervals::ID;
 INITIALIZE_PASS_BEGIN(LiveIntervals, "liveintervals",
                 "Live Interval Analysis", false, false)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LiveVariables)
 INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_END(LiveIntervals, "liveintervals",
@@ -75,10 +73,6 @@ void LiveIntervals::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesCFG();
   AU.addRequired<AAResultsWrapperPass>();
   AU.addPreserved<AAResultsWrapperPass>();
-  // LiveVariables isn't really required by this analysis, it is only required
-  // here to make sure it is live during TwoAddressInstructionPass and
-  // PHIElimination. This is temporary.
-  AU.addRequired<LiveVariables>();
   AU.addPreserved<LiveVariables>();
   AU.addPreservedID(MachineLoopInfoID);
   AU.addRequiredTransitiveID(MachineDominatorsID);
@@ -195,16 +189,9 @@ LiveInterval* LiveIntervals::createInterval(unsigned reg) {
 void LiveIntervals::computeVirtRegInterval(LiveInterval &LI) {
   assert(LRCalc && "LRCalc not initialized.");
   assert(LI.empty() && "Should only compute empty intervals.");
-  bool ShouldTrackSubRegLiveness = MRI->shouldTrackSubRegLiveness(LI.reg);
   LRCalc->reset(MF, getSlotIndexes(), DomTree, &getVNInfoAllocator());
-  LRCalc->calculate(LI, ShouldTrackSubRegLiveness);
-  bool SeparatedComponents = computeDeadValues(LI, nullptr);
-  if (SeparatedComponents) {
-    assert(ShouldTrackSubRegLiveness
-           && "Separated components should only occur for unused subreg defs");
-    SmallVector<LiveInterval*, 8> SplitLIs;
-    splitSeparateComponents(LI, SplitLIs);
-  }
+  LRCalc->calculate(LI, MRI->shouldTrackSubRegLiveness(LI.reg));
+  computeDeadValues(LI, nullptr);
 }
 
 void LiveIntervals::computeVirtRegs() {
@@ -487,13 +474,11 @@ bool LiveIntervals::computeDeadValues(LiveInterval &LI,
 
     // Is the register live before? Otherwise we may have to add a read-undef
     // flag for subregister defs.
-    bool DeadBeforeDef = false;
     unsigned VReg = LI.reg;
     if (MRI->shouldTrackSubRegLiveness(VReg)) {
       if ((I == LI.begin() || std::prev(I)->end < Def) && !VNI->isPHIDef()) {
         MachineInstr *MI = getInstructionFromIndex(Def);
         MI->setRegisterDefReadUndef(VReg);
-        DeadBeforeDef = true;
       }
     }
 
@@ -509,15 +494,7 @@ bool LiveIntervals::computeDeadValues(LiveInterval &LI,
       // This is a dead def. Make sure the instruction knows.
       MachineInstr *MI = getInstructionFromIndex(Def);
       assert(MI && "No instruction defining live value");
-      MI->addRegisterDead(VReg, TRI);
-
-      // If we have a dead def that is completely separate from the rest of
-      // the liverange then we rewrite it to use a different VReg to not violate
-      // the rule that the liveness of a virtual register forms a connected
-      // component. This should only happen if subregister liveness is tracked.
-      if (DeadBeforeDef)
-        MayHaveSplitComponents = true;
-
+      MI->addRegisterDead(LI.reg, TRI);
       if (dead && MI->allDefsAreDead()) {
         DEBUG(dbgs() << "All defs dead: " << Def << '\t' << *MI);
         dead->push_back(MI);
@@ -1121,9 +1098,8 @@ private:
         // reordering, there is always a successor to OldIdxOut in the same BB
         // We don't need INext->valno anymore and will reuse for the new segment
         // we create later.
-        DefVNI = INext->valno;
+        DefVNI = OldIdxVNI;
         INext->start = OldIdxOut->end;
-        INext->valno = OldIdxVNI;
         INext->valno->def = INext->start;
       }
       // If NewIdx is behind the last segment, extend that and append a new one.

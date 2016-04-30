@@ -278,6 +278,11 @@ SITargetLowering::SITargetLowering(TargetMachine &TM,
   setOperationAction(ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, MVT::i32, Expand);
   setOperationAction(ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, MVT::i64, Expand);
 
+  if (Subtarget->hasFlatAddressSpace()) {
+    setOperationAction(ISD::ADDRSPACECAST, MVT::i32, Custom);
+    setOperationAction(ISD::ADDRSPACECAST, MVT::i64, Custom);
+  }
+
   setTargetDAGCombine(ISD::FADD);
   setTargetDAGCombine(ISD::FSUB);
   setTargetDAGCombine(ISD::FMINNUM);
@@ -449,7 +454,6 @@ bool SITargetLowering::isLegalAddressingMode(const DataLayout &DL,
   }
 
   case AMDGPUAS::PRIVATE_ADDRESS:
-  case AMDGPUAS::UNKNOWN_ADDRESS_SPACE:
     return isLegalMUBUFAddressingMode(AM);
 
   case AMDGPUAS::LOCAL_ADDRESS:
@@ -470,6 +474,12 @@ bool SITargetLowering::isLegalAddressingMode(const DataLayout &DL,
     return false;
   }
   case AMDGPUAS::FLAT_ADDRESS:
+  case AMDGPUAS::UNKNOWN_ADDRESS_SPACE:
+    // For an unknown address space, this usually means that this is for some
+    // reason being used for pure arithmetic, and not based on some addressing
+    // computation. We don't have instructions that compute pointers with any
+    // addressing modes, so treat them as having no offset like flat
+    // instructions.
     return isLegalFlatAddressingMode(AM);
 
   default:
@@ -745,6 +755,12 @@ SDValue SITargetLowering::LowerFormalArguments(
     CCInfo.AllocateReg(DispatchPtrReg);
   }
 
+  if (Info->hasQueuePtr()) {
+    unsigned QueuePtrReg = Info->addQueuePtr(*TRI);
+    MF.addLiveIn(QueuePtrReg, &AMDGPU::SReg_64RegClass);
+    CCInfo.AllocateReg(QueuePtrReg);
+  }
+
   if (Info->hasKernargSegmentPtr()) {
     unsigned InputPtrReg = Info->addKernargSegmentPtr(*TRI);
     MF.addLiveIn(InputPtrReg, &AMDGPU::SReg_64RegClass);
@@ -837,7 +853,7 @@ SDValue SITargetLowering::LowerFormalArguments(
       NumElements = Arg.VT.getVectorNumElements() - NumElements;
       Regs.append(NumElements, DAG.getUNDEF(VT));
 
-      InVals.push_back(DAG.getNode(ISD::BUILD_VECTOR, DL, Arg.VT, Regs));
+      InVals.push_back(DAG.getBuildVector(Arg.VT, DL, Regs));
       continue;
     }
 
@@ -1226,6 +1242,7 @@ SDValue SITargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::INTRINSIC_WO_CHAIN: return LowerINTRINSIC_WO_CHAIN(Op, DAG);
   case ISD::INTRINSIC_W_CHAIN: return LowerINTRINSIC_W_CHAIN(Op, DAG);
   case ISD::INTRINSIC_VOID: return LowerINTRINSIC_VOID(Op, DAG);
+  case ISD::ADDRSPACECAST: return lowerADDRSPACECAST(Op, DAG);
   }
   return SDValue();
 }
@@ -1384,6 +1401,84 @@ SDValue SITargetLowering::LowerBRCOND(SDValue BRCOND,
   return Chain;
 }
 
+SDValue SITargetLowering::getSegmentAperture(unsigned AS,
+                                             SelectionDAG &DAG) const {
+  SDLoc SL;
+  MachineFunction &MF = DAG.getMachineFunction();
+  SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
+  SDValue QueuePtr = CreateLiveInRegister(
+    DAG, &AMDGPU::SReg_64RegClass, Info->getQueuePtrUserSGPR(), MVT::i64);
+
+  // Offset into amd_queue_t for group_segment_aperture_base_hi /
+  // private_segment_aperture_base_hi.
+  uint32_t StructOffset = (AS == AMDGPUAS::LOCAL_ADDRESS) ? 0x40 : 0x44;
+
+  SDValue Ptr = DAG.getNode(ISD::ADD, SL, MVT::i64, QueuePtr,
+                            DAG.getConstant(StructOffset, SL, MVT::i64));
+
+  // TODO: Use custom target PseudoSourceValue.
+  // TODO: We should use the value from the IR intrinsic call, but it might not
+  // be available and how do we get it?
+  Value *V = UndefValue::get(PointerType::get(Type::getInt8Ty(*DAG.getContext()),
+                                              AMDGPUAS::CONSTANT_ADDRESS));
+
+  MachinePointerInfo PtrInfo(V, StructOffset);
+  return DAG.getLoad(MVT::i32, SL, QueuePtr.getValue(1), Ptr,
+                     PtrInfo, false,
+                     false, true,
+                     MinAlign(64, StructOffset));
+}
+
+SDValue SITargetLowering::lowerADDRSPACECAST(SDValue Op,
+                                             SelectionDAG &DAG) const {
+  SDLoc SL(Op);
+  const AddrSpaceCastSDNode *ASC = cast<AddrSpaceCastSDNode>(Op);
+
+  SDValue Src = ASC->getOperand(0);
+
+  // FIXME: Really support non-0 null pointers.
+  SDValue SegmentNullPtr = DAG.getConstant(-1, SL, MVT::i32);
+  SDValue FlatNullPtr = DAG.getConstant(0, SL, MVT::i64);
+
+  // flat -> local/private
+  if (ASC->getSrcAddressSpace() == AMDGPUAS::FLAT_ADDRESS) {
+    if (ASC->getDestAddressSpace() == AMDGPUAS::LOCAL_ADDRESS ||
+        ASC->getDestAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS) {
+      SDValue NonNull = DAG.getSetCC(SL, MVT::i1, Src, FlatNullPtr, ISD::SETNE);
+      SDValue Ptr = DAG.getNode(ISD::TRUNCATE, SL, MVT::i32, Src);
+
+      return DAG.getNode(ISD::SELECT, SL, MVT::i32,
+                         NonNull, Ptr, SegmentNullPtr);
+    }
+  }
+
+  // local/private -> flat
+  if (ASC->getDestAddressSpace() == AMDGPUAS::FLAT_ADDRESS) {
+    if (ASC->getSrcAddressSpace() == AMDGPUAS::LOCAL_ADDRESS ||
+        ASC->getSrcAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS) {
+      SDValue NonNull
+        = DAG.getSetCC(SL, MVT::i1, Src, SegmentNullPtr, ISD::SETNE);
+
+      SDValue Aperture = getSegmentAperture(ASC->getSrcAddressSpace(), DAG);
+      SDValue CvtPtr
+        = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32, Src, Aperture);
+
+      return DAG.getNode(ISD::SELECT, SL, MVT::i64, NonNull,
+                         DAG.getNode(ISD::BITCAST, SL, MVT::i64, CvtPtr),
+                         FlatNullPtr);
+    }
+  }
+
+  // global <-> flat are no-ops and never emitted.
+
+  const MachineFunction &MF = DAG.getMachineFunction();
+  DiagnosticInfoUnsupported InvalidAddrSpaceCast(
+    *MF.getFunction(), "invalid addrspacecast", SL.getDebugLoc());
+  DAG.getContext()->diagnose(InvalidAddrSpaceCast);
+
+  return DAG.getUNDEF(ASC->getValueType(0));
+}
+
 SDValue SITargetLowering::LowerGlobalAddress(AMDGPUMachineFunction *MFI,
                                              SDValue Op,
                                              SelectionDAG &DAG) const {
@@ -1450,6 +1545,7 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
 
   switch (IntrinsicID) {
   case Intrinsic::amdgcn_dispatch_ptr:
+  case Intrinsic::amdgcn_queue_ptr: {
     if (!Subtarget->isAmdHsaOS()) {
       DiagnosticInfoUnsupported BadIntrin(
           *MF.getFunction(), "unsupported hsa intrinsic without hsa target",
@@ -1458,8 +1554,16 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
       return DAG.getUNDEF(VT);
     }
 
+    auto Reg = IntrinsicID == Intrinsic::amdgcn_dispatch_ptr ?
+      SIRegisterInfo::DISPATCH_PTR : SIRegisterInfo::QUEUE_PTR;
     return CreateLiveInRegister(DAG, &AMDGPU::SReg_64RegClass,
-      TRI->getPreloadedValue(MF, SIRegisterInfo::DISPATCH_PTR), VT);
+                                TRI->getPreloadedValue(MF, Reg), VT);
+  }
+  case Intrinsic::amdgcn_kernarg_segment_ptr: {
+    unsigned Reg
+      = TRI->getPreloadedValue(MF, SIRegisterInfo::KERNARG_SEGMENT_PTR);
+    return CreateLiveInRegister(DAG, &AMDGPU::SReg_64RegClass, Reg, VT);
+  }
   case Intrinsic::amdgcn_rcp:
     return DAG.getNode(AMDGPUISD::RCP, DL, VT, Op.getOperand(1));
   case Intrinsic::amdgcn_rsq:
@@ -1858,7 +1962,7 @@ SDValue SITargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
 
   SDValue Hi = DAG.getSelect(DL, MVT::i32, Cond, Hi0, Hi1);
 
-  SDValue Res = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i32, Lo, Hi);
+  SDValue Res = DAG.getBuildVector(MVT::v2i32, DL, {Lo, Hi});
   return DAG.getNode(ISD::BITCAST, DL, MVT::i64, Res);
 }
 
@@ -2107,8 +2211,7 @@ SDValue SITargetLowering::LowerATOMIC_CMP_SWAP(SDValue Op, SelectionDAG &DAG) co
   MVT SimpleVT = VT.getSimpleVT();
   MVT VecType = MVT::getVectorVT(SimpleVT, 2);
 
-  SDValue NewOld = DAG.getNode(ISD::BUILD_VECTOR, DL, VecType,
-                               New, Old);
+  SDValue NewOld = DAG.getBuildVector(VecType, DL, {New, Old});
   SDValue Ops[] = { ChainIn, Addr, NewOld };
   SDVTList VTList = DAG.getVTList(VT, MVT::Other);
   return DAG.getMemIntrinsicNode(AMDGPUISD::ATOMIC_CMP_SWAP, DL,
@@ -2216,7 +2319,7 @@ SDValue SITargetLowering::performUCharToFloatCombine(SDNode *N,
 
     assert(Ops.size() == NElts);
 
-    return DAG.getNode(ISD::BUILD_VECTOR, DL, FloatVT, Ops);
+    return DAG.getBuildVector(FloatVT, DL, Ops);
   }
 
   return SDValue();

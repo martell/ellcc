@@ -470,6 +470,9 @@ namespace llvm {
   /// DeadMachineInstructionElim - This pass removes dead machine instructions.
   extern char &DeadMachineInstructionElimID;
 
+  /// This pass adds dead/undef flags after analyzing subregister lanes.
+  extern char &DetectDeadLanesID;
+
   /// FastRegisterAllocation Pass - This pass register allocates as fast as
   /// possible. It is best suited for debug code where live ranges are short.
   ///
@@ -497,6 +500,10 @@ namespace llvm {
   /// ExpandPostRAPseudos - This pass expands pseudo instructions after
   /// register allocation.
   extern char &ExpandPostRAPseudosID;
+
+  /// createPostRAHazardRecognizer - This pass runs the post-ra hazard
+  /// recognizer.
+  extern char &PostRAHazardRecognizerID;
 
   /// createPostRAScheduler - This pass performs post register allocation
   /// scheduling.
@@ -675,6 +682,11 @@ namespace llvm {
   /// TLS variables for the emulated TLS model.
   ///
   ModulePass *createLowerEmuTLSPass(const TargetMachine *TM);
+
+  /// This pass lowers the @llvm.load.relative intrinsic to instructions.
+  /// This is unsafe to do earlier because a pass may combine the constant
+  /// initializer into the load, which may result in an overflowing evaluation.
+  ModulePass *createPreISelIntrinsicLoweringPass();
 
   /// GlobalMerge - This pass merges internal (by default) globals into structs
   /// to enable reuse of a base pointer by indexed addressing modes.

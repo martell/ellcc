@@ -206,12 +206,7 @@ void __tsan_java_free(jptr ptr, jptr size) {
   CHECK_GE(ptr, jctx->heap_begin);
   CHECK_LE(ptr + size, jctx->heap_begin + jctx->heap_size);
 
-  BlockDesc *beg = getblock(ptr);
-  BlockDesc *end = getblock(ptr + size);
-  for (BlockDesc *b = beg; b != end; b++) {
-    if (b->begin)
-      b->~BlockDesc();
-  }
+  ctx->metamap.FreeRange(thr->proc(), ptr, size);
 }
 
 void __tsan_java_move(jptr src, jptr dst, jptr size) {

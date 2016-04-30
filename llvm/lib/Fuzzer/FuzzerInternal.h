@@ -304,7 +304,7 @@ public:
     bool OutputCSV = false;
     bool PrintNewCovPcs = false;
     bool PrintFinalStats = false;
-    bool DetectLeaks = false;
+    bool DetectLeaks = true;
   };
   Fuzzer(UserCallback CB, MutationDispatcher &MD, FuzzingOptions Options);
   void AddToCorpus(const Unit &U) {
@@ -398,10 +398,10 @@ private:
   size_t CurrentUnitSize = 0;
 
   size_t TotalNumberOfRuns = 0;
-  size_t TotalNumberOfExecutedTraceBasedMutations = 0;
   size_t NumberOfNewUnitsAdded = 0;
 
   bool HasMoreMallocsThanFrees = false;
+  size_t NumberOfLeakDetectionAttempts = 0;
 
   std::vector<Unit> Corpus;
   std::unordered_set<std::string> UnitHashesAddedToCorpus;

@@ -51,22 +51,6 @@ public:
   template <class UnitT>
   bool shouldRunPass(const Pass *P, const UnitT &U);
 
-  /// Checks the bisect limit to determine if the specified pass should run.
-  ///
-  /// This function will immediate return true if bisection is disabled. If the
-  /// bisect limit is set to -1, the function will print a message describing
-  /// the pass and the bisect number assigned to it and return true.  Otherwise,
-  /// the function will print a message with the bisect number assigned to the
-  /// pass and indicating whether or not the pass will be run and return true if
-  /// the bisect limit has not yet been exceded or false if it has.
-  ///
-  /// In order to avoid duplicating the code necessary to access OptBisect
-  /// through the LLVMContext class, passes may call one of the helper
-  /// functions that get the context from an IR object.  For instance,
-  /// function passes may call skipPassForFunction().
-  template <class UnitT>
-  bool shouldRunPass(const StringRef PassName, const UnitT &U);
-
   /// Checks the bisect limit to determine if the optimization described by the
   /// /p Desc argument should run.
   ///
@@ -91,48 +75,6 @@ private:
   bool BisectEnabled = false;
   unsigned LastBisectNum = 0;
 };
-
-// Access to OptBisect should go through LLVMContext, but for the
-// new pass manager there is no single base class from which a
-// helper function to abstract the messy details can be provided.
-// Instead, we provide standalone helper functions for each IR
-// type that must be handled.
-
-class Module;
-class Function;
-//class BasicBlock;
-//class Loop;
-
-/// Check with the OptBisect object to determine whether the described pass
-/// should be skipped.
-///
-/// This is a helper function which abstracts the details of accessing OptBisect
-/// through an LLVMContext obtained from a Module.
-bool skipPassForModule(const StringRef PassName, const Module &M);
-
-/// Check with the OptBisect object to determine whether the described pass
-/// should be skipped.
-///
-/// This is a helper function which abstracts the details of accessing OptBisect
-/// through an LLVMContext obtained from a Function.
-bool skipPassForFunction(const StringRef PassName, const Function &F);
-#if 0
-/// Check with the OptBisect object to determine whether the described pass
-/// should be skipped.
-///
-/// This is a helper function which abstracts the details of accessing OptBisect
-/// through an LLVMContext obtained from a BasicBlock.
-bool skipPassForBasicBlock(const StringRef PassName, const BasicBlock &BB);
-
-/// Check with the OptBisect object to determine whether the described pass
-/// should be skipped.
-///
-/// This is a helper function which abstracts the details of accessing OptBisect
-/// through an LLVMContext obtained from a Loop.
-bool skipPassForLoop(const StringRef PassName, const Loop &L);
-#endif
-// skiPassForSCC is declared in LazyCallGraph.h because of include file
-// dependency issues related to LazyCallGraph::SCC being nested.
 
 } // end namespace llvm
 

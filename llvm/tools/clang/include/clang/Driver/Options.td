@@ -152,6 +152,9 @@ class InternalDriverOpt : Group<internal_driver_Group>,
 def driver_mode : Joined<["--"], "driver-mode=">, Group<internal_driver_Group>,
   Flags<[CoreOption, DriverOption, HelpHidden]>,
   HelpText<"Set the driver mode to either 'gcc', 'g++', 'cpp', or 'cl'">;
+def rsp_quoting : Joined<["--"], "rsp-quoting=">, Group<internal_driver_Group>,
+  Flags<[CoreOption, DriverOption, HelpHidden]>,
+  HelpText<"Set the rsp quoting to either 'posix', or 'windows'">;
 def ccc_gcc_name : Separate<["-"], "ccc-gcc-name">, InternalDriverOpt,
   HelpText<"Name for native GCC compiler">,
   MetaVarName<"<gcc-path>">;
@@ -1149,9 +1152,6 @@ def fwhole_program_vtables : Flag<["-"], "fwhole-program-vtables">, Group<f_Grou
   Flags<[CC1Option]>,
   HelpText<"Enables whole-program vtable optimization. Requires -flto">;
 def fno_whole_program_vtables : Flag<["-"], "fno-whole-program-vtables">, Group<f_Group>;
-def fwhole_program_vtables_blacklist_EQ : Joined<["-"], "fwhole-program-vtables-blacklist=">,
-  Group<f_Group>, Flags<[CC1Option]>,
-  HelpText<"Path to a blacklist file for whole-program vtable optimization">;
 def fwrapv : Flag<["-"], "fwrapv">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Treat signed integer overflow as two's complement">;
 def fwritable_strings : Flag<["-"], "fwritable-strings">, Group<f_Group>, Flags<[CC1Option]>,

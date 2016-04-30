@@ -567,38 +567,56 @@ void ValueEnumerator::dropFunctionFromMetadata(
 }
 
 void ValueEnumerator::EnumerateMetadata(unsigned F, const Metadata *MD) {
+  // It's vital for reader efficiency that uniqued subgraphs are done in
+  // post-order; it's expensive when their operands have forward references.
+  // If a distinct node is referenced from a uniqued node, it'll be delayed
+  // until the uniqued subgraph has been completely traversed.
+  SmallVector<const MDNode *, 32> DelayedDistinctNodes;
+
   // Start by enumerating MD, and then work through its transitive operands in
   // post-order.  This requires a depth-first search.
-  SmallVector<std::pair<const MDNode *, const MDOperand *>, 32> Worklist;
-  enumerateMetadataImpl(F, MD, Worklist);
+  SmallVector<std::pair<const MDNode *, MDNode::op_iterator>, 32> Worklist;
+  if (const MDNode *N = enumerateMetadataImpl(F, MD))
+    Worklist.push_back(std::make_pair(N, N->op_begin()));
+
   while (!Worklist.empty()) {
     const MDNode *N = Worklist.back().first;
-    const MDOperand *&Op = Worklist.back().second; // Be careful of lifetime...
 
-    // Enumerate operands until the worklist changes.  We need to traverse new
-    // nodes before visiting the rest of N's operands.
-    bool DidWorklistChange = false;
-    for (const MDOperand *E = N->op_end(); Op != E;)
-      if (enumerateMetadataImpl(F, *Op++, Worklist)) {
-        DidWorklistChange = true;
-        break;
-      }
-    if (DidWorklistChange)
+    // Enumerate operands until we hit a new node.  We need to traverse these
+    // nodes' operands before visiting the rest of N's operands.
+    MDNode::op_iterator I = std::find_if(
+        Worklist.back().second, N->op_end(),
+        [&](const Metadata *MD) { return enumerateMetadataImpl(F, MD); });
+    if (I != N->op_end()) {
+      auto *Op = cast<MDNode>(*I);
+      Worklist.back().second = ++I;
+
+      // Delay traversing Op if it's a distinct node and N is uniqued.
+      if (Op->isDistinct() && !N->isDistinct())
+        DelayedDistinctNodes.push_back(Op);
+      else
+        Worklist.push_back(std::make_pair(Op, Op->op_begin()));
       continue;
+    }
 
     // All the operands have been visited.  Now assign an ID.
     Worklist.pop_back();
     MDs.push_back(N);
     MetadataMap[N].ID = MDs.size();
-    continue;
+
+    // Flush out any delayed distinct nodes; these are all the distinct nodes
+    // that are leaves in last uniqued subgraph.
+    if (Worklist.empty() || Worklist.back().first->isDistinct()) {
+      for (const MDNode *N : DelayedDistinctNodes)
+        Worklist.push_back(std::make_pair(N, N->op_begin()));
+      DelayedDistinctNodes.clear();
+    }
   }
 }
 
-bool ValueEnumerator::enumerateMetadataImpl(
-    unsigned F, const Metadata *MD,
-    SmallVectorImpl<std::pair<const MDNode *, const MDOperand *>> &Worklist) {
+const MDNode *ValueEnumerator::enumerateMetadataImpl(unsigned F, const Metadata *MD) {
   if (!MD)
-    return false;
+    return nullptr;
 
   assert(
       (isa<MDNode>(MD) || isa<MDString>(MD) || isa<ConstantAsMetadata>(MD)) &&
@@ -610,14 +628,12 @@ bool ValueEnumerator::enumerateMetadataImpl(
     // Already mapped.  If F doesn't match the function tag, drop it.
     if (Entry.hasDifferentFunction(F))
       dropFunctionFromMetadata(*Insertion.first);
-    return false;
+    return nullptr;
   }
 
-  // MDNodes are handled separately to avoid recursion.
-  if (auto *N = dyn_cast<MDNode>(MD)) {
-    Worklist.push_back(std::make_pair(N, N->op_begin()));
-    return true; // Changed the worklist.
-  }
+  // Don't assign IDs to metadata nodes.
+  if (auto *N = dyn_cast<MDNode>(MD))
+    return N;
 
   // Save the metadata.
   MDs.push_back(MD);
@@ -627,7 +643,7 @@ bool ValueEnumerator::enumerateMetadataImpl(
   if (auto *C = dyn_cast<ConstantAsMetadata>(MD))
     EnumerateValue(C->getValue());
 
-  return false;
+  return nullptr;
 }
 
 /// EnumerateFunctionLocalMetadataa - Incorporate function-local metadata
@@ -648,6 +664,22 @@ void ValueEnumerator::EnumerateFunctionLocalMetadata(
   Index.ID = MDs.size();
 
   EnumerateValue(Local->getValue());
+}
+
+static unsigned getMetadataTypeOrder(const Metadata *MD) {
+  // Strings are emitted in bulk and must come first.
+  if (isa<MDString>(MD))
+    return 0;
+
+  // ConstantAsMetadata doesn't reference anything.  We may as well shuffle it
+  // to the front since we can detect it.
+  auto *N = dyn_cast<MDNode>(MD);
+  if (!N)
+    return 1;
+
+  // The reader is fast forward references for distinct node operands, but slow
+  // when uniqued operands are unresolved.
+  return N->isDistinct() ? 2 : 3;
 }
 
 void ValueEnumerator::organizeMetadata() {
@@ -671,13 +703,9 @@ void ValueEnumerator::organizeMetadata() {
   // be unique, the result of std::sort will be deterministic.  There's no need
   // for std::stable_sort.
   std::sort(Order.begin(), Order.end(), [this](MDIndex LHS, MDIndex RHS) {
-    return std::make_tuple(LHS.F, !isa<MDString>(LHS.get(MDs)), LHS.ID) <
-           std::make_tuple(RHS.F, !isa<MDString>(RHS.get(MDs)), RHS.ID);
+    return std::make_tuple(LHS.F, getMetadataTypeOrder(LHS.get(MDs)), LHS.ID) <
+           std::make_tuple(RHS.F, getMetadataTypeOrder(RHS.get(MDs)), RHS.ID);
   });
-
-  // Return early if nothing is moving to functions and there are no strings.
-  if (!Order.back().F && !isa<MDString>(Order.front().get(MDs)))
-    return;
 
   // Rebuild MDs, index the metadata ranges for each function in FunctionMDs,
   // and fix up MetadataMap.

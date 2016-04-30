@@ -95,10 +95,6 @@ static cl::opt<bool> EnableLoopInterchange(
     "enable-loopinterchange", cl::init(false), cl::Hidden,
     cl::desc("Enable the new, experimental LoopInterchange Pass"));
 
-static cl::opt<bool> EnableLoopDistribute(
-    "enable-loop-distribute", cl::init(false), cl::Hidden,
-    cl::desc("Enable the new, experimental LoopDistribution Pass"));
-
 static cl::opt<bool> EnableNonLTOGlobalsModRef(
     "enable-non-lto-gmr", cl::init(true), cl::Hidden,
     cl::desc(
@@ -249,8 +245,6 @@ void PassManagerBuilder::addFunctionSimplificationPasses(
   if (PrepareForThinLTO) {
     MPM.add(createAggressiveDCEPass());        // Delete dead instructions
     addInstructionCombiningPass(MPM);          // Combine silly seq's
-    // Rename anon function to export them
-    MPM.add(createNameAnonFunctionPass());
     return;
   }
   // Rotate Loop - disable header duplication at -Oz
@@ -377,10 +371,13 @@ void PassManagerBuilder::populateModulePassManager(
     MPM.add(createCFGSimplificationPass()); // Clean up after IPCP & DAE
   }
 
-  if (!PerformThinLTO)
+  if (!PerformThinLTO) {
     /// PGO instrumentation is added during the compile phase for ThinLTO, do
     /// not run it a second time
     addPGOInstrPasses(MPM);
+    // Indirect call promotion that promotes intra-module targets only.
+    MPM.add(createPGOIndirectCallPromotionPass());
+  }
 
   if (EnableNonLTOGlobalsModRef)
     // We add a module alias analysis pass here. In part due to bugs in the
@@ -405,8 +402,13 @@ void PassManagerBuilder::populateModulePassManager(
   // If we are planning to perform ThinLTO later, let's not bloat the code with
   // unrolling/vectorization/... now. We'll first run the inliner + CGSCC passes
   // during ThinLTO and perform the rest of the optimizations afterward.
-  if (PrepareForThinLTO)
+  if (PrepareForThinLTO) {
+    // Reduce the size of the IR as much as possible.
+    MPM.add(createGlobalOptimizerPass());
+    // Rename anon function to be able to export them in the summary.
+    MPM.add(createNameAnonFunctionPass());
     return;
+  }
 
   // FIXME: This is a HACK! The inliner pass above implicitly creates a CGSCC
   // pass manager that we are specifically trying to avoid. To prevent this
@@ -477,9 +479,10 @@ void PassManagerBuilder::populateModulePassManager(
   MPM.add(createLoopRotatePass(SizeLevel == 2 ? 0 : -1));
 
   // Distribute loops to allow partial vectorization.  I.e. isolate dependences
-  // into separate loop that would otherwise inhibit vectorization.
-  if (EnableLoopDistribute)
-    MPM.add(createLoopDistributePass());
+  // into separate loop that would otherwise inhibit vectorization.  This is
+  // currently only performed for loops marked with the metadata
+  // llvm.loop.distribute=true or when -enable-loop-distribute is specified.
+  MPM.add(createLoopDistributePass(/*ProcessAllLoopsByDefault=*/false));
 
   MPM.add(createLoopVectorizePass(DisableUnrollLoops, LoopVectorize));
 
@@ -584,6 +587,12 @@ void PassManagerBuilder::addLTOOptimizationPasses(legacy::PassManagerBase &PM) {
 
   // Infer attributes about declarations if possible.
   PM.add(createInferFunctionAttrsLegacyPass());
+
+  // Indirect call promotion. This should promote all the targets that are left
+  // by the earlier promotion pass that promotes intra-module targets.
+  // This two-step promotion is to save the compile time. For LTO, it should
+  // produce the same result as if we only do promotion here.
+  PM.add(createPGOIndirectCallPromotionPass(true));
 
   // Propagate constants at call sites into the functions they call.  This
   // opens opportunities for globalopt (and inlining) by substituting function

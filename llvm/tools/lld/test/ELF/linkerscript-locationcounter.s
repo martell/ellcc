@@ -14,6 +14,22 @@
 # RUN:  .bracket : { *(.bracket) } \
 # RUN:  . = 0x17000 & 0x15000; \
 # RUN:  .and : { *(.and) } \
+# RUN:  . = 0x1 ? 0x16000 : 0x999999; \
+# RUN:  .ternary1 : { *(.ternary1) } \
+# RUN:  . = 0x0 ? 0x999999 : 0x17000; \
+# RUN:  .ternary2 : { *(.ternary2) } \
+# RUN:  . = 0x0 < 0x1 ? 0x18000 : 0x999999; \
+# RUN:  .less : { *(.less) } \
+# RUN:  . = 0x1 <= 0x1 ? 0x19000 : 0x999999; \
+# RUN:  .lesseq : { *(.lesseq) } \
+# RUN:  . = 0x1 > 0x0 ? 0x20000 : 0x999999; \
+# RUN:  .great : { *(.great) } \
+# RUN:  . = 0x1 >= 0x1 ? 0x21000 : 0x999999; \
+# RUN:  .greateq : { *(.greateq) } \
+# RUN:  . = 0x1 == 0x1 ? 0x22000 : 0x999999; \
+# RUN:  .eq : { *(.eq) } \
+# RUN:  . = 0x2 != 0x1 ? 0x23000 : 0x999999; \
+# RUN:  .neq : { *(.neq) } \
 # RUN: }" > %t.script
 # RUN: ld.lld %t --script %t.script -o %t2
 # RUN: llvm-readobj -s %t2 | FileCheck %s
@@ -108,6 +124,126 @@
 # CHECK-NEXT:   AddressAlignment:
 # CHECK-NEXT:   EntrySize:
 # CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .ternary1
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x16000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .ternary2
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x17000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .less
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x18000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .lesseq
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x19000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .great
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x20000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .greateq
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x21000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .eq
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x22000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
+# CHECK-NEXT: Section {
+# CHECK-NEXT:   Index:
+# CHECK-NEXT:   Name: .neq
+# CHECK-NEXT:   Type: SHT_PROGBITS
+# CHECK-NEXT:   Flags [
+# CHECK-NEXT:     SHF_ALLOC
+# CHECK-NEXT:   ]
+# CHECK-NEXT:   Address: 0x23000
+# CHECK-NEXT:   Offset:
+# CHECK-NEXT:   Size:
+# CHECK-NEXT:   Link:
+# CHECK-NEXT:   Info:
+# CHECK-NEXT:   AddressAlignment:
+# CHECK-NEXT:   EntrySize:
+# CHECK-NEXT: }
 
 ## Mailformed number error.
 # RUN: echo "SECTIONS { \
@@ -123,7 +259,7 @@
 # RUN: }" > %t.script
 # RUN: not ld.lld %t --script %t.script -o %t2 2>&1 | \
 # RUN:  FileCheck --check-prefix=BRACKETERR %s
-# BRACKETERR: ) expected
+# BRACKETERR: unexpected EOF
 
 ## Missing opening bracket.
 # RUN: echo "SECTIONS { \
@@ -149,7 +285,15 @@
 # RUN:  FileCheck --check-prefix=DIVZERO %s
 # DIVZERO: division by zero
 
-.globl _start;
+## Broken ternary operator expression.
+# RUN: echo "SECTIONS { \
+# RUN:  . = 0x1 ? 0x2; \
+# RUN: }" > %t.script
+# RUN: not ld.lld %t --script %t.script -o %t2 2>&1 | \
+# RUN:  FileCheck --check-prefix=TERNERR %s
+# TERNERR: unexpected EOF
+
+.globl _start
 _start:
 nop
 
@@ -169,4 +313,28 @@ nop
 .quad 0
 
 .section .and, "a"
+.quad 0
+
+.section .ternary1, "a"
+.quad 0
+
+.section .ternary2, "a"
+.quad 0
+
+.section .less, "a"
+.quad 0
+
+.section .lesseq, "a"
+.quad 0
+
+.section .great, "a"
+.quad 0
+
+.section .greateq, "a"
+.quad 0
+
+.section .eq, "a"
+.quad 0
+
+.section .neq, "a"
 .quad 0

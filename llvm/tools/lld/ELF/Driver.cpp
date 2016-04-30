@@ -9,16 +9,17 @@
 
 #include "Driver.h"
 #include "Config.h"
-#include "DynamicList.h"
 #include "Error.h"
 #include "ICF.h"
 #include "InputFiles.h"
 #include "LinkerScript.h"
+#include "SymbolListFile.h"
 #include "SymbolTable.h"
 #include "Target.h"
 #include "Writer.h"
 #include "lld/Driver/Driver.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <utility>
@@ -26,6 +27,7 @@
 using namespace llvm;
 using namespace llvm::ELF;
 using namespace llvm::object;
+using namespace llvm::sys;
 
 using namespace lld;
 using namespace lld::elf;
@@ -55,6 +57,10 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
     return {ELF32BEKind, EM_MIPS};
   if (S == "elf32ltsmip")
     return {ELF32LEKind, EM_MIPS};
+  if (S == "elf64btsmip")
+    return {ELF64BEKind, EM_MIPS};
+  if (S == "elf64ltsmip")
+    return {ELF64LEKind, EM_MIPS};
   if (S == "elf32ppc")
     return {ELF32BEKind, EM_PPC};
   if (S == "elf64ppc")
@@ -103,6 +109,9 @@ void LinkerDriver::addFile(StringRef Path) {
   using namespace llvm::sys::fs;
   if (Config->Verbose)
     llvm::outs() << Path << "\n";
+  if (!Config->Reproduce.empty())
+    copyFile(Path, concat_paths(Config->Reproduce, Path));
+
   Optional<MemoryBufferRef> Buffer = readFile(Path);
   if (!Buffer.hasValue())
     return;
@@ -146,11 +155,6 @@ Optional<MemoryBufferRef> LinkerDriver::readFile(StringRef Path) {
   return MBRef;
 }
 
-void LinkerDriver::readDynamicList(StringRef Path) {
-  if (Optional<MemoryBufferRef> Buffer = readFile(Path))
-    parseDynamicList(*Buffer);
-}
-
 // Add a given library by searching it from input search paths.
 void LinkerDriver::addLibrary(StringRef Name) {
   std::string Path = searchLibrary(Name);
@@ -169,6 +173,12 @@ static void initLLVM(opt::InputArgList &Args) {
   InitializeAllTargetMCs();
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
+
+  // This is a flag to discard all but GlobalValue names.
+  // We want to enable it by default because it saves memory.
+  // Disable it only when a developer option (-save-temps) is given.
+  Driver->Context.setDiscardValueNames(!Config->SaveTemps);
+  Driver->Context.enableDebugTypeODRUniquing();
 
   // Parse and evaluate -mllvm options.
   std::vector<const char *> V;
@@ -228,6 +238,25 @@ static bool hasZOption(opt::InputArgList &Args, StringRef Key) {
   return false;
 }
 
+static void logCommandline(ArrayRef<const char *> Args) {
+  if (std::error_code EC = sys::fs::create_directories(
+        Config->Reproduce, /*IgnoreExisting=*/false)) {
+    error(EC, Config->Reproduce + ": can't create directory");
+    return;
+  }
+
+  SmallString<128> Path;
+  path::append(Path, Config->Reproduce, "invocation.txt");
+  std::error_code EC;
+  raw_fd_ostream OS(Path, EC, sys::fs::OpenFlags::F_None);
+  check(EC);
+
+  OS << Args[0];
+  for (size_t I = 1, E = Args.size(); I < E; ++I)
+    OS << " " << Args[I];
+  OS << "\n";
+}
+
 void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   ELFOptTable Parser;
   opt::InputArgList Args = Parser.parse(ArgsArr.slice(1));
@@ -240,8 +269,12 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
     return;
   }
 
-  initLLVM(Args);
   readConfigs(Args);
+  initLLVM(Args);
+
+  if (!Config->Reproduce.empty())
+    logCommandline(ArgsArr);
+
   createFiles(Args);
   checkOptions(Args);
   if (HasError)
@@ -283,13 +316,15 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
     Config->Emulation = S;
   }
 
+  if (Config->EMachine == EM_MIPS && Config->EKind == ELF64LEKind)
+    Config->Mips64EL = true;
+
   Config->AllowMultipleDefinition = Args.hasArg(OPT_allow_multiple_definition);
   Config->Bsymbolic = Args.hasArg(OPT_Bsymbolic);
   Config->BsymbolicFunctions = Args.hasArg(OPT_Bsymbolic_functions);
   Config->Demangle = !Args.hasArg(OPT_no_demangle);
   Config->DisableVerify = Args.hasArg(OPT_disable_verify);
   Config->DiscardAll = Args.hasArg(OPT_discard_all);
-  Config->DiscardValueNames = !Args.hasArg(OPT_lto_no_discard_value_names);
   Config->DiscardLocals = Args.hasArg(OPT_discard_locals);
   Config->DiscardNone = Args.hasArg(OPT_discard_none);
   Config->EhFrameHdr = Args.hasArg(OPT_eh_frame_hdr);
@@ -317,10 +352,11 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->Fini = getString(Args, OPT_fini, "_fini");
   Config->Init = getString(Args, OPT_init, "_init");
   Config->OutputFile = getString(Args, OPT_o);
+  Config->Reproduce = getString(Args, OPT_reproduce);
   Config->SoName = getString(Args, OPT_soname);
   Config->Sysroot = getString(Args, OPT_sysroot);
 
-  Config->Optimize = getInteger(Args, OPT_O, 0);
+  Config->Optimize = getInteger(Args, OPT_O, 1);
   Config->LtoO = getInteger(Args, OPT_lto_O, 2);
   if (Config->LtoO > 3)
     error("invalid optimization level for LTO: " + getString(Args, OPT_lto_O));
@@ -371,8 +407,18 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   for (auto *Arg : Args.filtered(OPT_undefined))
     Config->Undefined.push_back(Arg->getValue());
 
-  if (Args.hasArg(OPT_dynamic_list))
-    readDynamicList(getString(Args, OPT_dynamic_list));
+  if (auto *Arg = Args.getLastArg(OPT_dynamic_list))
+    if (Optional<MemoryBufferRef> Buffer = readFile(Arg->getValue()))
+      parseDynamicList(*Buffer);
+
+  for (auto *Arg : Args.filtered(OPT_export_dynamic_symbol))
+    Config->DynamicList.push_back(Arg->getValue());
+
+  if (auto *Arg = Args.getLastArg(OPT_version_script)) {
+    Config->VersionScript = true;
+    if (Optional<MemoryBufferRef> Buffer = readFile(Arg->getValue()))
+      parseVersionScript(*Buffer);
+  }
 }
 
 void LinkerDriver::createFiles(opt::InputArgList &Args) {
@@ -416,6 +462,8 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
     error("no input files.");
 }
 
+// Do actual linking. Note that when this function is called,
+// all linker scripts have already been parsed.
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   SymbolTable<ELFT> Symtab;
 
@@ -426,18 +474,20 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   Config->Rela = ELFT::Is64Bits;
 
-  // Add entry symbol.
-  // There is no entry symbol for AMDGPU binaries, so skip adding one to avoid
-  // having and undefined symbol.
+  // Add entry symbol. Note that AMDGPU binaries have no entry points.
   if (Config->Entry.empty() && !Config->Shared && !Config->Relocatable &&
       Config->EMachine != EM_AMDGPU)
-    Config->Entry = Config->EMachine == EM_MIPS ? "__start" : "_start";
+    Config->Entry = (Config->EMachine == EM_MIPS) ? "__start" : "_start";
 
+  // Default output filename is "a.out" by the Unix tradition.
+  if (Config->OutputFile.empty())
+    Config->OutputFile = "a.out";
+
+  // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
   if (!Config->Entry.empty()) {
-    // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
     StringRef S = Config->Entry;
     if (S.getAsInteger(0, Config->EntryAddr))
-      Config->EntrySym = Symtab.addUndefined(S)->getSymbol();
+      Config->EntrySym = Symtab.addUndefined(S)->Backref;
   }
 
   for (std::unique_ptr<InputFile> &F : Files)
@@ -445,15 +495,10 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   if (HasError)
     return; // There were duplicate symbols or incompatible files
 
-  for (StringRef S : Config->Undefined)
-    Symtab.addUndefinedOpt(S);
-
-  // -save-temps creates a file based on the output file name so we want
-  // to set it right before LTO. This code can't be moved to option parsing
-  // because linker scripts can override the output filename using the
-  // OUTPUT() directive.
-  if (Config->OutputFile.empty())
-    Config->OutputFile = "a.out";
+  Symtab.scanUndefinedFlags();
+  Symtab.scanShlibUndefined();
+  Symtab.scanDynamicList();
+  Symtab.scanVersionScript();
 
   Symtab.addCombinedLtoObject();
 
@@ -461,8 +506,6 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
     Symtab.wrap(Arg->getValue());
 
   // Write the result to the file.
-  Symtab.scanShlibUndefined();
-  Symtab.scanDynamicList();
   if (Config->GcSections)
     markLive<ELFT>(&Symtab);
   if (Config->ICF)

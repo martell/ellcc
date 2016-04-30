@@ -40,8 +40,41 @@ std::string demangle(StringRef Name);
 // A real symbol object, SymbolBody, is usually accessed indirectly
 // through a Symbol. There's always one Symbol for each symbol name.
 // The resolver updates SymbolBody pointers as it resolves symbols.
+// Symbol also holds computed properties of symbol names.
 struct Symbol {
   SymbolBody *Body;
+
+  // Symbol binding. This is on the Symbol to track changes during resolution.
+  // In particular:
+  // An undefined weak is still weak when it resolves to a shared library.
+  // An undefined weak will not fetch archive members, but we have to remember
+  // it is weak.
+  uint8_t Binding;
+
+  // Symbol visibility. This is the computed minimum visibility of all
+  // observed non-DSO symbols.
+  unsigned Visibility : 2;
+
+  // True if the symbol was used for linking and thus need to be added to the
+  // output file's symbol table. This is true for all symbols except for
+  // unreferenced DSO symbols and bitcode symbols that are unreferenced except
+  // by other bitcode objects.
+  unsigned IsUsedInRegularObj : 1;
+
+  // If this flag is true and the symbol has protected or default visibility, it
+  // will appear in .dynsym. This flag is set by interposable DSO symbols in
+  // executables, by most symbols in DSOs and executables built with
+  // --export-dynamic, and by dynamic lists.
+  unsigned ExportDynamic : 1;
+
+  // This flag acts as an additional filter on the dynamic symbol list. It is
+  // set if there is no version script, or if the symbol appears in the global
+  // section of the version script.
+  unsigned VersionScriptGlobal : 1;
+
+  bool includeInDynsym() const;
+
+  bool isWeak() const { return Binding == llvm::ELF::STB_WEAK; }
 };
 
 // The base class for real symbol classes.
@@ -57,8 +90,7 @@ public:
     DefinedBitcodeKind,
     DefinedSyntheticKind,
     DefinedLast = DefinedSyntheticKind,
-    UndefinedElfKind,
-    UndefinedBitcodeKind,
+    UndefinedKind,
     LazyArchiveKind,
     LazyObjectKind,
   };
@@ -66,9 +98,7 @@ public:
   Kind kind() const { return static_cast<Kind>(SymbolKind); }
 
   bool isWeak() const { return Binding == llvm::ELF::STB_WEAK; }
-  bool isUndefined() const {
-    return SymbolKind == UndefinedBitcodeKind || SymbolKind == UndefinedElfKind;
-  }
+  bool isUndefined() const { return SymbolKind == UndefinedKind; }
   bool isDefined() const { return SymbolKind <= DefinedLast; }
   bool isCommon() const { return SymbolKind == DefinedCommonKind; }
   bool isLazy() const {
@@ -76,7 +106,6 @@ public:
   }
   bool isShared() const { return SymbolKind == SharedKind; }
   bool isLocal() const { return Binding == llvm::ELF::STB_LOCAL; }
-  bool isUsedInRegularObj() const { return IsUsedInRegularObj; }
   bool isPreemptible() const;
 
   // Returns the symbol name.
@@ -102,8 +131,6 @@ public:
   bool isInPlt() const { return PltIndex != -1U; }
   bool hasThunk() const { return ThunkIndex != -1U; }
 
-  void setUsedInRegularObj() { IsUsedInRegularObj = true; }
-
   template <class ELFT>
   typename ELFT::uint getVA(typename ELFT::uint Addend = 0) const;
 
@@ -121,16 +148,12 @@ public:
   // pointer P to a SymbolBody and are not sure whether the resolver
   // has chosen the object among other objects having the same name,
   // you can access P->Backref->Body to get the resolver's result.
-  void setBackref(Symbol *P) { Backref = P; }
   SymbolBody &repl() { return Backref ? *Backref->Body : *this; }
-  Symbol *getSymbol() const { return Backref; }
 
   // Decides which symbol should "win" in the symbol table, this or
   // the Other. Returns 1 if this wins, -1 if the Other wins, or 0 if
   // they are duplicate (conflicting) symbols.
   int compare(SymbolBody *Other);
-
-  bool includeInDynsym() const;
 
 protected:
   SymbolBody(Kind K, StringRef Name, uint8_t Binding, uint8_t StOther,
@@ -140,12 +163,6 @@ protected:
 
   const unsigned SymbolKind : 8;
 
-  // True if the symbol was used for linking and thus need to be
-  // added to the output file's symbol table. It is usually true,
-  // but if it is a shared symbol that were not referenced by anyone,
-  // it can be false.
-  unsigned IsUsedInRegularObj : 1;
-
 public:
   // True if this symbol can be omitted from the symbol table if nothing else
   // requires it to be there. Right now this is only used for linkonce_odr in
@@ -153,14 +170,14 @@ public:
   // MachO's .weak_def_can_be_hidden.
   unsigned CanOmitFromDynSym : 1;
 
-  // If true, the symbol is added to .dynsym symbol table.
-  unsigned MustBeInDynSym : 1;
-
   // True if the linker has to generate a copy relocation for this shared
   // symbol or if the symbol should point to its plt entry.
   unsigned NeedsCopyOrPltAddr : 1;
 
-  unsigned CanKeepUndefined : 1;
+  // True if the symbol is undefined and comes from a bitcode file. We need to
+  // keep track of this because undefined symbols only prevent internalization
+  // of bitcode symbols if they did not come from a bitcode file.
+  unsigned IsUndefinedBitcode : 1;
 
   // The following fields have the same meaning as the ELF symbol attributes.
   uint8_t Type;    // symbol type
@@ -173,7 +190,8 @@ public:
   bool isGnuIFunc() const { return Type == llvm::ELF::STT_GNU_IFUNC; }
   bool isObject() const { return Type == llvm::ELF::STT_OBJECT; }
   bool isFile() const { return Type == llvm::ELF::STT_FILE; }
-  void setVisibility(uint8_t V) { StOther = (StOther & ~0x3) | V; }
+
+  Symbol *Backref = nullptr;
 
 protected:
   struct Str {
@@ -184,7 +202,6 @@ protected:
     Str Name;
     uint32_t NameOffset;
   };
-  Symbol *Backref = nullptr;
 };
 
 // The base class for any defined symbols.
@@ -292,36 +309,20 @@ public:
   const OutputSectionBase<ELFT> &Section;
 };
 
-class UndefinedBitcode : public SymbolBody {
+class Undefined : public SymbolBody {
 public:
-  UndefinedBitcode(StringRef N, bool IsWeak, uint8_t StOther);
+  Undefined(StringRef Name, uint8_t Binding, uint8_t StOther, uint8_t Type,
+            bool IsBitcode);
+  Undefined(uint32_t NameOffset, uint8_t StOther, uint8_t Type);
 
   static bool classof(const SymbolBody *S) {
-    return S->kind() == UndefinedBitcodeKind;
-  }
-};
-
-template <class ELFT> class UndefinedElf : public SymbolBody {
-  typedef typename ELFT::uint uintX_t;
-  typedef typename ELFT::Sym Elf_Sym;
-
-public:
-  UndefinedElf(StringRef N, const Elf_Sym &Sym);
-  UndefinedElf(const Elf_Sym &Sym);
-  UndefinedElf(StringRef Name, uint8_t Binding, uint8_t StOther, uint8_t Type,
-               bool CanKeepUndefined);
-
-  bool canKeepUndefined() const { return CanKeepUndefined; }
-
-  uintX_t Size;
-
-  static bool classof(const SymbolBody *S) {
-    return S->kind() == SymbolBody::UndefinedElfKind;
+    return S->kind() == UndefinedKind;
   }
 };
 
 template <class ELFT> class SharedSymbol : public Defined {
   typedef typename ELFT::Sym Elf_Sym;
+  typedef typename ELFT::Verdef Elf_Verdef;
   typedef typename ELFT::uint uintX_t;
 
 public:
@@ -329,13 +330,26 @@ public:
     return S->kind() == SymbolBody::SharedKind;
   }
 
-  SharedSymbol(SharedFile<ELFT> *F, StringRef Name, const Elf_Sym &Sym)
+  SharedSymbol(SharedFile<ELFT> *F, StringRef Name, const Elf_Sym &Sym,
+               const Elf_Verdef *Verdef)
       : Defined(SymbolBody::SharedKind, Name, Sym.getBinding(), Sym.st_other,
                 Sym.getType()),
-        File(F), Sym(Sym) {}
+        File(F), Sym(Sym), Verdef(Verdef) {
+    // IFuncs defined in DSOs are treated as functions by the static linker.
+    if (isGnuIFunc())
+      Type = llvm::ELF::STT_FUNC;
+  }
 
   SharedFile<ELFT> *File;
   const Elf_Sym &Sym;
+
+  // This field is initially a pointer to the symbol's version definition. As
+  // symbols are added to the version table, this field is replaced with the
+  // version identifier to be stored in .gnu.version in the output file.
+  union {
+    const Elf_Verdef *Verdef;
+    uint16_t VersionId;
+  };
 
   // OffsetInBss is significant only when needsCopy() is true.
   uintX_t OffsetInBss = 0;

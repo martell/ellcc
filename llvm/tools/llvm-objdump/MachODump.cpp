@@ -142,11 +142,18 @@ static const Target *GetTarget(const MachOObjectFile *MachOObj,
                                const char **McpuDefault,
                                const Target **ThumbTarget) {
   // Figure out the target triple.
+  llvm::Triple TT(TripleName);
   if (TripleName.empty()) {
-    llvm::Triple TT("unknown-unknown-unknown");
-    llvm::Triple ThumbTriple = Triple();
-    TT = MachOObj->getArch(McpuDefault, &ThumbTriple);
+    TT = MachOObj->getArchTriple(McpuDefault);
     TripleName = TT.str();
+  }
+
+  if (TT.getArch() == Triple::arm) {
+    // We've inferred a 32-bit ARM target from the object file. All MachO CPUs
+    // that support ARM are also capable of Thumb mode.
+    llvm::Triple ThumbTriple = TT;
+    std::string ThumbName = (Twine("thumb") + TT.getArchName().substr(3)).str();
+    ThumbTriple.setArchName(ThumbName);
     ThumbTripleName = ThumbTriple.str();
   }
 
@@ -336,7 +343,7 @@ static void PrintIndirectSymbolTable(MachOObjectFile *O, bool verbose,
     if (cputype & MachO::CPU_ARCH_ABI64)
       outs() << format("0x%016" PRIx64, addr + j * stride) << " ";
     else
-      outs() << format("0x%08" PRIx32, addr + j * stride) << " ";
+      outs() << format("0x%08" PRIx32, (uint32_t)addr + j * stride) << " ";
     MachO::dysymtab_command Dysymtab = O->getDysymtabLoadCommand();
     uint32_t indirect_symbol = O->getIndirectSymbolTableEntry(Dysymtab, n + j);
     if (indirect_symbol == MachO::INDIRECT_SYMBOL_LOCAL) {
@@ -994,10 +1001,10 @@ static void DumpRawSectionContents(MachOObjectFile *O, const char *sect,
       if (O->is64Bit())
         outs() << format("%016" PRIx64, addr) << "\t";
       else
-        outs() << format("%08" PRIx64, sect) << "\t";
+        outs() << format("%08" PRIx64, addr) << "\t";
       for (j = 0; j < 4 * sizeof(int32_t) && i + j < size;
            j += sizeof(int32_t)) {
-        if (i + j + sizeof(int32_t) < size) {
+        if (i + j + sizeof(int32_t) <= size) {
           uint32_t long_word;
           memcpy(&long_word, sect + i + j, sizeof(int32_t));
           if (O->isLittleEndian() != sys::IsLittleEndianHost)
@@ -1005,7 +1012,7 @@ static void DumpRawSectionContents(MachOObjectFile *O, const char *sect,
           outs() << format("%08" PRIx32, long_word) << " ";
         } else {
           for (uint32_t k = 0; i + j + k < size; k++) {
-            uint8_t byte_word = *(sect + i + j);
+            uint8_t byte_word = *(sect + i + j + k);
             outs() << format("%02" PRIx32, (uint32_t)byte_word) << " ";
           }
         }
@@ -1157,10 +1164,10 @@ static bool checkMachOAndArchFlags(ObjectFile *O, StringRef Filename) {
     Triple T;
     if (MachO->is64Bit()) {
       H_64 = MachO->MachOObjectFile::getHeader64();
-      T = MachOObjectFile::getArch(H_64.cputype, H_64.cpusubtype);
+      T = MachOObjectFile::getArchTriple(H_64.cputype, H_64.cpusubtype);
     } else {
       H = MachO->MachOObjectFile::getHeader();
-      T = MachOObjectFile::getArch(H.cputype, H.cpusubtype);
+      T = MachOObjectFile::getArchTriple(H.cputype, H.cpusubtype);
     }
     unsigned i;
     for (i = 0; i < ArchFlags.size(); ++i) {
@@ -6027,7 +6034,7 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
     return;
   }
 
-  // Set up thumb disassembler.
+  // Set up separate thumb disassembler if needed.
   std::unique_ptr<const MCRegisterInfo> ThumbMRI;
   std::unique_ptr<const MCAsmInfo> ThumbAsmInfo;
   std::unique_ptr<const MCSubtargetInfo> ThumbSTI;
@@ -6208,6 +6215,8 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
     ThumbSymbolizerInfo.adrp_addr = 0;
     ThumbSymbolizerInfo.adrp_inst = 0;
 
+    unsigned int Arch = MachOOF->getArch();
+
     // Disassemble symbol by symbol.
     for (unsigned SymIdx = 0; SymIdx != Symbols.size(); SymIdx++) {
       Expected<StringRef> SymNameOrErr = Symbols[SymIdx].getName();
@@ -6268,8 +6277,11 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
       symbolTableWorked = true;
 
       DataRefImpl Symb = Symbols[SymIdx].getRawDataRefImpl();
-      bool isThumb =
-          (MachOOF->getSymbolFlags(Symb) & SymbolRef::SF_Thumb) && ThumbTarget;
+      bool IsThumb = MachOOF->getSymbolFlags(Symb) & SymbolRef::SF_Thumb;
+
+      // We only need the dedicated Thumb target if there's a real choice
+      // (i.e. we're not targeting M-class) and the function is Thumb.
+      bool UseThumbTarget = IsThumb && ThumbTarget;
 
       outs() << SymName << ":\n";
       DILineInfo lastLine;
@@ -6287,7 +6299,7 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
             outs() << format("%8" PRIx64 ":", PC);
           }
         }
-        if (!NoShowRawInsn)
+        if (!NoShowRawInsn || Arch == Triple::arm)
           outs() << "\t";
 
         // Check the data in code table here to see if this is data not an
@@ -6313,19 +6325,19 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
         raw_svector_ostream Annotations(AnnotationsBytes);
 
         bool gotInst;
-        if (isThumb)
+        if (UseThumbTarget)
           gotInst = ThumbDisAsm->getInstruction(Inst, Size, Bytes.slice(Index),
                                                 PC, DebugOut, Annotations);
         else
           gotInst = DisAsm->getInstruction(Inst, Size, Bytes.slice(Index), PC,
                                            DebugOut, Annotations);
         if (gotInst) {
-          if (!NoShowRawInsn) {
+          if (!NoShowRawInsn || Arch == Triple::arm) {
             dumpBytes(makeArrayRef(Bytes.data() + Index, Size), outs());
           }
           formatted_raw_ostream FormattedOS(outs());
           StringRef AnnotationsStr = Annotations.str();
-          if (isThumb)
+          if (UseThumbTarget)
             ThumbIP->printInst(&Inst, FormattedOS, AnnotationsStr, *ThumbSTI);
           else
             IP->printInst(&Inst, FormattedOS, AnnotationsStr, *STI);
@@ -6347,14 +6359,21 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
             outs() << format("\t.byte 0x%02x #bad opcode\n",
                              *(Bytes.data() + Index) & 0xff);
             Size = 1; // skip exactly one illegible byte and move on.
-          } else if (Arch == Triple::aarch64) {
+          } else if (Arch == Triple::aarch64 ||
+                     (Arch == Triple::arm && !IsThumb)) {
             uint32_t opcode = (*(Bytes.data() + Index) & 0xff) |
                               (*(Bytes.data() + Index + 1) & 0xff) << 8 |
                               (*(Bytes.data() + Index + 2) & 0xff) << 16 |
                               (*(Bytes.data() + Index + 3) & 0xff) << 24;
             outs() << format("\t.long\t0x%08x\n", opcode);
             Size = 4;
-          } else {
+          } else if (Arch == Triple::arm) {
+            assert(IsThumb && "ARM mode should have been dealt with above");
+            uint32_t opcode = (*(Bytes.data() + Index) & 0xff) |
+                              (*(Bytes.data() + Index + 1) & 0xff) << 8;
+            outs() << format("\t.short\t0x%04x\n", opcode);
+            Size = 2;
+          } else{
             errs() << "llvm-objdump: warning: invalid instruction encoding\n";
             if (Size == 0)
               Size = 1; // skip illegible bytes
@@ -6383,7 +6402,7 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
               outs() << format("%8" PRIx64 ":", PC);
             }
           }
-          if (!NoShowRawInsn) {
+          if (!NoShowRawInsn || Arch == Triple::arm) {
             outs() << "\t";
             dumpBytes(makeArrayRef(Bytes.data() + Index, InstSize), outs());
           }
@@ -8342,7 +8361,7 @@ static void PrintDylibCommand(MachO::dylib_command dl, const char *Ptr) {
 static void PrintLinkEditDataCommand(MachO::linkedit_data_command ld,
                                      uint32_t object_size) {
   if (ld.cmd == MachO::LC_CODE_SIGNATURE)
-    outs() << "      cmd LC_FUNCTION_STARTS\n";
+    outs() << "      cmd LC_CODE_SIGNATURE\n";
   else if (ld.cmd == MachO::LC_SEGMENT_SPLIT_INFO)
     outs() << "      cmd LC_SEGMENT_SPLIT_INFO\n";
   else if (ld.cmd == MachO::LC_FUNCTION_STARTS)

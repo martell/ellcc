@@ -43,8 +43,9 @@ def SWaitMatchClass : AsmOperandClass {
   let ParserMethod = "parseSWaitCntOps";
 }
 
-def WAIT_FLAG : InstFlag<"printWaitFlag"> {
+def WAIT_FLAG : Operand <i32> {
   let ParserMatchClass = SWaitMatchClass;
+  let PrintMethod = "printWaitFlag";
 }
 
 let SubtargetPredicate = isGCN in {
@@ -59,17 +60,17 @@ defm EXP : EXP_m;
 // SMRD Instructions
 //===----------------------------------------------------------------------===//
 
-// We are using the SGPR_32 and not the SReg_32 register class for 32-bit
-// SMRD instructions, because the SGPR_32 register class does not include M0
+// We are using the SReg_32_XM0 and not the SReg_32 register class for 32-bit
+// SMRD instructions, because the SReg_32_XM0 register class does not include M0
 // and writing to M0 from an SMRD instruction will hang the GPU.
-defm S_LOAD_DWORD : SMRD_Helper <smrd<0x00>, "s_load_dword", SReg_64, SGPR_32>;
+defm S_LOAD_DWORD : SMRD_Helper <smrd<0x00>, "s_load_dword", SReg_64, SReg_32_XM0>;
 defm S_LOAD_DWORDX2 : SMRD_Helper <smrd<0x01>, "s_load_dwordx2", SReg_64, SReg_64>;
 defm S_LOAD_DWORDX4 : SMRD_Helper <smrd<0x02>, "s_load_dwordx4", SReg_64, SReg_128>;
 defm S_LOAD_DWORDX8 : SMRD_Helper <smrd<0x03>, "s_load_dwordx8", SReg_64, SReg_256>;
 defm S_LOAD_DWORDX16 : SMRD_Helper <smrd<0x04>, "s_load_dwordx16", SReg_64, SReg_512>;
 
 defm S_BUFFER_LOAD_DWORD : SMRD_Helper <
-  smrd<0x08>, "s_buffer_load_dword", SReg_128, SGPR_32
+  smrd<0x08>, "s_buffer_load_dword", SReg_128, SReg_32_XM0
 >;
 
 defm S_BUFFER_LOAD_DWORDX2 : SMRD_Helper <
@@ -418,18 +419,21 @@ defm S_CBRANCH_I_FORK : SOPK_m <
 >;
 
 let mayLoad = 1 in {
-defm S_GETREG_B32 : SOPK_32 <sopk<0x12, 0x11>, "s_getreg_b32", []>;
+defm S_GETREG_B32 : SOPK_m <
+  sopk<0x12, 0x11>, "s_getreg_b32", (outs SReg_32:$sdst),
+  (ins hwreg:$simm16), " $sdst, $simm16"
+>;
 }
 
 defm S_SETREG_B32 : SOPK_m <
   sopk<0x13, 0x12>, "s_setreg_b32", (outs),
-  (ins SReg_32:$sdst, u16imm:$simm16), " $simm16, $sdst"
+  (ins SReg_32:$sdst, hwreg:$simm16), " $simm16, $sdst"
 >;
 // FIXME: Not on SI?
 //defm S_GETREG_REGRD_B32 : SOPK_32 <sopk<0x14, 0x13>, "s_getreg_regrd_b32", []>;
 defm S_SETREG_IMM32_B32 : SOPK_IMM32 <
   sopk<0x15, 0x14>, "s_setreg_imm32_b32", (outs),
-  (ins i32imm:$imm, u16imm:$simm16), " $simm16, $imm"
+  (ins i32imm:$imm, hwreg:$simm16), " $simm16, $imm"
 >;
 
 //===----------------------------------------------------------------------===//
@@ -503,6 +507,7 @@ def S_BARRIER : SOPP <0x0000000a, (ins), "s_barrier",
   let isConvergent = 1;
 }
 
+let mayLoad = 1, mayStore = 1, hasSideEffects = 1 in
 def S_WAITCNT : SOPP <0x0000000c, (ins WAIT_FLAG:$simm16), "s_waitcnt $simm16">;
 def S_SETHALT : SOPP <0x0000000d, (ins i16imm:$simm16), "s_sethalt $simm16">;
 
@@ -1391,13 +1396,13 @@ defm V_FREXP_MANT_F32 : VOP1Inst <vop1<0x40, 0x34>, "v_frexp_mant_f32",
   VOP_F32_F32, int_amdgcn_frexp_mant
 >;
 let vdst = 0, src0 = 0, VOPAsmPrefer32Bit = 1 in {
-defm V_CLREXCP : VOP1Inst <vop1<0x41,0x35>, "v_clrexcp", VOP_NO_DPP<VOP_NONE>>;
+defm V_CLREXCP : VOP1Inst <vop1<0x41,0x35>, "v_clrexcp", VOP_NO_EXT<VOP_NONE>>;
 }
 
 let Uses = [M0, EXEC] in {
-defm V_MOVRELD_B32 : VOP1Inst <vop1<0x42, 0x36>, "v_movreld_b32", VOP_NO_DPP<VOP_I32_I32>>;
-defm V_MOVRELS_B32 : VOP1Inst <vop1<0x43, 0x37>, "v_movrels_b32", VOP_NO_DPP<VOP_I32_I32>>;
-defm V_MOVRELSD_B32 : VOP1Inst <vop1<0x44, 0x38>, "v_movrelsd_b32", VOP_NO_DPP<VOP_I32_I32>>;
+defm V_MOVRELD_B32 : VOP1Inst <vop1<0x42, 0x36>, "v_movreld_b32", VOP_NO_EXT<VOP_I32_I32>>;
+defm V_MOVRELS_B32 : VOP1Inst <vop1<0x43, 0x37>, "v_movrels_b32", VOP_NO_EXT<VOP_I32_I32>>;
+defm V_MOVRELSD_B32 : VOP1Inst <vop1<0x44, 0x38>, "v_movrelsd_b32", VOP_NO_EXT<VOP_I32_I32>>;
 } // End Uses = [M0, EXEC]
 
 // These instruction only exist on SI and CI
@@ -2003,6 +2008,14 @@ def SI_KILL : InstSI <
 
 } // End mayLoad = 1, mayStore = 1, hasSideEffects = 1
 
+let SALU = 1 in
+def SI_PS_LIVE : InstSI <
+  (outs SReg_64:$dst),
+  (ins),
+  "si_ps_live $dst",
+  [(set i1:$dst, (int_amdgcn_ps_live))]
+>;
+
 // Used as an isel pseudo to directly emit initialization with an
 // s_mov_b32 rather than a copy of another initialized
 // register. MachineCSE skips copies, and we don't want to have to
@@ -2074,9 +2087,9 @@ multiclass SI_SPILL_SGPR <RegisterClass sgpr_class> {
 }
 
 // It's unclear whether you can use M0 as the output of v_readlane_b32
-// instructions, so use SGPR_32 register class for spills to prevent
+// instructions, so use SReg_32_XM0 register class for spills to prevent
 // this from happening.
-defm SI_SPILL_S32  : SI_SPILL_SGPR <SGPR_32>;
+defm SI_SPILL_S32  : SI_SPILL_SGPR <SReg_32_XM0>;
 defm SI_SPILL_S64  : SI_SPILL_SGPR <SReg_64>;
 defm SI_SPILL_S128 : SI_SPILL_SGPR <SReg_128>;
 defm SI_SPILL_S256 : SI_SPILL_SGPR <SReg_256>;
@@ -2440,6 +2453,11 @@ def : Pat <
 //===----------------------------------------------------------------------===//
 // SOPP Patterns
 //===----------------------------------------------------------------------===//
+
+def : Pat <
+  (int_amdgcn_s_waitcnt i32:$simm16),
+  (S_WAITCNT (as_i16imm $simm16))
+>;
 
 // FIXME: These should be removed eventually
 def : Pat <
@@ -3413,7 +3431,7 @@ def : ZExt_i64_i1_Pat<anyext>;
 def : Pat <
   (i64 (sext i32:$src)),
     (REG_SEQUENCE SReg_64, $src, sub0,
-    (i32 (COPY_TO_REGCLASS (S_ASHR_I32 $src, 31), SGPR_32)), sub1)
+    (i32 (COPY_TO_REGCLASS (S_ASHR_I32 $src, 31), SReg_32_XM0)), sub1)
 >;
 
 def : Pat <

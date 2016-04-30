@@ -986,7 +986,9 @@ def NoCommon : InheritableAttr {
 
 def NoDebug : InheritableAttr {
   let Spellings = [GCC<"nodebug">];
-  let Documentation = [Undocumented];
+  let Subjects = SubjectList<[FunctionLike, ObjCMethod, GlobalVar], WarnDiag,
+                              "ExpectedFunctionGlobalVarMethodOrProperty">;
+  let Documentation = [NoDebugDocs];
 }
 
 def NoDuplicate : InheritableAttr {
@@ -1622,6 +1624,12 @@ def WeakRef : InheritableAttr {
   let Args = [StringArgument<"Aliasee", 1>];
   let Subjects = SubjectList<[Var, Function], ErrorDiag>;
   let Documentation = [Undocumented];
+}
+
+def LTOVisibilityPublic : InheritableAttr {
+  let Spellings = [CXX11<"clang", "lto_visibility_public">];
+  let Subjects = SubjectList<[Record]>;
+  let Documentation = [LTOVisibilityDocs];
 }
 
 def AnyX86Interrupt : InheritableAttr, TargetSpecificAttr<TargetAnyX86> {

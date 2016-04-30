@@ -184,10 +184,10 @@ void Fuzzer::PrintStats(const char *Where, const char *End) {
       csvHeaderPrinted = true;
       Printf("runs,block_cov,bits,cc_cov,corpus,execs_per_sec,tbms,reason\n");
     }
-    Printf("%zd,%zd,%zd,%zd,%zd,%zd,%zd,%s\n", TotalNumberOfRuns,
+    Printf("%zd,%zd,%zd,%zd,%zd,%zd,%s\n", TotalNumberOfRuns,
            LastRecordedBlockCoverage, TotalBits(),
            LastRecordedCallerCalleeCoverage, Corpus.size(), ExecPerSec,
-           TotalNumberOfExecutedTraceBasedMutations, Where);
+           Where);
   }
 
   if (!Options.Verbosity)
@@ -202,8 +202,6 @@ void Fuzzer::PrintStats(const char *Where, const char *End) {
   if (LastRecordedCallerCalleeCoverage)
     Printf(" indir: %zd", LastRecordedCallerCalleeCoverage);
   Printf(" units: %zd exec/s: %zd", Corpus.size(), ExecPerSec);
-  if (TotalNumberOfExecutedTraceBasedMutations)
-    Printf(" tbm: %zd", TotalNumberOfExecutedTraceBasedMutations);
   Printf("%s", End);
 }
 
@@ -559,6 +557,15 @@ void Fuzzer::TryDetectingAMemoryLeak(uint8_t *Data, size_t Size) {
   RunOneAndUpdateCorpus(Data, Size);
   __lsan_enable();
   if (!HasMoreMallocsThanFrees) return;  // a leak is unlikely.
+  if (NumberOfLeakDetectionAttempts++ > 1000) {
+    Options.DetectLeaks = false;
+    Printf("INFO: libFuzzer disabled leak detection after every mutation.\n"
+           "      Most likely the target function accumulates allocated\n"
+           "      memory in a global state w/o actually leaking it.\n"
+           "      If LeakSanitizer is enabled in this process it will still\n"
+           "      run on the process shutdown.\n");
+    return;
+  }
   // Now perform the actual lsan pass. This is expensive and we must ensure
   // we don't call it too often.
   if (__lsan_do_recoverable_leak_check()) {  // Leak is found, report it.

@@ -24,6 +24,8 @@
 #include "llvm/Object/IRObjectFile.h"
 #include "llvm/Support/StringSaver.h"
 
+#include <map>
+
 namespace lld {
 namespace elf {
 
@@ -124,7 +126,12 @@ public:
   InputSectionBase<ELFT> *getSection(const Elf_Sym &Sym) const;
 
   SymbolBody &getSymbolBody(uint32_t SymbolIndex) const {
-    return *SymbolBodies[SymbolIndex];
+    return SymbolBodies[SymbolIndex]->repl();
+  }
+
+  template <typename RelT> SymbolBody &getRelocTargetSym(const RelT &Rel) const {
+    uint32_t SymIndex = Rel.getSymbol(Config->Mips64EL);
+    return getSymbolBody(SymIndex);
   }
 
   const Elf_Shdr *getSymbolTable() const { return this->Symtab; };
@@ -217,6 +224,7 @@ public:
   void parse(llvm::DenseSet<StringRef> &ComdatGroups);
   ArrayRef<SymbolBody *> getSymbols() { return SymbolBodies; }
   static bool shouldSkip(const llvm::object::BasicSymbolRef &Sym);
+  std::unique_ptr<llvm::object::IRObjectFile> Obj;
 
 private:
   std::vector<SymbolBody *> SymbolBodies;
@@ -226,6 +234,11 @@ private:
   createSymbolBody(const llvm::DenseSet<const llvm::Comdat *> &KeptComdats,
                    const llvm::object::IRObjectFile &Obj,
                    const llvm::object::BasicSymbolRef &Sym);
+  SymbolBody *
+  createBody(const llvm::DenseSet<const llvm::Comdat *> &KeptComdats,
+             const llvm::object::IRObjectFile &Obj,
+             const llvm::object::BasicSymbolRef &Sym,
+             const llvm::GlobalValue *GV);
 };
 
 // .so file.
@@ -235,10 +248,14 @@ template <class ELFT> class SharedFile : public ELFFileBase<ELFT> {
   typedef typename ELFT::Sym Elf_Sym;
   typedef typename ELFT::Word Elf_Word;
   typedef typename ELFT::SymRange Elf_Sym_Range;
+  typedef typename ELFT::Versym Elf_Versym;
+  typedef typename ELFT::Verdef Elf_Verdef;
 
   std::vector<SharedSymbol<ELFT>> SymbolBodies;
   std::vector<StringRef> Undefs;
   StringRef SoName;
+  const Elf_Shdr *VersymSec = nullptr;
+  const Elf_Shdr *VerdefSec = nullptr;
 
 public:
   StringRef getSoName() const { return SoName; }
@@ -256,6 +273,19 @@ public:
 
   void parseSoName();
   void parseRest();
+  std::vector<const Elf_Verdef *> parseVerdefs(const Elf_Versym *&Versym);
+
+  struct NeededVer {
+    // The string table offset of the version name in the output file.
+    size_t StrTab;
+
+    // The version identifier for this version name.
+    uint16_t Index;
+  };
+
+  // Mapping from Elf_Verdef data structures to information about Elf_Vernaux
+  // data structures in the output file.
+  std::map<const Elf_Verdef *, NeededVer> VerdefMap;
 
   // Used for --as-needed
   bool AsNeeded = false;

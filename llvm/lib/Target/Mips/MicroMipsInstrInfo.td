@@ -96,14 +96,6 @@ def mem_mm_9 : Operand<i32> {
   let OperandType = "OPERAND_MEMORY";
 }
 
-def mem_mm_11 : Operand<i32> {
-  let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops ptr_rc, simm11);
-  let EncoderMethod = "getMemEncodingMMImm11";
-  let ParserMatchClass = MipsMemSimm11AsmOperand;
-  let OperandType = "OPERAND_MEMORY";
-}
-
 def mem_mm_12 : Operand<i32> {
   let PrintMethod = "printMemOperand";
   let MIOperandInfo = (ops ptr_rc, simm12);
@@ -259,7 +251,7 @@ class LLBaseMM<string opstr, RegisterOperand RO> :
 }
 
 class LLEBaseMM<string opstr, RegisterOperand RO> :
-  InstSE<(outs RO:$rt), (ins mem_mm_12:$addr),
+  InstSE<(outs RO:$rt), (ins mem_simm9:$addr),
          !strconcat(opstr, "\t$rt, $addr"), [], NoItinerary, FrmI> {
   let DecoderMethod = "DecodeMemMMImm9";
   let mayLoad = 1;
@@ -274,7 +266,7 @@ class SCBaseMM<string opstr, RegisterOperand RO> :
 }
 
 class SCEBaseMM<string opstr, RegisterOperand RO> :
-  InstSE<(outs RO:$dst), (ins RO:$rt, mem_mm_12:$addr),
+  InstSE<(outs RO:$dst), (ins RO:$rt, mem_simm9:$addr),
          !strconcat(opstr, "\t$rt, $addr"), [], NoItinerary, FrmI> {
   let DecoderMethod = "DecodeMemMMImm9";
   let mayStore = 1;
@@ -746,10 +738,13 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
     def LBuE_MM : Load<"lbue", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0x6, 0x0>;
     def LHE_MM  : Load<"lhe", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0x6, 0x5>;
     def LHuE_MM : Load<"lhue", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0x6, 0x1>;
-    def LWE_MM  : Load<"lwe", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0x6, 0x7>;
-    def SBE_MM  : Store<"sbe", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0xa, 0x4>;
-    def SHE_MM  : Store<"she", GPR32Opnd>, POOL32C_LHUE_FM_MM<0x18, 0xa, 0x5>;
-    def SWE_MM  : StoreMemory<"swe", GPR32Opnd, mem_simm9gpr>,
+    def LWE_MM  : LoadMemory<"lwe", GPR32Opnd, mem_simm9>,
+                  POOL32C_LHUE_FM_MM<0x18, 0x6, 0x7>;
+    def SBE_MM  : StoreMemory<"sbe", GPR32Opnd, mem_simm9>,
+                  POOL32C_LHUE_FM_MM<0x18, 0xa, 0x4>;
+    def SHE_MM  : StoreMemory<"she", GPR32Opnd, mem_simm9>,
+                  POOL32C_LHUE_FM_MM<0x18, 0xa, 0x5>;
+    def SWE_MM  : StoreMemory<"swe", GPR32Opnd, mem_simm9>,
                   POOL32C_LHUE_FM_MM<0x18, 0xa, 0x7>;
   }
 
@@ -980,11 +975,20 @@ def : MipsPat<(shl GPRMM16:$src, immZExt2Shift:$imm),
               (SLL16_MM GPRMM16:$src, immZExt2Shift:$imm)>;
 def : MipsPat<(shl GPR32:$src, immZExt5:$imm),
               (SLL_MM GPR32:$src, immZExt5:$imm)>;
+def : MipsPat<(shl GPR32:$lhs, GPR32:$rhs),
+              (SLLV_MM GPR32:$lhs, GPR32:$rhs)>;
 
 def : MipsPat<(srl GPRMM16:$src, immZExt2Shift:$imm),
               (SRL16_MM GPRMM16:$src, immZExt2Shift:$imm)>;
 def : MipsPat<(srl GPR32:$src, immZExt5:$imm),
               (SRL_MM GPR32:$src, immZExt5:$imm)>;
+def : MipsPat<(srl GPR32:$lhs, GPR32:$rhs),
+              (SRLV_MM GPR32:$lhs, GPR32:$rhs)>;
+
+def : MipsPat<(sra GPR32:$src, immZExt5:$imm),
+              (SRA_MM GPR32:$src, immZExt5:$imm)>;
+def : MipsPat<(sra GPR32:$lhs, GPR32:$rhs),
+              (SRAV_MM GPR32:$lhs, GPR32:$rhs)>;
 
 def : MipsPat<(store GPRMM16:$src, addrimm4lsl2:$addr),
               (SW16_MM GPRMM16:$src, addrimm4lsl2:$addr)>;
@@ -995,6 +999,8 @@ def : MipsPat<(load addrimm4lsl2:$addr),
               (LW16_MM addrimm4lsl2:$addr)>;
 def : MipsPat<(load addr:$addr),
               (LW_MM addr:$addr)>;
+def : MipsPat<(subc GPR32:$lhs, GPR32:$rhs),
+              (SUBu_MM GPR32:$lhs, GPR32:$rhs)>;
 
 //===----------------------------------------------------------------------===//
 // MicroMips instruction aliases
@@ -1031,7 +1037,22 @@ def : MipsInstAlias<"tltu $rs, $rt",
                     (TLTU_MM GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
 def : MipsInstAlias<"tne $rs, $rt",
                     (TNE_MM GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
-def : MipsInstAlias<"rotr $rt, $imm",
-                    (ROTR_MM GPR32Opnd:$rt, GPR32Opnd:$rt, uimm5:$imm), 0>;
-def : MipsInstAlias<"syscall", (SYSCALL_MM 0), 1>;
+def : MipsInstAlias<"sll $rd, $rt, $rs",
+                    (SLLV_MM GPR32Opnd:$rd, GPR32Opnd:$rt, GPR32Opnd:$rs), 0>;
+def : MipsInstAlias<"sra $rd, $rt, $rs",
+                    (SRAV_MM GPR32Opnd:$rd, GPR32Opnd:$rt, GPR32Opnd:$rs), 0>;
+def : MipsInstAlias<"srl $rd, $rt, $rs",
+                    (SRLV_MM GPR32Opnd:$rd, GPR32Opnd:$rt, GPR32Opnd:$rs), 0>;
+def : MipsInstAlias<"sll $rd, $rt",
+                    (SLLV_MM GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+def : MipsInstAlias<"sra $rd, $rt",
+                    (SRAV_MM GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+def : MipsInstAlias<"srl $rd, $rt",
+                    (SRLV_MM GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+def : MipsInstAlias<"sll $rd, $shamt",
+                    (SLL_MM GPR32Opnd:$rd, GPR32Opnd:$rd, uimm5:$shamt), 0>;
+def : MipsInstAlias<"sra $rd, $shamt",
+                    (SRA_MM GPR32Opnd:$rd, GPR32Opnd:$rd, uimm5:$shamt), 0>;
+def : MipsInstAlias<"srl $rd, $shamt",
+                    (SRL_MM GPR32Opnd:$rd, GPR32Opnd:$rd, uimm5:$shamt), 0>;
 }

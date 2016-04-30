@@ -80,10 +80,11 @@ void *MmapFixedNoReserve(uptr fixed_addr, uptr size,
                          const char *name = nullptr);
 void *MmapNoReserveOrDie(uptr size, const char *mem_type);
 void *MmapFixedOrDie(uptr fixed_addr, uptr size);
-void *MmapNoAccess(uptr fixed_addr, uptr size, const char *name = nullptr);
+void *MmapFixedNoAccess(uptr fixed_addr, uptr size, const char *name = nullptr);
+void *MmapNoAccess(uptr size);
 // Map aligned chunk of address space; size and alignment are powers of two.
 void *MmapAlignedOrDie(uptr size, uptr alignment, const char *mem_type);
-// Disallow access to a memory range.  Use MmapNoAccess to allocate an
+// Disallow access to a memory range.  Use MmapFixedNoAccess to allocate an
 // unaccessible memory.
 bool MprotectNoAccess(uptr addr, uptr size);
 bool MprotectReadOnly(uptr addr, uptr size);
@@ -803,6 +804,16 @@ template <typename Fn>
 RunOnDestruction<Fn> at_scope_exit(Fn fn) {
   return RunOnDestruction<Fn>(fn);
 }
+
+// Linux on 64-bit s390 had a nasty bug that crashes the whole machine
+// if a process uses virtual memory over 4TB (as many sanitizers like
+// to do).  This function will abort the process if running on a kernel
+// that looks vulnerable.
+#if SANITIZER_LINUX && SANITIZER_S390_64
+void AvoidCVE_2016_2143();
+#else
+INLINE void AvoidCVE_2016_2143() {}
+#endif
 
 }  // namespace __sanitizer
 

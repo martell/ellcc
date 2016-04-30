@@ -19,7 +19,10 @@
 namespace llvm {
 class MemoryBuffer;
 
-struct PDBContext;
+namespace pdb {
+struct PDBFileContext;
+class DbiStream;
+class InfoStream;
 
 class PDBFile {
 public:
@@ -37,11 +40,11 @@ public:
 
   uint32_t getNumStreams() const;
   uint32_t getStreamByteSize(uint32_t StreamIndex) const;
-  llvm::ArrayRef<uint32_t> getStreamBlockList(uint32_t StreamIndex) const;
+  ArrayRef<uint32_t> getStreamBlockList(uint32_t StreamIndex) const;
 
   StringRef getBlockData(uint32_t BlockIndex, uint32_t NumBytes) const;
 
-  llvm::ArrayRef<uint32_t> getDirectoryBlockArray();
+  ArrayRef<support::ulittle32_t> getDirectoryBlockArray();
 
   std::error_code parseFileHeaders();
   std::error_code parseStreamData();
@@ -54,9 +57,15 @@ public:
     return BlockNumber * BlockSize;
   }
 
+  InfoStream &getPDBInfoStream();
+  DbiStream &getPDBDbiStream();
+
 private:
-  std::unique_ptr<PDBContext> Context;
+  std::unique_ptr<PDBFileContext> Context;
+  std::unique_ptr<InfoStream> Info;
+  std::unique_ptr<DbiStream> Dbi;
 };
+}
 }
 
 #endif

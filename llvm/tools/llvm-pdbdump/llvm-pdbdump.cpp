@@ -35,9 +35,13 @@
 #include "llvm/DebugInfo/PDB/PDBSymbolExe.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolFunc.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolThunk.h"
+#include "llvm/DebugInfo/PDB/Raw/DbiStream.h"
+#include "llvm/DebugInfo/PDB/Raw/InfoStream.h"
+#include "llvm/DebugInfo/PDB/Raw/MappedBlockStream.h"
+#include "llvm/DebugInfo/PDB/Raw/ModInfo.h"
 #include "llvm/DebugInfo/PDB/Raw/PDBFile.h"
-#include "llvm/DebugInfo/PDB/Raw/PDBStream.h"
 #include "llvm/DebugInfo/PDB/Raw/RawSession.h"
+#include "llvm/DebugInfo/PDB/Raw/StreamReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/FileSystem.h"
@@ -57,6 +61,7 @@
 #endif
 
 using namespace llvm;
+using namespace llvm::pdb;
 
 namespace opts {
 
@@ -180,7 +185,7 @@ static void dumpStructure(RawSession &RS) {
 
   if (opts::DumpHeaders) {
     outs() << "DirectoryBlocks: [";
-    for (const uint32_t &DirectoryBlockAddr : DirectoryBlocks) {
+    for (const auto &DirectoryBlockAddr : DirectoryBlocks) {
       if (&DirectoryBlockAddr != &DirectoryBlocks.front())
         outs() << ", ";
       outs() << DirectoryBlockAddr;
@@ -233,166 +238,80 @@ static void dumpStructure(RawSession &RS) {
     }
   }
 
-  // Stream 1 starts with the following header:
-  //   uint32_t Version;
-  //   uint32_t Signature;
-  //   uint32_t Age;
-  //   GUID Guid;
-  PDBStream Stream1(1, File);
-  uint32_t Version;
-  uint32_t Signature;
-  uint32_t Age;
-  PDB_UniqueId Guid;
-
-  Stream1.readInteger(Version);
-  outs() << "Version: " << Version << '\n';
-  // PDB's with versions before PDBImpvVC70 might not have the Guid field, we
-  // don't support them.
-  if (Version < 20000404)
-    reportError("", std::make_error_code(std::errc::not_supported));
-
-  // This appears to be the time the PDB was last opened by an MSVC tool?
-  // It is definitely a timestamp of some sort.
-  Stream1.readInteger(Signature);
+  InfoStream &IS = File.getPDBInfoStream();
+  outs() << "Version: " << IS.getVersion() << '\n';
   outs() << "Signature: ";
-  outs().write_hex(Signature) << '\n';
-
-  // This appears to be a number which is used to determine that the PDB is kept
-  // in sync with the EXE.
-  Stream1.readInteger(Age);
-  outs() << "Age: " << Age << '\n';
-
-  // I'm not sure what the purpose of the GUID is.
-  Stream1.readObject(&Guid);
-  outs() << "Guid: " << Guid << '\n';
-
-  // This is some sort of weird string-set/hash table encoded in the stream.
-  // It starts with the number of bytes in the table.
-  uint32_t NumberOfBytes;
-  Stream1.readInteger(NumberOfBytes);
-  outs() << "NumberOfBytes: " << NumberOfBytes << '\n';
-
-  // Following that field is the starting offset of strings in the name table.
-  uint32_t StringsOffset = Stream1.getOffset();
-  Stream1.setOffset(StringsOffset + NumberOfBytes);
-
-  // This appears to be equivalent to the total number of strings *actually*
-  // in the name table.
-  uint32_t HashSize;
-  Stream1.readInteger(HashSize);
-  outs() << "HashSize: " << HashSize << '\n';
-
-  // This appears to be an upper bound on the number of strings in the name
-  // table.
-  uint32_t MaxNumberOfStrings;
-  Stream1.readInteger(MaxNumberOfStrings);
-  outs() << "MaxNumberOfStrings: " << MaxNumberOfStrings << '\n';
-
-  // This appears to be a hash table which uses bitfields to determine whether
-  // or not a bucket is 'present'.
-  uint32_t NumPresentWords;
-  Stream1.readInteger(NumPresentWords);
-  outs() << "NumPresentWords: " << NumPresentWords << '\n';
-
-  // Store all the 'present' bits in a vector for later processing.
-  SmallVector<uint32_t, 1> PresentWords;
-  for (uint32_t I = 0; I != NumPresentWords; ++I) {
-    uint32_t Word;
-    Stream1.readInteger(Word);
-    PresentWords.push_back(Word);
-    outs() << "Word: " << Word << '\n';
-  }
-
-  // This appears to be a hash table which uses bitfields to determine whether
-  // or not a bucket is 'deleted'.
-  uint32_t NumDeletedWords;
-  Stream1.readInteger(NumDeletedWords);
-  outs() << "NumDeletedWords: " << NumDeletedWords << '\n';
-
-  // Store all the 'deleted' bits in a vector for later processing.
-  SmallVector<uint32_t, 1> DeletedWords;
-  for (uint32_t I = 0; I != NumDeletedWords; ++I) {
-    uint32_t Word;
-    Stream1.readInteger(Word);
-    DeletedWords.push_back(Word);
-    outs() << "Word: " << Word << '\n';
-  }
-
-  BitVector Present(MaxNumberOfStrings, false);
-  if (!PresentWords.empty())
-    Present.setBitsInMask(PresentWords.data(), PresentWords.size());
-  BitVector Deleted(MaxNumberOfStrings, false);
-  if (!DeletedWords.empty())
-    Deleted.setBitsInMask(DeletedWords.data(), DeletedWords.size());
-
-  StringMap<uint32_t> NamedStreams;
-  for (uint32_t I = 0; I < MaxNumberOfStrings; ++I) {
-    if (!Present.test(I))
-      continue;
-
-    // For all present entries, dump out their mapping.
-
-    // This appears to be an offset relative to the start of the strings.
-    // It tells us where the null-terminated string begins.
-    uint32_t NameOffset;
-    Stream1.readInteger(NameOffset);
-    outs() << "NameOffset: " << NameOffset << '\n';
-
-    // This appears to be a stream number into the stream directory.
-    uint32_t NameIndex;
-    Stream1.readInteger(NameIndex);
-    outs() << "NameIndex: " << NameIndex << '\n';
-
-    // Compute the offset of the start of the string relative to the stream.
-    uint32_t StringOffset = StringsOffset + NameOffset;
-    uint32_t OldOffset = Stream1.getOffset();
-    // Pump out our c-string from the stream.
-    std::string Str;
-    Stream1.setOffset(StringOffset);
-    Stream1.readZeroString(Str);
-    outs() << "String: " << Str << "\n\n";
-
-    Stream1.setOffset(OldOffset);
-    // Add this to a string-map from name to stream number.
-    NamedStreams.insert({Str, NameIndex});
-  }
+  outs().write_hex(IS.getSignature()) << '\n';
+  outs() << "Age: " << IS.getAge() << '\n';
+  outs() << "Guid: " << IS.getGuid() << '\n';
 
   // Let's try to dump out the named stream "/names".
-  auto NameI = NamedStreams.find("/names");
-  if (NameI != NamedStreams.end()) {
-    PDBStream NameStream(NameI->second, File);
-    outs() << "NameStream: " << NameI->second << '\n';
+  uint32_t NameStreamIndex = IS.getNamedStreamIndex("/names");
+  if (NameStreamIndex != 0) {
+    MappedBlockStream NameStream(NameStreamIndex, File);
+    StreamReader Reader(NameStream);
+
+    outs() << "NameStream: " << NameStreamIndex << '\n';
 
     // The name stream appears to start with a signature and version.
     uint32_t NameStreamSignature;
-    NameStream.readInteger(NameStreamSignature);
+    Reader.readInteger(NameStreamSignature);
     outs() << "NameStreamSignature: ";
     outs().write_hex(NameStreamSignature) << '\n';
 
     uint32_t NameStreamVersion;
-    NameStream.readInteger(NameStreamVersion);
+    Reader.readInteger(NameStreamVersion);
     outs() << "NameStreamVersion: " << NameStreamVersion << '\n';
 
     // We only support this particular version of the name stream.
     if (NameStreamSignature != 0xeffeeffe || NameStreamVersion != 1)
       reportError("", std::make_error_code(std::errc::not_supported));
   }
+
+  DbiStream &DS = File.getPDBDbiStream();
+  outs() << "Dbi Version: " << DS.getDbiVersion() << '\n';
+  outs() << "Age: " << DS.getAge() << '\n';
+  outs() << "Incremental Linking: " << DS.isIncrementallyLinked() << '\n';
+  outs() << "Has CTypes: " << DS.hasCTypes() << '\n';
+  outs() << "Is Stripped: " << DS.isStripped() << '\n';
+  outs() << "Machine Type: " << DS.getMachineType() << '\n';
+  outs() << "Number of Symbols: " << DS.getNumberOfSymbols() << '\n';
+
+  uint16_t Major = DS.getBuildMajorVersion();
+  uint16_t Minor = DS.getBuildMinorVersion();
+  outs() << "Toolchain Version: " << Major << "." << Minor << '\n';
+  outs() << "mspdb" << Major << Minor << ".dll version: " << Major << "."
+         << Minor << "." << DS.getPdbDllVersion() << '\n';
+
+  outs() << "Modules: \n";
+  for (auto &Modi : DS.modules()) {
+    outs() << Modi.Info.getModuleName() << '\n';
+    outs().indent(4) << "Debug Stream Index: "
+                     << Modi.Info.getModuleStreamIndex() << '\n';
+    outs().indent(4) << "Object File: " << Modi.Info.getObjFileName() << '\n';
+    outs().indent(4) << "Num Files: " << Modi.Info.getNumberOfFiles() << '\n';
+    outs().indent(4) << "Source File Name Idx: "
+                     << Modi.Info.getSourceFileNameIndex() << '\n';
+    outs().indent(4) << "Pdb File Name Idx: "
+                     << Modi.Info.getPdbFilePathNameIndex() << '\n';
+    outs().indent(4) << "Line Info Byte Size: "
+                     << Modi.Info.getLineInfoByteSize() << '\n';
+    outs().indent(4) << "C13 Line Info Byte Size: "
+                     << Modi.Info.getC13LineInfoByteSize() << '\n';
+    outs().indent(4) << "Symbol Byte Size: "
+                     << Modi.Info.getSymbolDebugInfoByteSize() << '\n';
+    outs().indent(4) << "Type Server Index: " << Modi.Info.getTypeServerIndex()
+                     << '\n';
+    outs().indent(4) << "Has EC Info: " << Modi.Info.hasECInfo() << '\n';
+    outs().indent(4) << Modi.SourceFiles.size()
+                     << " Contributing Source Files: \n";
+    for (auto File : Modi.SourceFiles) {
+      outs().indent(8) << File << '\n';
+    }
+  }
 }
 
-static void dumpInput(StringRef Path) {
-  std::unique_ptr<IPDBSession> Session;
-  if (opts::DumpHeaders || !opts::DumpStreamData.empty()) {
-    PDB_ErrorCode Error = loadDataForPDB(PDB_ReaderType::Raw, Path, Session);
-    if (Error == PDB_ErrorCode::Success) {
-      RawSession *RS = static_cast<RawSession *>(Session.get());
-      dumpStructure(*RS);
-    }
-
-    outs().flush();
-    return;
-  }
-
-  PDB_ErrorCode Error = loadDataForPDB(PDB_ReaderType::DIA, Path, Session);
+static void reportError(StringRef Path, PDB_ErrorCode Error) {
   switch (Error) {
   case PDB_ErrorCode::Success:
     break;
@@ -418,6 +337,28 @@ static void dumpInput(StringRef Path) {
            << "'.  An unknown error occured.\n";
     return;
   }
+}
+
+static void dumpInput(StringRef Path) {
+  std::unique_ptr<IPDBSession> Session;
+  if (opts::DumpHeaders || !opts::DumpStreamData.empty()) {
+    PDB_ErrorCode Error = loadDataForPDB(PDB_ReaderType::Raw, Path, Session);
+    if (Error == PDB_ErrorCode::Success) {
+      RawSession *RS = static_cast<RawSession *>(Session.get());
+      dumpStructure(*RS);
+    }
+
+    reportError(Path, Error);
+    outs().flush();
+    return;
+  }
+
+  PDB_ErrorCode Error = loadDataForPDB(PDB_ReaderType::DIA, Path, Session);
+  if (Error != PDB_ErrorCode::Success) {
+    reportError(Path, Error);
+    return;
+  }
+
   if (opts::LoadAddress)
     Session->setLoadAddress(opts::LoadAddress);
 

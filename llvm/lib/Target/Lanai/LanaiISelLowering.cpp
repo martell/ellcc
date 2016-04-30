@@ -111,9 +111,7 @@ LanaiTargetLowering::LanaiTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::BSWAP, MVT::i32, Expand);
   setOperationAction(ISD::CTPOP, MVT::i32, Legal);
   setOperationAction(ISD::CTLZ, MVT::i32, Legal);
-  setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i32, Legal);
   setOperationAction(ISD::CTTZ, MVT::i32, Legal);
-  setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i32, Legal);
 
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8, Expand);
@@ -462,7 +460,7 @@ SDValue LanaiTargetLowering::LowerCCCArguments(
       }
       default:
         DEBUG(dbgs() << "LowerFormalArguments Unhandled argument type: "
-                     << (int)RegVT.getSimpleVT().SimpleTy << "\n");
+                     << RegVT.getEVTString() << "\n");
         llvm_unreachable("unhandled argument type");
       }
     } else {

@@ -55,7 +55,7 @@ cl::desc("disable setting the node scheduling preference to ILP on PPC"), cl::Hi
 static cl::opt<bool> DisablePPCUnaligned("disable-ppc-unaligned",
 cl::desc("disable unaligned load/store generation on PPC"), cl::Hidden);
 
-static cl::opt<bool> DisableSCO("disable-ppc-sco", cl::init(true),
+static cl::opt<bool> DisableSCO("disable-ppc-sco",
 cl::desc("disable sibling call optimization on ppc"), cl::Hidden);
 
 STATISTIC(NumTailCalls, "Number of tail calls");
@@ -217,12 +217,8 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
   // PowerPC does not have BSWAP, CTPOP or CTTZ
   setOperationAction(ISD::BSWAP, MVT::i32  , Expand);
   setOperationAction(ISD::CTTZ , MVT::i32  , Expand);
-  setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i32, Expand);
-  setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i32, Expand);
   setOperationAction(ISD::BSWAP, MVT::i64  , Expand);
   setOperationAction(ISD::CTTZ , MVT::i64  , Expand);
-  setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i64, Expand);
-  setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i64, Expand);
 
   if (Subtarget.hasPOPCNTD() == PPCSubtarget::POPCNTD_Fast) {
     setOperationAction(ISD::CTPOP, MVT::i32  , Legal);
@@ -489,9 +485,7 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
       setOperationAction(ISD::SCALAR_TO_VECTOR, VT, Expand);
       setOperationAction(ISD::FPOW, VT, Expand);
       setOperationAction(ISD::BSWAP, VT, Expand);
-      setOperationAction(ISD::CTLZ_ZERO_UNDEF, VT, Expand);
       setOperationAction(ISD::CTTZ, VT, Expand);
-      setOperationAction(ISD::CTTZ_ZERO_UNDEF, VT, Expand);
       setOperationAction(ISD::VSELECT, VT, Expand);
       setOperationAction(ISD::SIGN_EXTEND_INREG, VT, Expand);
       setOperationAction(ISD::ROTL, VT, Expand);
@@ -7587,8 +7581,7 @@ SDValue PPCTargetLowering::LowerVECTOR_SHUFFLE(SDValue Op,
                                              MVT::i32));
   }
 
-  SDValue VPermMask = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v16i8,
-                                  ResultMask);
+  SDValue VPermMask = DAG.getBuildVector(MVT::v16i8, dl, ResultMask);
   if (isLittleEndian)
     return DAG.getNode(PPCISD::VPERM, dl, V1.getValueType(),
                        V2, V1, VPermMask);
@@ -7715,6 +7708,16 @@ static bool getVectorCompareInfo(SDValue Intrin, int &CompareOpc,
 /// lower, do it, otherwise return null.
 SDValue PPCTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
                                                    SelectionDAG &DAG) const {
+  unsigned IntrinsicID =
+    cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
+
+  if (IntrinsicID == Intrinsic::thread_pointer) {
+    // Reads the thread pointer register, used for __builtin_thread_pointer.
+    bool is64bit = Subtarget.isPPC64();
+    return DAG.getRegister(is64bit ? PPC::X13 : PPC::R2,
+                           is64bit ? MVT::i64 : MVT::i32);
+  }
+
   // If this is a lowered altivec predicate compare, CompareOpc is set to the
   // opcode number of the comparison.
   SDLoc dl(Op);
@@ -7942,8 +7945,7 @@ SDValue PPCTargetLowering::LowerVectorLoad(SDValue Op,
     }
 
     SDValue TF =  DAG.getNode(ISD::TokenFactor, dl, MVT::Other, LoadChains);
-    SDValue Value = DAG.getNode(ISD::BUILD_VECTOR, dl,
-                                Op.getValueType(), Vals);
+    SDValue Value = DAG.getBuildVector(Op.getValueType(), dl, Vals);
 
     if (LN->isIndexed()) {
       SDValue RetOps[] = { Value, Vals[0].getValue(1), TF };
@@ -7976,7 +7978,7 @@ SDValue PPCTargetLowering::LowerVectorLoad(SDValue Op,
   }
 
   LoadChain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, VectElmtChains);
-  SDValue Value = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v4i1, VectElmts);
+  SDValue Value = DAG.getBuildVector(MVT::v4i1, dl, VectElmts);
 
   SDValue RVals[] = { Value, LoadChain };
   return DAG.getMergeValues(RVals, dl);
@@ -11938,10 +11940,8 @@ PPCTargetLowering::shouldExpandBuildVectorWithShuffles(
   if (VT == MVT::v2i64)
     return Subtarget.hasDirectMove(); // Don't need stack ops with direct moves
 
-  if (Subtarget.hasQPX()) {
-    if (VT == MVT::v4f32 || VT == MVT::v4f64 || VT == MVT::v4i1)
-      return true;
-  }
+  if (Subtarget.hasVSX() || Subtarget.hasQPX())
+    return true;
 
   return TargetLowering::shouldExpandBuildVectorWithShuffles(VT, DefinedValues);
 }

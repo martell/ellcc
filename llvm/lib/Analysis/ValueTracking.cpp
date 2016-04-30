@@ -2242,46 +2242,6 @@ bool llvm::ComputeMultiple(Value *V, unsigned Base, Value *&Multiple,
   return false;
 }
 
-/// \brief Check call has a unary float signature
-/// It checks following:
-/// a) call should have a single argument
-/// b) argument type should be floating point type
-/// c) call instruction type and argument type should be same
-/// d) call should only reads memory.
-/// If all these condition is met then return ValidIntrinsicID
-/// else return not_intrinsic.
-static Intrinsic::ID checkUnaryFloatSignature(ImmutableCallSite ICS,
-                                              Intrinsic::ID ValidIntrinsicID) {
-  if (ICS.getNumArgOperands() != 1 ||
-      !ICS.getArgOperand(0)->getType()->isFloatingPointTy() ||
-      ICS.getType() != ICS.getArgOperand(0)->getType() ||
-      !ICS.onlyReadsMemory())
-    return Intrinsic::not_intrinsic;
-
-  return ValidIntrinsicID;
-}
-
-/// \brief Check call has a binary float signature
-/// It checks following:
-/// a) call should have 2 arguments.
-/// b) arguments type should be floating point type
-/// c) call instruction type and arguments type should be same
-/// d) call should only reads memory.
-/// If all these condition is met then return ValidIntrinsicID
-/// else return not_intrinsic.
-static Intrinsic::ID checkBinaryFloatSignature(ImmutableCallSite ICS,
-                                               Intrinsic::ID ValidIntrinsicID) {
-  if (ICS.getNumArgOperands() != 2 ||
-      !ICS.getArgOperand(0)->getType()->isFloatingPointTy() ||
-      !ICS.getArgOperand(1)->getType()->isFloatingPointTy() ||
-      ICS.getType() != ICS.getArgOperand(0)->getType() ||
-      ICS.getType() != ICS.getArgOperand(1)->getType() ||
-      !ICS.onlyReadsMemory())
-    return Intrinsic::not_intrinsic;
-
-  return ValidIntrinsicID;
-}
-
 Intrinsic::ID llvm::getIntrinsicForCallSite(ImmutableCallSite ICS,
                                             const TargetLibraryInfo *TLI) {
   const Function *F = ICS.getCalledFunction();
@@ -2298,7 +2258,10 @@ Intrinsic::ID llvm::getIntrinsicForCallSite(ImmutableCallSite ICS,
   // We're going to make assumptions on the semantics of the functions, check
   // that the target knows that it's available in this environment and it does
   // not have local linkage.
-  if (!F || F->hasLocalLinkage() || !TLI->getLibFunc(F->getName(), Func))
+  if (!F || F->hasLocalLinkage() || !TLI->getLibFunc(*F, Func))
+    return Intrinsic::not_intrinsic;
+
+  if (!ICS.onlyReadsMemory())
     return Intrinsic::not_intrinsic;
 
   // Otherwise check if we have a call to a function that can be turned into a
@@ -2309,80 +2272,80 @@ Intrinsic::ID llvm::getIntrinsicForCallSite(ImmutableCallSite ICS,
   case LibFunc::sin:
   case LibFunc::sinf:
   case LibFunc::sinl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::sin);
+    return Intrinsic::sin;
   case LibFunc::cos:
   case LibFunc::cosf:
   case LibFunc::cosl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::cos);
+    return Intrinsic::cos;
   case LibFunc::exp:
   case LibFunc::expf:
   case LibFunc::expl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::exp);
+    return Intrinsic::exp;
   case LibFunc::exp2:
   case LibFunc::exp2f:
   case LibFunc::exp2l:
-    return checkUnaryFloatSignature(ICS, Intrinsic::exp2);
+    return Intrinsic::exp2;
   case LibFunc::log:
   case LibFunc::logf:
   case LibFunc::logl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::log);
+    return Intrinsic::log;
   case LibFunc::log10:
   case LibFunc::log10f:
   case LibFunc::log10l:
-    return checkUnaryFloatSignature(ICS, Intrinsic::log10);
+    return Intrinsic::log10;
   case LibFunc::log2:
   case LibFunc::log2f:
   case LibFunc::log2l:
-    return checkUnaryFloatSignature(ICS, Intrinsic::log2);
+    return Intrinsic::log2;
   case LibFunc::fabs:
   case LibFunc::fabsf:
   case LibFunc::fabsl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::fabs);
+    return Intrinsic::fabs;
   case LibFunc::fmin:
   case LibFunc::fminf:
   case LibFunc::fminl:
-    return checkBinaryFloatSignature(ICS, Intrinsic::minnum);
+    return Intrinsic::minnum;
   case LibFunc::fmax:
   case LibFunc::fmaxf:
   case LibFunc::fmaxl:
-    return checkBinaryFloatSignature(ICS, Intrinsic::maxnum);
+    return Intrinsic::maxnum;
   case LibFunc::copysign:
   case LibFunc::copysignf:
   case LibFunc::copysignl:
-    return checkBinaryFloatSignature(ICS, Intrinsic::copysign);
+    return Intrinsic::copysign;
   case LibFunc::floor:
   case LibFunc::floorf:
   case LibFunc::floorl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::floor);
+    return Intrinsic::floor;
   case LibFunc::ceil:
   case LibFunc::ceilf:
   case LibFunc::ceill:
-    return checkUnaryFloatSignature(ICS, Intrinsic::ceil);
+    return Intrinsic::ceil;
   case LibFunc::trunc:
   case LibFunc::truncf:
   case LibFunc::truncl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::trunc);
+    return Intrinsic::trunc;
   case LibFunc::rint:
   case LibFunc::rintf:
   case LibFunc::rintl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::rint);
+    return Intrinsic::rint;
   case LibFunc::nearbyint:
   case LibFunc::nearbyintf:
   case LibFunc::nearbyintl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::nearbyint);
+    return Intrinsic::nearbyint;
   case LibFunc::round:
   case LibFunc::roundf:
   case LibFunc::roundl:
-    return checkUnaryFloatSignature(ICS, Intrinsic::round);
+    return Intrinsic::round;
   case LibFunc::pow:
   case LibFunc::powf:
   case LibFunc::powl:
-    return checkBinaryFloatSignature(ICS, Intrinsic::pow);
+    return Intrinsic::pow;
   case LibFunc::sqrt:
   case LibFunc::sqrtf:
   case LibFunc::sqrtl:
     if (ICS->hasNoNaNs())
-      return checkUnaryFloatSignature(ICS, Intrinsic::sqrt);
+      return Intrinsic::sqrt;
     return Intrinsic::not_intrinsic;
   }
 
@@ -3543,26 +3506,44 @@ bool llvm::isKnownNotFullPoison(const Instruction *PoisonI) {
   // Set of instructions that we have proved will yield poison if PoisonI
   // does.
   SmallSet<const Value *, 16> YieldsPoison;
+  SmallSet<const BasicBlock *, 4> Visited;
   YieldsPoison.insert(PoisonI);
+  Visited.insert(PoisonI->getParent());
 
-  for (BasicBlock::const_iterator I = PoisonI->getIterator(), E = BB->end();
-       I != E; ++I) {
-    if (&*I != PoisonI) {
-      const Value *NotPoison = getGuaranteedNonFullPoisonOp(&*I);
-      if (NotPoison != nullptr && YieldsPoison.count(NotPoison)) return true;
-      if (!isGuaranteedToTransferExecutionToSuccessor(&*I))
-        return false;
-    }
+  BasicBlock::const_iterator Begin = PoisonI->getIterator(), End = BB->end();
 
-    // Mark poison that propagates from I through uses of I.
-    if (YieldsPoison.count(&*I)) {
-      for (const User *User : I->users()) {
-        const Instruction *UserI = cast<Instruction>(User);
-        if (UserI->getParent() == BB && propagatesFullPoison(UserI))
-          YieldsPoison.insert(User);
+  unsigned Iter = 0;
+  while (Iter++ < MaxDepth) {
+    for (auto &I : make_range(Begin, End)) {
+      if (&I != PoisonI) {
+        const Value *NotPoison = getGuaranteedNonFullPoisonOp(&I);
+        if (NotPoison != nullptr && YieldsPoison.count(NotPoison))
+          return true;
+        if (!isGuaranteedToTransferExecutionToSuccessor(&I))
+          return false;
+      }
+
+      // Mark poison that propagates from I through uses of I.
+      if (YieldsPoison.count(&I)) {
+        for (const User *User : I.users()) {
+          const Instruction *UserI = cast<Instruction>(User);
+          if (propagatesFullPoison(UserI))
+            YieldsPoison.insert(User);
+        }
       }
     }
-  }
+
+    if (auto *NextBB = BB->getSingleSuccessor()) {
+      if (Visited.insert(NextBB).second) {
+        BB = NextBB;
+        Begin = BB->getFirstNonPHI()->getIterator();
+        End = BB->end();
+        continue;
+      }
+    }
+
+    break;
+  };
   return false;
 }
 
@@ -3718,12 +3699,11 @@ static Value *lookThroughCast(CmpInst *CmpI, Value *V1, Value *V2,
                               Instruction::CastOps *CastOp) {
   CastInst *CI = dyn_cast<CastInst>(V1);
   Constant *C = dyn_cast<Constant>(V2);
-  CastInst *CI2 = dyn_cast<CastInst>(V2);
   if (!CI)
     return nullptr;
   *CastOp = CI->getOpcode();
 
-  if (CI2) {
+  if (auto *CI2 = dyn_cast<CastInst>(V2)) {
     // If V1 and V2 are both the same cast from the same type, we can look
     // through V1.
     if (CI2->getOpcode() == CI->getOpcode() &&
@@ -3734,39 +3714,45 @@ static Value *lookThroughCast(CmpInst *CmpI, Value *V1, Value *V2,
     return nullptr;
   }
 
-  if (isa<SExtInst>(CI) && CmpI->isSigned()) {
-    Constant *T = ConstantExpr::getTrunc(C, CI->getSrcTy());
-    // This is only valid if the truncated value can be sign-extended
-    // back to the original value.
-    if (ConstantExpr::getSExt(T, C->getType()) == C)
-      return T;
-    return nullptr;
-  }
+  Constant *CastedTo = nullptr;
+
   if (isa<ZExtInst>(CI) && CmpI->isUnsigned())
-    return ConstantExpr::getTrunc(C, CI->getSrcTy());
+    CastedTo = ConstantExpr::getTrunc(C, CI->getSrcTy());
+
+  if (isa<SExtInst>(CI) && CmpI->isSigned())
+    CastedTo = ConstantExpr::getTrunc(C, CI->getSrcTy(), true);
 
   if (isa<TruncInst>(CI))
-    return ConstantExpr::getIntegerCast(C, CI->getSrcTy(), CmpI->isSigned());
-
-  if (isa<FPToUIInst>(CI))
-    return ConstantExpr::getUIToFP(C, CI->getSrcTy(), true);
-
-  if (isa<FPToSIInst>(CI))
-    return ConstantExpr::getSIToFP(C, CI->getSrcTy(), true);
-
-  if (isa<UIToFPInst>(CI))
-    return ConstantExpr::getFPToUI(C, CI->getSrcTy(), true);
-
-  if (isa<SIToFPInst>(CI))
-    return ConstantExpr::getFPToSI(C, CI->getSrcTy(), true);
+    CastedTo = ConstantExpr::getIntegerCast(C, CI->getSrcTy(), CmpI->isSigned());
 
   if (isa<FPTruncInst>(CI))
-    return ConstantExpr::getFPExtend(C, CI->getSrcTy(), true);
+    CastedTo = ConstantExpr::getFPExtend(C, CI->getSrcTy(), true);
 
   if (isa<FPExtInst>(CI))
-    return ConstantExpr::getFPTrunc(C, CI->getSrcTy(), true);
+    CastedTo = ConstantExpr::getFPTrunc(C, CI->getSrcTy(), true);
 
-  return nullptr;
+  if (isa<FPToUIInst>(CI))
+    CastedTo = ConstantExpr::getUIToFP(C, CI->getSrcTy(), true);
+
+  if (isa<FPToSIInst>(CI))
+    CastedTo = ConstantExpr::getSIToFP(C, CI->getSrcTy(), true);
+
+  if (isa<UIToFPInst>(CI))
+    CastedTo = ConstantExpr::getFPToUI(C, CI->getSrcTy(), true);
+
+  if (isa<SIToFPInst>(CI))
+    CastedTo = ConstantExpr::getFPToSI(C, CI->getSrcTy(), true);
+
+  if (!CastedTo)
+    return nullptr;
+
+  Constant *CastedBack =
+      ConstantExpr::getCast(CI->getOpcode(), CastedTo, C->getType(), true);
+  // Make sure the cast doesn't lose any information.
+  if (CastedBack != C)
+    return nullptr;
+
+  return CastedTo;
 }
 
 SelectPatternResult llvm::matchSelectPattern(Value *V,
@@ -3944,16 +3930,19 @@ static Optional<bool> isImpliedCondMatchingOperands(CmpInst::Predicate APred,
 }
 
 Optional<bool> llvm::isImpliedCondition(Value *LHS, Value *RHS,
-                                        const DataLayout &DL, unsigned Depth,
-                                        AssumptionCache *AC,
+                                        const DataLayout &DL, bool InvertAPred,
+                                        unsigned Depth, AssumptionCache *AC,
                                         const Instruction *CxtI,
                                         const DominatorTree *DT) {
-  assert(LHS->getType() == RHS->getType() && "mismatched type");
+  // A mismatch occurs when we compare a scalar cmp to a vector cmp, for example.
+  if (LHS->getType() != RHS->getType())
+    return None;
+
   Type *OpTy = LHS->getType();
   assert(OpTy->getScalarType()->isIntegerTy(1));
 
   // LHS ==> RHS by definition
-  if (LHS == RHS)
+  if (!InvertAPred && LHS == RHS)
     return true;
 
   if (OpTy->isVectorTy())
@@ -3968,6 +3957,9 @@ Optional<bool> llvm::isImpliedCondition(Value *LHS, Value *RHS,
   if (!match(LHS, m_ICmp(APred, m_Value(ALHS), m_Value(ARHS))) ||
       !match(RHS, m_ICmp(BPred, m_Value(BLHS), m_Value(BRHS))))
     return None;
+
+  if (InvertAPred)
+    APred = CmpInst::getInversePredicate(APred);
 
   Optional<bool> Implication =
       isImpliedCondMatchingOperands(APred, ALHS, ARHS, BPred, BLHS, BRHS);

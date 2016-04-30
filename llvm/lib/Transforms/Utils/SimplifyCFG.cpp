@@ -1143,7 +1143,8 @@ static bool HoistThenElseCodeToIf(BranchInst *BI,
         LLVMContext::MD_fpmath,  LLVMContext::MD_invariant_load,
         LLVMContext::MD_nonnull, LLVMContext::MD_invariant_group,
         LLVMContext::MD_align,   LLVMContext::MD_dereferenceable,
-        LLVMContext::MD_dereferenceable_or_null};
+        LLVMContext::MD_dereferenceable_or_null,
+        LLVMContext::MD_mem_parallel_loop_access};
     combineMetadata(I1, I2, KnownIDs);
     I2->eraseFromParent();
     Changed = true;
@@ -1219,7 +1220,7 @@ HoistTerminator:
       if (!SI)
         SI = cast<SelectInst>
           (Builder.CreateSelect(BI->getCondition(), BB1V, BB2V,
-                                BB1V->getName() + "." + BB2V->getName()));
+                                BB1V->getName() + "." + BB2V->getName(), BI));
 
       // Make the PHI node use the select for all incoming values for BB1/BB2
       for (unsigned i = 0, e = PN->getNumIncomingValues(); i != e; ++i)
@@ -2023,8 +2024,8 @@ static bool SimplifyCondBranchToTwoReturns(BranchInst *BI,
     } else if (isa<UndefValue>(TrueValue)) {
       TrueValue = FalseValue;
     } else {
-      TrueValue = Builder.CreateSelect(BrCond, TrueValue,
-                                       FalseValue, "retval");
+      TrueValue =
+          Builder.CreateSelect(BrCond, TrueValue, FalseValue, "retval", BI);
     }
   }
 
@@ -2039,25 +2040,6 @@ static bool SimplifyCondBranchToTwoReturns(BranchInst *BI,
 
   EraseTerminatorInstAndDCECond(BI);
 
-  return true;
-}
-
-/// Given a conditional BranchInstruction, retrieve the probabilities of the
-/// branch taking each edge. Fills in the two APInt parameters and returns true,
-/// or returns false if no or invalid metadata was found.
-static bool ExtractBranchMetadata(BranchInst *BI,
-                                  uint64_t &ProbTrue, uint64_t &ProbFalse) {
-  assert(BI->isConditional() &&
-         "Looking for probabilities on unconditional branch?");
-  MDNode *ProfileData = BI->getMetadata(LLVMContext::MD_prof);
-  if (!ProfileData || ProfileData->getNumOperands() != 3) return false;
-  ConstantInt *CITrue =
-      mdconst::dyn_extract<ConstantInt>(ProfileData->getOperand(1));
-  ConstantInt *CIFalse =
-      mdconst::dyn_extract<ConstantInt>(ProfileData->getOperand(2));
-  if (!CITrue || !CIFalse) return false;
-  ProbTrue = CITrue->getValue().getZExtValue();
-  ProbFalse = CIFalse->getValue().getZExtValue();
   return true;
 }
 
@@ -2267,10 +2249,10 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold) {
       PBI->setCondition(NewCond);
 
       uint64_t PredTrueWeight, PredFalseWeight, SuccTrueWeight, SuccFalseWeight;
-      bool PredHasWeights = ExtractBranchMetadata(PBI, PredTrueWeight,
-                                                  PredFalseWeight);
-      bool SuccHasWeights = ExtractBranchMetadata(BI, SuccTrueWeight,
-                                                  SuccFalseWeight);
+      bool PredHasWeights =
+          PBI->extractProfMetadata(PredTrueWeight, PredFalseWeight);
+      bool SuccHasWeights =
+          BI->extractProfMetadata(SuccTrueWeight, SuccFalseWeight);
       SmallVector<uint64_t, 8> NewWeights;
 
       if (PBI->getSuccessor(0) == BB) {
@@ -2722,11 +2704,13 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI,
 
   // If BI is reached from the true path of PBI and PBI's condition implies
   // BI's condition, we know the direction of the BI branch.
-  if (PBI->getSuccessor(0) == BI->getParent() &&
+  if ((PBI->getSuccessor(0) == BI->getParent() ||
+       PBI->getSuccessor(1) == BI->getParent()) &&
       PBI->getSuccessor(0) != PBI->getSuccessor(1) &&
       BB->getSinglePredecessor()) {
-    Optional<bool> Implication =
-        isImpliedCondition(PBI->getCondition(), BI->getCondition(), DL);
+    bool FalseDest = PBI->getSuccessor(1) == BI->getParent();
+    Optional<bool> Implication = isImpliedCondition(
+        PBI->getCondition(), BI->getCondition(), DL, FalseDest);
     if (Implication) {
       // Turn this into a branch on constant.
       auto *OldCond = BI->getCondition();
@@ -2853,10 +2837,10 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI,
 
   // Update branch weight for PBI.
   uint64_t PredTrueWeight, PredFalseWeight, SuccTrueWeight, SuccFalseWeight;
-  bool PredHasWeights = ExtractBranchMetadata(PBI, PredTrueWeight,
-                                              PredFalseWeight);
-  bool SuccHasWeights = ExtractBranchMetadata(BI, SuccTrueWeight,
-                                              SuccFalseWeight);
+  bool PredHasWeights =
+      PBI->extractProfMetadata(PredTrueWeight, PredFalseWeight);
+  bool SuccHasWeights =
+      BI->extractProfMetadata(SuccTrueWeight, SuccFalseWeight);
   if (PredHasWeights && SuccHasWeights) {
     uint64_t PredCommon = PBIOp ? PredFalseWeight : PredTrueWeight;
     uint64_t PredOther = PBIOp ?PredTrueWeight : PredFalseWeight;

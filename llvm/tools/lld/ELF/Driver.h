@@ -27,12 +27,12 @@ public:
   void main(ArrayRef<const char *> Args);
   void addFile(StringRef Path);
   void addLibrary(StringRef Name);
+  llvm::LLVMContext Context;
 
 private:
   std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB);
   llvm::Optional<MemoryBufferRef> readFile(StringRef Path);
   void readConfigs(llvm::opt::InputArgList &Args);
-  void readDynamicList(StringRef Path);
   void createFiles(llvm::opt::InputArgList &Args);
   template <class ELFT> void link(llvm::opt::InputArgList &Args);
 
@@ -67,6 +67,9 @@ enum {
 
 void printHelp(const char *Argv0);
 void printVersion();
+
+std::string concat_paths(StringRef S, StringRef T);
+void copyFile(StringRef Src, StringRef Dest);
 
 std::string findFromSearchPaths(StringRef Path);
 std::string searchLibrary(StringRef Path);

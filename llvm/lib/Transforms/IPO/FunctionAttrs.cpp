@@ -987,9 +987,6 @@ static bool addNoRecurseAttrs(const SCCNodeSet &SCCNodes) {
 
 PreservedAnalyses PostOrderFunctionAttrsPass::run(LazyCallGraph::SCC &C,
                                                   CGSCCAnalysisManager &AM) {
-  if (skipPassForSCC(name(), C))
-    return PreservedAnalyses::all();
-
   Module &M = *C.begin()->getFunction().getParent();
   const ModuleAnalysisManager &MAM =
       AM.getResult<ModuleAnalysisManagerCGSCCProxy>(C).getManager();

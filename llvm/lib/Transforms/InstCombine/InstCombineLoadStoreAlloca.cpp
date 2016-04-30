@@ -881,8 +881,8 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
     if (SelectInst *SI = dyn_cast<SelectInst>(Op)) {
       // load (select (Cond, &V1, &V2))  --> select(Cond, load &V1, load &V2).
       unsigned Align = LI.getAlignment();
-      if (isSafeToLoadUnconditionally(SI->getOperand(1), Align, SI) &&
-          isSafeToLoadUnconditionally(SI->getOperand(2), Align, SI)) {
+      if (isSafeToLoadUnconditionally(SI->getOperand(1), Align, DL, SI) &&
+          isSafeToLoadUnconditionally(SI->getOperand(2), Align, DL, SI)) {
         LoadInst *V1 = Builder->CreateLoad(SI->getOperand(1),
                                            SI->getOperand(1)->getName()+".val");
         LoadInst *V2 = Builder->CreateLoad(SI->getOperand(2),
@@ -911,6 +911,61 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
     }
   }
   return nullptr;
+}
+
+/// \brief Look for extractelement/insertvalue sequence that acts like a bitcast.
+///
+/// \returns underlying value that was "cast", or nullptr otherwise.
+///
+/// For example, if we have:
+///
+///     %E0 = extractelement <2 x double> %U, i32 0
+///     %V0 = insertvalue [2 x double] undef, double %E0, 0
+///     %E1 = extractelement <2 x double> %U, i32 1
+///     %V1 = insertvalue [2 x double] %V0, double %E1, 1
+///
+/// and the layout of a <2 x double> is isomorphic to a [2 x double],
+/// then %V1 can be safely approximated by a conceptual "bitcast" of %U.
+/// Note that %U may contain non-undef values where %V1 has undef.
+static Value *likeBitCastFromVector(InstCombiner &IC, Value *V) {
+  Value *U = nullptr;
+  while (auto *IV = dyn_cast<InsertValueInst>(V)) {
+    auto *E = dyn_cast<ExtractElementInst>(IV->getInsertedValueOperand());
+    if (!E)
+      return nullptr;
+    auto *W = E->getVectorOperand();
+    if (!U)
+      U = W;
+    else if (U != W)
+      return nullptr;
+    auto *CI = dyn_cast<ConstantInt>(E->getIndexOperand());
+    if (!CI || IV->getNumIndices() != 1 || CI->getZExtValue() != *IV->idx_begin())
+      return nullptr;
+    V = IV->getAggregateOperand();
+  }
+  if (!isa<UndefValue>(V) ||!U)
+    return nullptr;
+
+  auto *UT = cast<VectorType>(U->getType());
+  auto *VT = V->getType();
+  // Check that types UT and VT are bitwise isomorphic.
+  const auto &DL = IC.getDataLayout();
+  if (DL.getTypeStoreSizeInBits(UT) != DL.getTypeStoreSizeInBits(VT)) {
+    return nullptr;
+  }
+  if (auto *AT = dyn_cast<ArrayType>(VT)) {
+    if (AT->getNumElements() != UT->getNumElements())
+      return nullptr;
+  } else {
+    auto *ST = cast<StructType>(VT);
+    if (ST->getNumElements() != UT->getNumElements())
+      return nullptr;
+    for (const auto *EltT : ST->elements()) {
+      if (EltT != UT->getElementType())
+        return nullptr;
+    }
+  }
+  return U;
 }
 
 /// \brief Combine stores to match the type of value being stored.
@@ -945,6 +1000,11 @@ static bool combineStoreToValueType(InstCombiner &IC, StoreInst &SI) {
   if (auto *BC = dyn_cast<BitCastInst>(V)) {
     V = BC->getOperand(0);
     combineStoreToNewValue(IC, SI, V);
+    return true;
+  }
+
+  if (Value *U = likeBitCastFromVector(IC, V)) {
+    combineStoreToNewValue(IC, SI, U);
     return true;
   }
 
@@ -1188,10 +1248,6 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   if (isa<UndefValue>(Val))
     return eraseInstFromFunction(SI);
 
-  // The code below needs to be audited and adjusted for unordered atomics
-  if (!SI.isSimple())
-    return nullptr;
-
   // If this store is the last instruction in the basic block (possibly
   // excepting debug info instructions), and if the block ends with an
   // unconditional branch, try to move it to the successor block.
@@ -1217,6 +1273,9 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
 /// into a phi node with a store in the successor.
 ///
 bool InstCombiner::SimplifyStoreAtEndOfBlock(StoreInst &SI) {
+  assert(SI.isUnordered() &&
+         "this code has not been auditted for volatile or ordered store case");
+  
   BasicBlock *StoreBB = SI.getParent();
 
   // Check to see if the successor block has exactly two incoming edges.  If

@@ -76,8 +76,7 @@ enum class PDB_ReaderType {
 /// is abstracted here for the purposes of non-Windows platforms that don't have
 /// the GUID structure defined.
 struct PDB_UniqueId {
-  uint64_t HighPart;
-  uint64_t LowPart;
+  char Guid[16];
 };
 
 /// An enumeration indicating the type of data contained in this table.

@@ -426,6 +426,13 @@ public:
     return SystemZ::R7D;
   }
 
+  /// Override to support customized stack guard loading.
+  bool useLoadStackGuardNode() const override {
+    return true;
+  }
+  void insertSSPDeclarations(Module &M) const override {
+  }
+
   MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
                                                  MachineBasicBlock *BB) const
     override;
@@ -451,6 +458,10 @@ public:
   SDValue prepareVolatileOrAtomicLoad(SDValue Chain, SDLoc DL,
                                       SelectionDAG &DAG) const override;
   SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
+
+  bool supportSwiftError() const override {
+    return true;
+  }
 
 private:
   const SystemZSubtarget &Subtarget;

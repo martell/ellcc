@@ -2279,7 +2279,7 @@ void X86FrameLowering::adjustForSegmentedStacks(
   checkMBB->addSuccessor(allocMBB);
   checkMBB->addSuccessor(&PrologueMBB);
 
-#ifdef XDEBUG
+#ifdef EXPENSIVE_CHECKS
   MF.verify();
 #endif
 }
@@ -2423,7 +2423,7 @@ void X86FrameLowering::adjustForHiPEPrologue(
     incStackMBB->addSuccessor(&PrologueMBB, {99, 100});
     incStackMBB->addSuccessor(incStackMBB, {1, 100});
   }
-#ifdef XDEBUG
+#ifdef EXPENSIVE_CHECKS
   MF.verify();
 #endif
 }
@@ -2607,6 +2607,12 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   }
 
   return I;
+}
+
+bool X86FrameLowering::canUseAsPrologue(const MachineBasicBlock &MBB) const {
+  assert(MBB.getParent() && "Block is not attached to a function!");
+  const MachineFunction &MF = *MBB.getParent();
+  return !TRI->needsStackRealignment(MF) || !MBB.isLiveIn(X86::EFLAGS);
 }
 
 bool X86FrameLowering::canUseAsEpilogue(const MachineBasicBlock &MBB) const {

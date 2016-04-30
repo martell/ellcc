@@ -62,7 +62,8 @@ enum RelExpr {
 inline bool refersToGotEntry(RelExpr Expr) {
   return Expr == R_GOT || Expr == R_GOT_OFF || Expr == R_MIPS_GOT ||
          Expr == R_MIPS_GOT_LOCAL || Expr == R_GOT_PAGE_PC ||
-         Expr == R_GOT_PC || Expr == R_GOT_FROM_END;
+         Expr == R_GOT_PC || Expr == R_GOT_FROM_END || Expr == R_TLSGD ||
+         Expr == R_TLSGD_PC;
 }
 
 struct Relocation {
@@ -122,10 +123,6 @@ public:
   uintX_t getOffset(uintX_t Offset);
 
   ArrayRef<uint8_t> getSectionData() const;
-
-  // Returns a section that Rel is pointing to. Used by the garbage collector.
-  InputSectionBase<ELFT> *getRelocTarget(const Elf_Rel &Rel) const;
-  InputSectionBase<ELFT> *getRelocTarget(const Elf_Rela &Rel) const;
 
   void relocate(uint8_t *Buf, uint8_t *BufEnd);
   std::vector<Relocation> Relocations;
@@ -221,6 +218,9 @@ public:
 
   // Size of chunk with thunks code.
   uint64_t getThunksSize() const;
+
+  template <class RelTy>
+  void relocateNonAlloc(uint8_t *Buf, llvm::ArrayRef<RelTy> Rels);
 
 private:
   template <class RelTy>

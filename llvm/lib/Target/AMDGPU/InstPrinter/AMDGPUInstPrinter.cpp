@@ -94,7 +94,7 @@ void AMDGPUInstPrinter::printMBUFOffset(const MCInst *MI, unsigned OpNo,
   }
 }
 
-void AMDGPUInstPrinter::printDSOffset(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printOffset(const MCInst *MI, unsigned OpNo,
                                       raw_ostream &O) {
   uint16_t Imm = MI->getOperand(OpNo).getImm();
   if (Imm != 0) {
@@ -103,7 +103,7 @@ void AMDGPUInstPrinter::printDSOffset(const MCInst *MI, unsigned OpNo,
   }
 }
 
-void AMDGPUInstPrinter::printDSOffset0(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printOffset0(const MCInst *MI, unsigned OpNo,
                                         raw_ostream &O) {
   if (MI->getOperand(OpNo).getImm()) {
     O << " offset0:";
@@ -111,12 +111,22 @@ void AMDGPUInstPrinter::printDSOffset0(const MCInst *MI, unsigned OpNo,
   }
 }
 
-void AMDGPUInstPrinter::printDSOffset1(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printOffset1(const MCInst *MI, unsigned OpNo,
                                         raw_ostream &O) {
   if (MI->getOperand(OpNo).getImm()) {
     O << " offset1:";
     printU8ImmDecOperand(MI, OpNo, O);
   }
+}
+
+void AMDGPUInstPrinter::printSMRDOffset(const MCInst *MI, unsigned OpNo,
+                                        raw_ostream &O) {
+  printU32ImmOperand(MI, OpNo, O);
+}
+
+void AMDGPUInstPrinter::printSMRDLiteralOffset(const MCInst *MI, unsigned OpNo,
+                                               raw_ostream &O) {
+  printU32ImmOperand(MI, OpNo, O);
 }
 
 void AMDGPUInstPrinter::printGDS(const MCInst *MI, unsigned OpNo,
@@ -240,8 +250,11 @@ void AMDGPUInstPrinter::printRegOperand(unsigned reg, raw_ostream &O,
   } else if (MRI.getRegClass(AMDGPU::VReg_128RegClassID).contains(reg)) {
     Type = "v";
     NumRegs = 4;
-  } else  if (MRI.getRegClass(AMDGPU::SReg_128RegClassID).contains(reg)) {
+  } else  if (MRI.getRegClass(AMDGPU::SGPR_128RegClassID).contains(reg)) {
     Type = "s";
+    NumRegs = 4;
+  } else  if (MRI.getRegClass(AMDGPU::TTMP_128RegClassID).contains(reg)) {
+    Type = "ttmp";
     NumRegs = 4;
   } else if (MRI.getRegClass(AMDGPU::VReg_96RegClassID).contains(reg)) {
     Type = "v";
@@ -282,6 +295,8 @@ void AMDGPUInstPrinter::printVOPDst(const MCInst *MI, unsigned OpNo,
     O << "_e64 ";
   else if (MII.get(MI->getOpcode()).TSFlags & SIInstrFlags::DPP)
     O << "_dpp ";
+  else if (MII.get(MI->getOpcode()).TSFlags & SIInstrFlags::SDWA)
+    O << "_sdwa ";
   else
     O << "_e32 ";
 
@@ -420,7 +435,7 @@ void AMDGPUInstPrinter::printOperandAndMods(const MCInst *MI, unsigned OpNo,
 }
 
 
-void AMDGPUInstPrinter::printDPPCtrlOperand(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printDPPCtrl(const MCInst *MI, unsigned OpNo,
                                              raw_ostream &O) {
   unsigned Imm = MI->getOperand(OpNo).getImm();
   if (Imm <= 0x0ff) {
@@ -459,23 +474,68 @@ void AMDGPUInstPrinter::printDPPCtrlOperand(const MCInst *MI, unsigned OpNo,
   }
 }
 
-void AMDGPUInstPrinter::printRowMaskOperand(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printRowMask(const MCInst *MI, unsigned OpNo,
                                             raw_ostream &O) {
   O << " row_mask:";
   printU4ImmOperand(MI, OpNo, O);
 }
 
-void AMDGPUInstPrinter::printBankMaskOperand(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printBankMask(const MCInst *MI, unsigned OpNo,
                                              raw_ostream &O) {
   O << " bank_mask:";
   printU4ImmOperand(MI, OpNo, O);
 }
 
-void AMDGPUInstPrinter::printBoundCtrlOperand(const MCInst *MI, unsigned OpNo,
+void AMDGPUInstPrinter::printBoundCtrl(const MCInst *MI, unsigned OpNo,
                                               raw_ostream &O) {
   unsigned Imm = MI->getOperand(OpNo).getImm();
   if (Imm) {
     O << " bound_ctrl:0"; // XXX - this syntax is used in sp3
+  }
+}
+
+void AMDGPUInstPrinter::printSDWASel(const MCInst *MI, unsigned OpNo,
+                                     raw_ostream &O) {
+  unsigned Imm = MI->getOperand(OpNo).getImm();
+  switch (Imm) {
+  case 0: O << "BYTE_0"; break;
+  case 1: O << "BYTE_1"; break;
+  case 2: O << "BYTE_2"; break;
+  case 3: O << "BYTE_3"; break;
+  case 4: O << "WORD_0"; break;
+  case 5: O << "WORD_1"; break;
+  case 6: O << "DWORD"; break;
+  default: llvm_unreachable("Invalid SDWA data select operand");
+  }
+}
+
+void AMDGPUInstPrinter::printSDWADstSel(const MCInst *MI, unsigned OpNo,
+                                        raw_ostream &O) {
+  O << "dst_sel:";
+  printSDWASel(MI, OpNo, O);
+}
+
+void AMDGPUInstPrinter::printSDWASrc0Sel(const MCInst *MI, unsigned OpNo,
+                                         raw_ostream &O) {
+  O << "src0_sel:";
+  printSDWASel(MI, OpNo, O);
+}
+
+void AMDGPUInstPrinter::printSDWASrc1Sel(const MCInst *MI, unsigned OpNo,
+                                         raw_ostream &O) {
+  O << "src1_sel:";
+  printSDWASel(MI, OpNo, O);
+}
+
+void AMDGPUInstPrinter::printSDWADstUnused(const MCInst *MI, unsigned OpNo,
+                                           raw_ostream &O) {
+  O << "dst_unused:";
+  unsigned Imm = MI->getOperand(OpNo).getImm();
+  switch (Imm) {
+  case 0: O << "UNUSED_PAD"; break;
+  case 1: O << "UNUSED_SEXT"; break;
+  case 2: O << "UNUSED_PRESERVE"; break;
+  default: llvm_unreachable("Invalid SDWA dest_unused operand");
   }
 }
 
@@ -758,6 +818,30 @@ void AMDGPUInstPrinter::printWaitFlag(const MCInst *MI, unsigned OpNo,
       O << ' ';
     O << "lgkmcnt(" << Lgkmcnt << ')';
   }
+}
+
+void AMDGPUInstPrinter::printHwreg(const MCInst *MI, unsigned OpNo,
+                                   raw_ostream &O) {
+  unsigned SImm16 = MI->getOperand(OpNo).getImm();
+  const unsigned HwRegCode = SImm16 & 0x3F;
+  const unsigned Offset = (SImm16 >> 6) & 0x1f;
+  const unsigned Width = ((SImm16 >> 11) & 0x1F) + 1;
+
+  O << "hwreg(";
+  switch(HwRegCode) {
+    case 1: O << "HW_REG_MODE"      ; break;
+    case 2: O << "HW_REG_STATUS"    ; break;
+    case 3: O << "HW_REG_TRAPSTS"   ; break;
+    case 4: O << "HW_REG_HW_ID"     ; break;
+    case 5: O << "HW_REG_GPR_ALLOC" ; break;
+    case 6: O << "HW_REG_LDS_ALLOC" ; break;
+    case 7: O << "HW_REG_IB_STS"    ; break;
+    default: O << HwRegCode; break;
+  }
+  if (! (Width == 32 && Offset == 0)) {
+    O << ", " << Offset << ", " << Width;
+  }
+  O << ')';
 }
 
 #include "AMDGPUGenAsmWriter.inc"

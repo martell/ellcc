@@ -9,6 +9,7 @@
 
 #include "LTO.h"
 #include "Config.h"
+#include "Driver.h"
 #include "Error.h"
 #include "InputFiles.h"
 #include "Symbols.h"
@@ -23,8 +24,8 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -76,18 +77,21 @@ static void runLTOPasses(Module &M, TargetMachine &TM) {
 
 static bool shouldInternalize(const SmallPtrSet<GlobalValue *, 8> &Used,
                               SymbolBody &B, GlobalValue *GV) {
-  if (B.isUsedInRegularObj())
+  if (B.Backref->IsUsedInRegularObj)
     return false;
 
   if (Used.count(GV))
     return false;
 
-  return !B.includeInDynsym();
+  return !B.Backref->includeInDynsym();
 }
 
+BitcodeCompiler::BitcodeCompiler()
+    : Combined(new llvm::Module("ld-temp.o", Driver->Context)),
+      Mover(*Combined) {}
+
 void BitcodeCompiler::add(BitcodeFile &F) {
-  std::unique_ptr<IRObjectFile> Obj =
-      check(IRObjectFile::create(F.MB, Context));
+  std::unique_ptr<IRObjectFile> Obj = std::move(F.Obj);
   std::vector<GlobalValue *> Keep;
   unsigned BodyIndex = 0;
   ArrayRef<SymbolBody *> Bodies = F.getSymbols();

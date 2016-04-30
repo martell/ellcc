@@ -93,14 +93,14 @@ void InitializeAllocator() {
   allocator()->Init(common_flags()->allocator_may_return_null);
 }
 
-void AllocatorThreadStart(ThreadState *thr) {
-  allocator()->InitCache(&thr->alloc_cache);
-  internal_allocator()->InitCache(&thr->internal_alloc_cache);
+void AllocatorProcStart(Processor *proc) {
+  allocator()->InitCache(&proc->alloc_cache);
+  internal_allocator()->InitCache(&proc->internal_alloc_cache);
 }
 
-void AllocatorThreadFinish(ThreadState *thr) {
-  allocator()->DestroyCache(&thr->alloc_cache);
-  internal_allocator()->DestroyCache(&thr->internal_alloc_cache);
+void AllocatorProcFinish(Processor *proc) {
+  allocator()->DestroyCache(&proc->alloc_cache);
+  internal_allocator()->DestroyCache(&proc->internal_alloc_cache);
 }
 
 void AllocatorPrintStats() {
@@ -124,7 +124,7 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align, bool signal) {
   if ((sz >= (1ull << 40)) || (align >= (1ull << 40)))
     return allocator()->ReturnNullOrDie();
-  void *p = allocator()->Allocate(&thr->alloc_cache, sz, align);
+  void *p = allocator()->Allocate(&thr->proc()->alloc_cache, sz, align);
   if (p == 0)
     return 0;
   MBlock *b = new(allocator()->GetMetaData(p)) MBlock;
@@ -170,9 +170,26 @@ void user_free(ThreadState *thr, uptr pc, void *p, bool signal) {
     if (thr->ignore_reads_and_writes == 0)
       MemoryRangeFreed(thr, pc, (uptr)p, b->Size());
   }
-  allocator()->Deallocate(&thr->alloc_cache, p);
+  allocator()->Deallocate(&thr->proc()->alloc_cache, p);
   if (signal)
     SignalUnsafeCall(thr, pc);
+}
+
+void OnUserAlloc(ThreadState *thr, uptr pc, uptr p, uptr sz, bool write) {
+  DPrintf("#%d: alloc(%zu) = %p\n", thr->tid, sz, p);
+  ctx->metamap.AllocBlock(thr, pc, p, sz);
+  if (write && thr->ignore_reads_and_writes == 0)
+    MemoryRangeImitateWrite(thr, pc, (uptr)p, sz);
+  else
+    MemoryResetRange(thr, pc, (uptr)p, sz);
+}
+
+void OnUserFree(ThreadState *thr, uptr pc, uptr p, bool write) {
+  CHECK_NE(p, (void*)0);
+  uptr sz = ctx->metamap.FreeBlock(thr->proc(), p);
+  DPrintf("#%d: free(%p, %zu)\n", thr->tid, p, sz);
+  if (write && thr->ignore_reads_and_writes == 0)
+    MemoryRangeFreed(thr, pc, (uptr)p, sz);
 }
 
 void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
@@ -196,8 +213,12 @@ void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
 uptr user_alloc_usable_size(const void *p) {
   if (p == 0)
     return 0;
-  MBlock *b = (MBlock*)allocator()->GetMetaData(p);
-  return b ? b->Size() : 0;
+  MBlock *b = ctx->metamap.GetBlock((uptr)p);
+  if (!b)
+    return 0;  // Not a valid pointer.
+  if (b->siz == 0)
+    return 1;  // Zero-sized allocations are actually 1 byte.
+  return b->siz;
 }
 
 MBlock *user_mblock(ThreadState *thr, void *p) {
@@ -229,7 +250,7 @@ void *internal_alloc(MBlockType typ, uptr sz) {
     thr->nomalloc = 0;  // CHECK calls internal_malloc().
     CHECK(0);
   }
-  return InternalAlloc(sz, &thr->internal_alloc_cache);
+  return InternalAlloc(sz, &thr->proc()->internal_alloc_cache);
 }
 
 void internal_free(void *p) {
@@ -238,7 +259,7 @@ void internal_free(void *p) {
     thr->nomalloc = 0;  // CHECK calls internal_malloc().
     CHECK(0);
   }
-  InternalFree(p, &thr->internal_alloc_cache);
+  InternalFree(p, &thr->proc()->internal_alloc_cache);
 }
 
 }  // namespace __tsan
@@ -284,7 +305,8 @@ uptr __sanitizer_get_allocated_size(const void *p) {
 
 void __tsan_on_thread_idle() {
   ThreadState *thr = cur_thread();
-  allocator()->SwallowCache(&thr->alloc_cache);
-  internal_allocator()->SwallowCache(&thr->internal_alloc_cache);
+  allocator()->SwallowCache(&thr->proc()->alloc_cache);
+  internal_allocator()->SwallowCache(&thr->proc()->internal_alloc_cache);
+  ctx->metamap.OnProcIdle(thr->proc());
 }
 }  // extern "C"

@@ -284,13 +284,9 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM,
 
   if (Subtarget->hasFFBH())
     setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i32, Custom);
-  else
-    setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i32, Expand);
 
-  if (!Subtarget->hasFFBL())
-    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i32, Expand);
-
-  setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i64, Expand);
+  if (Subtarget->hasFFBL())
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i32, Legal);
 
   setOperationAction(ISD::CTLZ, MVT::i64, Custom);
   setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i64, Custom);
@@ -345,9 +341,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM,
     setOperationAction(ISD::BSWAP, VT, Expand);
     setOperationAction(ISD::CTPOP, VT, Expand);
     setOperationAction(ISD::CTTZ, VT, Expand);
-    setOperationAction(ISD::CTTZ_ZERO_UNDEF, VT, Expand);
     setOperationAction(ISD::CTLZ, VT, Expand);
-    setOperationAction(ISD::CTLZ_ZERO_UNDEF, VT, Expand);
     setOperationAction(ISD::VECTOR_SHUFFLE, VT, Expand);
   }
 
@@ -642,7 +636,7 @@ SDValue AMDGPUTargetLowering::LowerOperation(SDValue Op,
                                              SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
   default:
-    Op.getNode()->dump();
+    Op->dump(&DAG);
     llvm_unreachable("Custom lowering code for this"
                      "instruction is not implemented yet!");
     break;
@@ -876,7 +870,7 @@ SDValue AMDGPUTargetLowering::LowerCONCAT_VECTORS(SDValue Op,
   for (const SDUse &U : Op->ops())
     DAG.ExtractVectorElements(U.get(), Args);
 
-  return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(Op), Op.getValueType(), Args);
+  return DAG.getBuildVector(Op.getValueType(), SDLoc(Op), Args);
 }
 
 SDValue AMDGPUTargetLowering::LowerEXTRACT_SUBVECTOR(SDValue Op,
@@ -888,7 +882,7 @@ SDValue AMDGPUTargetLowering::LowerEXTRACT_SUBVECTOR(SDValue Op,
   DAG.ExtractVectorElements(Op.getOperand(0), Args, Start,
                             VT.getVectorNumElements());
 
-  return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(Op), Op.getValueType(), Args);
+  return DAG.getBuildVector(Op.getValueType(), SDLoc(Op), Args);
 }
 
 SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
@@ -1339,10 +1333,8 @@ void AMDGPUTargetLowering::LowerUDIVREM64(SDValue Op,
     SDValue Res = DAG.getNode(ISD::UDIVREM, DL, DAG.getVTList(HalfVT, HalfVT),
                               LHS_Lo, RHS_Lo);
 
-    SDValue DIV = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i32,
-                              Res.getValue(0), zero);
-    SDValue REM = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i32,
-                              Res.getValue(1), zero);
+    SDValue DIV = DAG.getBuildVector(MVT::v2i32, DL, {Res.getValue(0), zero});
+    SDValue REM = DAG.getBuildVector(MVT::v2i32, DL, {Res.getValue(1), zero});
 
     Results.push_back(DAG.getNode(ISD::BITCAST, DL, MVT::i64, DIV));
     Results.push_back(DAG.getNode(ISD::BITCAST, DL, MVT::i64, REM));
@@ -1354,7 +1346,7 @@ void AMDGPUTargetLowering::LowerUDIVREM64(SDValue Op,
   SDValue REM_Part = DAG.getNode(ISD::UREM, DL, HalfVT, LHS_Hi, RHS_Lo);
 
   SDValue REM_Lo = DAG.getSelectCC(DL, RHS_Hi, zero, REM_Part, LHS_Hi, ISD::SETEQ);
-  SDValue REM = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i32, REM_Lo, zero);
+  SDValue REM = DAG.getBuildVector(MVT::v2i32, DL, {REM_Lo, zero});
   REM = DAG.getNode(ISD::BITCAST, DL, MVT::i64, REM);
 
   SDValue DIV_Hi = DAG.getSelectCC(DL, RHS_Hi, zero, DIV_Part, zero, ISD::SETEQ);
@@ -1385,7 +1377,7 @@ void AMDGPUTargetLowering::LowerUDIVREM64(SDValue Op,
     REM = DAG.getSelectCC(DL, REM, RHS, REM_sub, REM, ISD::SETUGE);
   }
 
-  SDValue DIV = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i32, DIV_Lo, DIV_Hi);
+  SDValue DIV = DAG.getBuildVector(MVT::v2i32, DL, {DIV_Lo, DIV_Hi});
   DIV = DAG.getNode(ISD::BITCAST, DL, MVT::i64, DIV);
   Results.push_back(DIV);
   Results.push_back(REM);
@@ -1650,8 +1642,7 @@ SDValue AMDGPUTargetLowering::LowerFTRUNC(SDValue Op, SelectionDAG &DAG) const {
   SDValue SignBit = DAG.getNode(ISD::AND, SL, MVT::i32, Hi, SignBitMask);
 
   // Extend back to to 64-bits.
-  SDValue SignBit64 = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32,
-                                  Zero, SignBit);
+  SDValue SignBit64 = DAG.getBuildVector(MVT::v2i32, SL, {Zero, SignBit});
   SignBit64 = DAG.getNode(ISD::BITCAST, SL, MVT::i64, SignBit64);
 
   SDValue BcInt = DAG.getNode(ISD::BITCAST, SL, MVT::i64, Src);
@@ -2049,7 +2040,7 @@ SDValue AMDGPUTargetLowering::LowerFP64_TO_INT(SDValue Op, SelectionDAG &DAG,
                            MVT::i32, FloorMul);
   SDValue Lo = DAG.getNode(ISD::FP_TO_UINT, SL, MVT::i32, Fma);
 
-  SDValue Result = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32, Lo, Hi);
+  SDValue Result = DAG.getBuildVector(MVT::v2i32, SL, {Lo, Hi});
 
   return DAG.getNode(ISD::BITCAST, SL, MVT::i64, Result);
 }
@@ -2095,7 +2086,7 @@ SDValue AMDGPUTargetLowering::LowerSIGN_EXTEND_INREG(SDValue Op,
   for (unsigned I = 0; I < NElts; ++I)
     Args[I] = DAG.getNode(ISD::SIGN_EXTEND_INREG, DL, ScalarVT, Args[I], VTOp);
 
-  return DAG.getNode(ISD::BUILD_VECTOR, DL, VT, Args);
+  return DAG.getBuildVector(VT, DL, Args);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2229,7 +2220,12 @@ SDValue AMDGPUTargetLowering::performAndCombine(SDNode *N,
   SDValue LoAnd = DAG.getNode(ISD::AND, SL, MVT::i32, Lo, LoRHS);
   SDValue HiAnd = DAG.getNode(ISD::AND, SL, MVT::i32, Hi, HiRHS);
 
-  SDValue Vec = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32, LoAnd, HiAnd);
+  // Re-visit the ands. It's possible we eliminated one of them and it could
+  // simplify the vector.
+  DCI.AddToWorklist(Lo.getNode());
+  DCI.AddToWorklist(Hi.getNode());
+
+  SDValue Vec = DAG.getBuildVector(MVT::v2i32, SL, {LoAnd, HiAnd});
   return DAG.getNode(ISD::BITCAST, SL, MVT::i64, Vec);
 }
 
@@ -2263,7 +2259,7 @@ SDValue AMDGPUTargetLowering::performShlCombine(SDNode *N,
 
   const SDValue Zero = DAG.getConstant(0, SL, MVT::i32);
 
-  SDValue Vec = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32, Zero, NewShift);
+  SDValue Vec = DAG.getBuildVector(MVT::v2i32, SL, {Zero, NewShift});
   return DAG.getNode(ISD::BITCAST, SL, MVT::i64, Vec);
 }
 
@@ -2286,8 +2282,7 @@ SDValue AMDGPUTargetLowering::performSraCombine(SDNode *N,
     SDValue NewShift = DAG.getNode(ISD::SRA, SL, MVT::i32, Hi,
                                    DAG.getConstant(31, SL, MVT::i32));
 
-    SDValue BuildVec = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32,
-                                   Hi, NewShift);
+    SDValue BuildVec = DAG.getBuildVector(MVT::v2i32, SL, {Hi, NewShift});
     return DAG.getNode(ISD::BITCAST, SL, MVT::i64, BuildVec);
   }
 
@@ -2296,8 +2291,7 @@ SDValue AMDGPUTargetLowering::performSraCombine(SDNode *N,
     SDValue Hi = getHiHalf64(N->getOperand(0), DAG);
     SDValue NewShift = DAG.getNode(ISD::SRA, SL, MVT::i32, Hi,
                                    DAG.getConstant(31, SL, MVT::i32));
-    SDValue BuildVec = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32,
-                                   NewShift, NewShift);
+    SDValue BuildVec = DAG.getBuildVector(MVT::v2i32, SL, {NewShift, NewShift});
     return DAG.getNode(ISD::BITCAST, SL, MVT::i64, BuildVec);
   }
 
@@ -2334,8 +2328,7 @@ SDValue AMDGPUTargetLowering::performSrlCombine(SDNode *N,
   SDValue NewConst = DAG.getConstant(ShiftAmt - 32, SL, MVT::i32);
   SDValue NewShift = DAG.getNode(ISD::SRL, SL, MVT::i32, Hi, NewConst);
 
-  SDValue BuildPair = DAG.getNode(ISD::BUILD_VECTOR, SL, MVT::v2i32,
-                                  NewShift, Zero);
+  SDValue BuildPair = DAG.getBuildVector(MVT::v2i32, SL, {NewShift, Zero});
 
   return DAG.getNode(ISD::BITCAST, SL, MVT::i64, BuildPair);
 }
@@ -2753,7 +2746,6 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(CONST_ADDRESS)
   NODE_NAME_CASE(REGISTER_LOAD)
   NODE_NAME_CASE(REGISTER_STORE)
-  NODE_NAME_CASE(LOAD_CONSTANT)
   NODE_NAME_CASE(LOAD_INPUT)
   NODE_NAME_CASE(SAMPLE)
   NODE_NAME_CASE(SAMPLEB)
@@ -2771,6 +2763,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(INTERP_P1)
   NODE_NAME_CASE(INTERP_P2)
   NODE_NAME_CASE(STORE_MSKOR)
+  NODE_NAME_CASE(LOAD_CONSTANT)
   NODE_NAME_CASE(TBUFFER_STORE_FORMAT)
   NODE_NAME_CASE(ATOMIC_CMP_SWAP)
   NODE_NAME_CASE(ATOMIC_INC)

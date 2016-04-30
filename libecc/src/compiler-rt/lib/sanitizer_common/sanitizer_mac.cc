@@ -432,11 +432,15 @@ void *internal_start_thread(void(*func)(void *arg), void *arg) {
 
 void internal_join_thread(void *th) { pthread_join((pthread_t)th, 0); }
 
+#ifndef SANITIZER_GO
 static BlockingMutex syslog_lock(LINKER_INITIALIZED);
+#endif
 
 void WriteOneLineToSyslog(const char *s) {
+#ifndef SANITIZER_GO
   syslog_lock.CheckLocked();
   asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", s);
+#endif
 }
 
 void LogMessageOnPrintf(const char *str) {
@@ -446,6 +450,7 @@ void LogMessageOnPrintf(const char *str) {
 }
 
 void LogFullErrorReport(const char *buffer) {
+#ifndef SANITIZER_GO
   // Log with os_trace. This will make it into the crash log.
 #if SANITIZER_OS_TRACE
   if (GetMacosVersion() >= MACOS_VERSION_YOSEMITE) {
@@ -479,10 +484,16 @@ void LogFullErrorReport(const char *buffer) {
     WriteToSyslog(buffer);
 
   // The report is added to CrashLog as part of logging all of Printf output.
+#endif
 }
 
 SignalContext::WriteFlag SignalContext::GetWriteFlag(void *context) {
-  return UNKNOWN;  // FIXME: implement this.
+#if defined(__x86_64__) || defined(__i386__)
+  ucontext_t *ucontext = static_cast<ucontext_t*>(context);
+  return ucontext->uc_mcontext->__es.__err & 2 /*T_PF_WRITE*/ ? WRITE : READ;
+#else
+  return UNKNOWN;
+#endif
 }
 
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {
@@ -512,6 +523,7 @@ void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {
 # endif
 }
 
+#ifndef SANITIZER_GO
 static const char kDyldInsertLibraries[] = "DYLD_INSERT_LIBRARIES";
 LowLevelAllocator allocator_for_env;
 
@@ -572,7 +584,7 @@ void MaybeReexec() {
   // wrappers work. If it is not, set DYLD_INSERT_LIBRARIES and re-exec
   // ourselves.
   Dl_info info;
-  CHECK(dladdr((void*)((uptr)&__sanitizer_report_error_summary), &info));
+  RAW_CHECK(dladdr((void*)((uptr)&__sanitizer_report_error_summary), &info));
   char *dyld_insert_libraries =
       const_cast<char*>(GetEnv(kDyldInsertLibraries));
   uptr old_env_len = dyld_insert_libraries ?
@@ -617,7 +629,7 @@ void MaybeReexec() {
            "environment variable and re-execute itself, but execv() failed, "
            "possibly because of sandbox restrictions. Make sure to launch the "
            "executable with:\n%s=%s\n", kDyldInsertLibraries, new_env);
-    CHECK("execv failed" && 0);
+    RAW_CHECK("execv failed" && 0);
   }
 
   // Verify that interceptors really work.  We'll use dlsym to locate
@@ -625,14 +637,14 @@ void MaybeReexec() {
   // "wrap_pthread_create" within our own dylib.
   Dl_info info_pthread_create;
   void *dlopen_addr = dlsym(RTLD_DEFAULT, "pthread_create");
-  CHECK(dladdr(dlopen_addr, &info_pthread_create));
+  RAW_CHECK(dladdr(dlopen_addr, &info_pthread_create));
   if (internal_strcmp(info.dli_fname, info_pthread_create.dli_fname) != 0) {
     Report(
         "ERROR: Interceptors are not working. This may be because %s is "
         "loaded too late (e.g. via dlopen). Please launch the executable "
         "with:\n%s=%s\n",
         SanitizerToolName, kDyldInsertLibraries, info.dli_fname);
-    CHECK("interceptors not installed" && 0);
+    RAW_CHECK("interceptors not installed" && 0);
   }
 
   if (!lib_is_in_env)
@@ -647,7 +659,7 @@ void MaybeReexec() {
   // sign and the '\0' char.
   char *new_env = (char*)allocator_for_env.Allocate(
       old_env_len + 2 + env_name_len);
-  CHECK(new_env);
+  RAW_CHECK(new_env);
   internal_memset(new_env, '\0', old_env_len + 2 + env_name_len);
   internal_strncpy(new_env, kDyldInsertLibraries, env_name_len);
   new_env[env_name_len] = '=';
@@ -696,6 +708,7 @@ void MaybeReexec() {
   if (new_env_pos == new_env + env_name_len + 1) new_env = NULL;
   LeakyResetEnv(kDyldInsertLibraries, new_env);
 }
+#endif  // SANITIZER_GO
 
 char **GetArgv() {
   return *_NSGetArgv();

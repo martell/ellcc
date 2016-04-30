@@ -16,8 +16,8 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
@@ -25,7 +25,6 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/OptBisect.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
@@ -41,6 +40,7 @@ using namespace llvm::PatternMatch;
 
 STATISTIC(NumSimplify, "Number of instructions simplified or DCE'd");
 STATISTIC(NumCSE,      "Number of instructions CSE'd");
+STATISTIC(NumCSECVP,   "Number of compare instructions CVP'd");
 STATISTIC(NumCSELoad,  "Number of load instructions CSE'd");
 STATISTIC(NumCSECall,  "Number of call instructions CSE'd");
 STATISTIC(NumDSE,      "Number of trivial dead stores removed");
@@ -98,15 +98,6 @@ unsigned DenseMapInfo<SimpleValue>::getHashValue(SimpleValue Val) {
     if (BinOp->isCommutative() && BinOp->getOperand(0) > BinOp->getOperand(1))
       std::swap(LHS, RHS);
 
-    if (isa<OverflowingBinaryOperator>(BinOp)) {
-      // Hash the overflow behavior
-      unsigned Overflow =
-          BinOp->hasNoSignedWrap() * OverflowingBinaryOperator::NoSignedWrap |
-          BinOp->hasNoUnsignedWrap() *
-              OverflowingBinaryOperator::NoUnsignedWrap;
-      return hash_combine(BinOp->getOpcode(), Overflow, LHS, RHS);
-    }
-
     return hash_combine(BinOp->getOpcode(), LHS, RHS);
   }
 
@@ -153,7 +144,7 @@ bool DenseMapInfo<SimpleValue>::isEqual(SimpleValue LHS, SimpleValue RHS) {
 
   if (LHSI->getOpcode() != RHSI->getOpcode())
     return false;
-  if (LHSI->isIdenticalTo(RHSI))
+  if (LHSI->isIdenticalToWhenDefined(RHSI))
     return true;
 
   // If we're not strictly identical, we still might be a commutable instruction
@@ -164,15 +155,6 @@ bool DenseMapInfo<SimpleValue>::isEqual(SimpleValue LHS, SimpleValue RHS) {
     assert(isa<BinaryOperator>(RHSI) &&
            "same opcode, but different instruction type?");
     BinaryOperator *RHSBinOp = cast<BinaryOperator>(RHSI);
-
-    // Check overflow attributes
-    if (isa<OverflowingBinaryOperator>(LHSBinOp)) {
-      assert(isa<OverflowingBinaryOperator>(RHSBinOp) &&
-             "same opcode, but different operator type?");
-      if (LHSBinOp->hasNoUnsignedWrap() != RHSBinOp->hasNoUnsignedWrap() ||
-          LHSBinOp->hasNoSignedWrap() != RHSBinOp->hasNoSignedWrap())
-        return false;
-    }
 
     // Commuted equality
     return LHSBinOp->getOperand(0) == RHSBinOp->getOperand(1) &&
@@ -297,15 +279,15 @@ public:
   /// present the table; it is the responsibility of the consumer to inspect
   /// the atomicity/volatility if needed.
   struct LoadValue {
-    Value *Data;
+    Instruction *Inst;
     unsigned Generation;
     int MatchingId;
     bool IsAtomic;
     LoadValue()
-      : Data(nullptr), Generation(0), MatchingId(-1), IsAtomic(false) {}
-    LoadValue(Value *Data, unsigned Generation, unsigned MatchingId,
+      : Inst(nullptr), Generation(0), MatchingId(-1), IsAtomic(false) {}
+    LoadValue(Instruction *Inst, unsigned Generation, unsigned MatchingId,
               bool IsAtomic)
-      : Data(Data), Generation(Generation), MatchingId(MatchingId),
+      : Inst(Inst), Generation(Generation), MatchingId(MatchingId),
         IsAtomic(IsAtomic) {}
   };
   typedef RecyclingAllocator<BumpPtrAllocator,
@@ -355,7 +337,7 @@ private:
   // Contains all the needed information to create a stack for doing a depth
   // first tranversal of the tree. This includes scopes for values, loads, and
   // calls as well as the generation. There is a child iterator so that the
-  // children do not need to be store spearately.
+  // children do not need to be store separately.
   class StackNode {
   public:
     StackNode(ScopedHTType &AvailableValues, LoadHTType &AvailableLoads,
@@ -501,6 +483,7 @@ private:
 }
 
 bool EarlyCSE::processNode(DomTreeNode *Node) {
+  bool Changed = false;
   BasicBlock *BB = Node->getBlock();
 
   // If this block has a single predecessor, then the predecessor is the parent
@@ -531,9 +514,13 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
             DEBUG(dbgs() << "EarlyCSE CVP: Add conditional value for '"
                   << CondInst->getName() << "' as " << *ConditionalConstant
                   << " in " << BB->getName() << "\n");
-            // Replace all dominated uses with the known value
-            replaceDominatedUsesWith(CondInst, ConditionalConstant, DT,
-                                     BasicBlockEdge(Pred, BB));
+            // Replace all dominated uses with the known value.
+            if (unsigned Count =
+                    replaceDominatedUsesWith(CondInst, ConditionalConstant, DT,
+                                             BasicBlockEdge(Pred, BB))) {
+              Changed = true;
+              NumCSECVP = NumCSECVP + Count;
+            }
           }
 
   /// LastStore - Keep track of the last non-volatile store that we saw... for
@@ -542,7 +529,6 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
   /// stores which can occur in bitfield code among other things.
   Instruction *LastStore = nullptr;
 
-  bool Changed = false;
   const DataLayout &DL = BB->getModule()->getDataLayout();
 
   // See if any instructions in the block can be eliminated.  If so, do it.  If
@@ -568,6 +554,22 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
       continue;
     }
 
+    if (match(Inst, m_Intrinsic<Intrinsic::experimental_guard>())) {
+      if (auto *CondI =
+              dyn_cast<Instruction>(cast<CallInst>(Inst)->getArgOperand(0))) {
+        // The condition we're on guarding here is true for all dominated
+        // locations.
+        if (SimpleValue::canHandle(CondI))
+          AvailableValues.insert(CondI, ConstantInt::getTrue(BB->getContext()));
+      }
+
+      // Guard intrinsics read all memory, but don't write any memory.
+      // Accordingly, don't update the generation but consume the last store (to
+      // avoid an incorrect DSE).
+      LastStore = nullptr;
+      continue;
+    }
+
     // If the instruction can be simplified (e.g. X+0 = X) then replace it with
     // its simpler value.
     if (Value *V = SimplifyInstruction(Inst, DL, &TLI, &DT, &AC)) {
@@ -584,6 +586,8 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
       // See if the instruction has an available value.  If so, use it.
       if (Value *V = AvailableValues.lookup(Inst)) {
         DEBUG(dbgs() << "EarlyCSE CSE: " << *Inst << "  to: " << *V << '\n');
+        if (auto *I = dyn_cast<Instruction>(V))
+          I->andIRFlags(Inst);
         Inst->replaceAllUsesWith(V);
         Inst->eraseFromParent();
         Changed = true;
@@ -609,16 +613,16 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
       // If we have an available version of this load, and if it is the right
       // generation, replace this instruction.
       LoadValue InVal = AvailableLoads.lookup(MemInst.getPointerOperand());
-      if (InVal.Data != nullptr && InVal.Generation == CurrentGeneration &&
+      if (InVal.Inst != nullptr && InVal.Generation == CurrentGeneration &&
           InVal.MatchingId == MemInst.getMatchingId() &&
           // We don't yet handle removing loads with ordering of any kind.
           !MemInst.isVolatile() && MemInst.isUnordered() &&
           // We can't replace an atomic load with one which isn't also atomic.
           InVal.IsAtomic >= MemInst.isAtomic()) {
-        Value *Op = getOrCreateResult(InVal.Data, Inst->getType());
+        Value *Op = getOrCreateResult(InVal.Inst, Inst->getType());
         if (Op != nullptr) {
           DEBUG(dbgs() << "EarlyCSE CSE LOAD: " << *Inst
-                       << "  to: " << *InVal.Data << '\n');
+                       << "  to: " << *InVal.Inst << '\n');
           if (!Inst->use_empty())
             Inst->replaceAllUsesWith(Op);
           Inst->eraseFromParent();
@@ -686,8 +690,8 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
     // the store originally was.
     if (MemInst.isValid() && MemInst.isStore()) {
       LoadValue InVal = AvailableLoads.lookup(MemInst.getPointerOperand());
-      if (InVal.Data &&
-          InVal.Data == getOrCreateResult(Inst, InVal.Data->getType()) &&
+      if (InVal.Inst &&
+          InVal.Inst == getOrCreateResult(Inst, InVal.Inst->getType()) &&
           InVal.Generation == CurrentGeneration &&
           InVal.MatchingId == MemInst.getMatchingId() &&
           // We don't yet handle removing stores with ordering of any kind.
@@ -820,9 +824,6 @@ bool EarlyCSE::run() {
 
 PreservedAnalyses EarlyCSEPass::run(Function &F,
                                     AnalysisManager<Function> &AM) {
-  if (skipPassForFunction(name(), F))
-    return PreservedAnalyses::all();
-
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(F);
   auto &TTI = AM.getResult<TargetIRAnalysis>(F);
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);

@@ -193,6 +193,18 @@ BitVector SIRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     assert(!isSubRegister(ScratchRSrcReg, ScratchWaveOffsetReg));
   }
 
+  // Reserve VGPRs for trap handler usage if "amdgpu-debugger-reserve-trap-regs"
+  // attribute was specified.
+  const AMDGPUSubtarget &ST = MF.getSubtarget<AMDGPUSubtarget>();
+  if (ST.debuggerReserveTrapVGPRs()) {
+    unsigned ReservedVGPRFirst =
+      MaxWorkGroupVGPRCount - MFI->getDebuggerReserveTrapVGPRCount();
+    for (unsigned i = ReservedVGPRFirst; i < MaxWorkGroupVGPRCount; ++i) {
+      unsigned Reg = AMDGPU::VGPR_32RegClass.getRegister(i);
+      reserveRegisterTuples(Reserved, Reg);
+    }
+  }
+
   return Reserved;
 }
 
@@ -584,22 +596,6 @@ void SIRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
         }
       }
 
-      // TODO: only do this when it is needed
-      switch (MF->getSubtarget<AMDGPUSubtarget>().getGeneration()) {
-      case AMDGPUSubtarget::SOUTHERN_ISLANDS:
-        // "VALU writes SGPR" -> "SMRD reads that SGPR" needs 4 wait states
-        // ("S_NOP 3") on SI
-        TII->insertWaitStates(*MBB, MI, 4);
-        break;
-      case AMDGPUSubtarget::SEA_ISLANDS:
-        break;
-      default: // VOLCANIC_ISLANDS and later
-        // "VALU writes SGPR -> VMEM reads that SGPR" needs 5 wait states
-        // ("S_NOP 4") on VI and later. This also applies to VALUs which write
-        // VCC, but we're unlikely to see VMEM use VCC.
-        TII->insertWaitStates(*MBB, MI, 5);
-      }
-
       MI->eraseFromParent();
       break;
     }
@@ -917,7 +913,8 @@ unsigned SIRegisterInfo::getPreloadedValue(const MachineFunction &MF,
     assert(MFI->hasDispatchPtr());
     return MFI->DispatchPtrUserSGPR;
   case SIRegisterInfo::QUEUE_PTR:
-    llvm_unreachable("not implemented");
+    assert(MFI->hasQueuePtr());
+    return MFI->QueuePtrUserSGPR;
   case SIRegisterInfo::WORKITEM_ID_X:
     assert(MFI->hasWorkItemIDX());
     return AMDGPU::VGPR0;
@@ -977,4 +974,15 @@ unsigned SIRegisterInfo::getNumSGPRsAllowed(AMDGPUSubtarget::Generation gen,
       default: return 103;
     }
   }
+}
+
+bool SIRegisterInfo::isVGPR(const MachineRegisterInfo &MRI,
+                            unsigned Reg) const {
+  const TargetRegisterClass *RC;
+  if (TargetRegisterInfo::isVirtualRegister(Reg))
+    RC = MRI.getRegClass(Reg);
+  else
+    RC = getPhysRegClass(Reg);
+
+  return hasVGPRs(RC);
 }

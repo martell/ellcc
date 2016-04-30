@@ -3,6 +3,7 @@ if [ $# -ne 1 ] ; then
     echo "$0: <revision>"
     exit 1
 fi
+svn update
 svn merge --accept edit http://ellcc.org/svn/vendor/llvm/svn-$1 http://ellcc.org/svn/vendor/llvm/current llvm
 cd llvm/tools
 svn merge --accept edit http://ellcc.org/svn/vendor/clang/svn-$1 http://ellcc.org/svn/vendor/clang/current clang

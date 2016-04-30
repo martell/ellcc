@@ -167,6 +167,10 @@ TargetPassConfig *NVPTXTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new NVPTXPassConfig(this, PM);
 }
 
+void NVPTXTargetMachine::addEarlyAsPossiblePasses(PassManagerBase &PM) {
+  PM.add(createNVVMReflectPass());
+}
+
 TargetIRAnalysis NVPTXTargetMachine::getTargetIRAnalysis() {
   return TargetIRAnalysis([this](const Function &F) {
     return TargetTransformInfo(NVPTXTTIImpl(this, F));
@@ -181,7 +185,6 @@ void NVPTXPassConfig::addEarlyCSEOrGVNPass() {
 }
 
 void NVPTXPassConfig::addAddressSpaceInferencePasses() {
-  addPass(createNVPTXLowerKernelArgsPass(&getNVPTXTargetMachine()));
   // NVPTXLowerKernelArgs emits alloca for byval parameters which can often
   // be eliminated by SROA.
   addPass(createSROAPass());
@@ -229,12 +232,20 @@ void NVPTXPassConfig::addIRPasses() {
   disablePass(&FuncletLayoutID);
   disablePass(&PatchableFunctionID);
 
+  // NVVMReflectPass is added in addEarlyAsPossiblePasses, so hopefully running
+  // it here does nothing.  But since we need it for correctness when lowering
+  // to NVPTX, run it here too, in case whoever built our pass pipeline didn't
+  // call addEarlyAsPossiblePasses.
   addPass(createNVVMReflectPass());
+
   if (getOptLevel() != CodeGenOpt::None)
     addPass(createNVPTXImageOptimizerPass());
   addPass(createNVPTXAssignValidGlobalNamesPass());
   addPass(createGenericToNVVMPass());
 
+  // NVPTXLowerKernelArgs is required for correctness and should be run right
+  // before the address space inference passes.
+  addPass(createNVPTXLowerKernelArgsPass(&getNVPTXTargetMachine()));
   if (getOptLevel() != CodeGenOpt::None) {
     addAddressSpaceInferencePasses();
     addStraightLineScalarOptimizationPasses();
@@ -273,10 +284,12 @@ bool NVPTXPassConfig::addInstSelector() {
 
 void NVPTXPassConfig::addPostRegAlloc() {
   addPass(createNVPTXPrologEpilogPass(), false);
-  // NVPTXPrologEpilogPass calculates frame object offset and replace frame
-  // index with VRFrame register. NVPTXPeephole need to be run after that and
-  // will replace VRFrame with VRFrameLocal when possible.
-  addPass(createNVPTXPeephole());
+  if (getOptLevel() != CodeGenOpt::None) {
+    // NVPTXPrologEpilogPass calculates frame object offset and replace frame
+    // index with VRFrame register. NVPTXPeephole need to be run after that and
+    // will replace VRFrame with VRFrameLocal when possible.
+    addPass(createNVPTXPeephole());
+  }
 }
 
 FunctionPass *NVPTXPassConfig::createTargetRegisterAllocator(bool) {

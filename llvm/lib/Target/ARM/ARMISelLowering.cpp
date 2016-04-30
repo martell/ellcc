@@ -580,6 +580,9 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTPOP,      MVT::v1i64, Expand);
     setOperationAction(ISD::CTPOP,      MVT::v2i64, Expand);
 
+    setOperationAction(ISD::CTLZ,       MVT::v1i64, Expand);
+    setOperationAction(ISD::CTLZ,       MVT::v2i64, Expand);
+
     // NEON does not have single instruction CTTZ for vectors.
     setOperationAction(ISD::CTTZ, MVT::v8i8, Custom);
     setOperationAction(ISD::CTTZ, MVT::v4i16, Custom);
@@ -755,10 +758,6 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::CTPOP, MVT::i32, Expand);
   if (!Subtarget->hasV5TOps() || Subtarget->isThumb1Only())
     setOperationAction(ISD::CTLZ, MVT::i32, Expand);
-
-  // These just redirect to CTTZ and CTLZ on ARM.
-  setOperationAction(ISD::CTTZ_ZERO_UNDEF  , MVT::i32  , Expand);
-  setOperationAction(ISD::CTLZ_ZERO_UNDEF  , MVT::i32  , Expand);
 
   // @llvm.readcyclecounter requires the Performance Monitors extension.
   // Default to the 0 expansion on unsupported platforms.
@@ -5664,7 +5663,7 @@ SDValue ARMTargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
         Ops.push_back(DAG.getNode(ISD::BITCAST, dl, MVT::i32,
                                   Op.getOperand(i)));
       EVT VecVT = EVT::getVectorVT(*DAG.getContext(), MVT::i32, NumElts);
-      SDValue Val = DAG.getNode(ISD::BUILD_VECTOR, dl, VecVT, Ops);
+      SDValue Val = DAG.getBuildVector(VecVT, dl, Ops);
       Val = LowerBUILD_VECTOR(Val, DAG, ST);
       if (Val.getNode())
         return DAG.getNode(ISD::BITCAST, dl, VT, Val);
@@ -6063,10 +6062,10 @@ static SDValue LowerVECTOR_SHUFFLEv8i8(SDValue Op,
 
   if (V2.getNode()->isUndef())
     return DAG.getNode(ARMISD::VTBL1, DL, MVT::v8i8, V1,
-                       DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v8i8, VTBLMask));
+                       DAG.getBuildVector(MVT::v8i8, DL, VTBLMask));
 
   return DAG.getNode(ARMISD::VTBL2, DL, MVT::v8i8, V1, V2,
-                     DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v8i8, VTBLMask));
+                     DAG.getBuildVector(MVT::v8i8, DL, VTBLMask));
 }
 
 static SDValue LowerReverse_VECTOR_SHUFFLEv16i8_v8i16(SDValue Op,
@@ -6462,8 +6461,9 @@ static SDValue SkipExtensionForVMULL(SDNode *N, SelectionDAG &DAG) {
     assert(BVN->getOpcode() == ISD::BUILD_VECTOR &&
            BVN->getValueType(0) == MVT::v4i32 && "expected v4i32 BUILD_VECTOR");
     unsigned LowElt = DAG.getDataLayout().isBigEndian() ? 1 : 0;
-    return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(N), MVT::v2i32,
-                       BVN->getOperand(LowElt), BVN->getOperand(LowElt+2));
+    return DAG.getBuildVector(
+        MVT::v2i32, SDLoc(N),
+        {BVN->getOperand(LowElt), BVN->getOperand(LowElt + 2)});
   }
   // Construct a new BUILD_VECTOR with elements truncated to half the size.
   assert(N->getOpcode() == ISD::BUILD_VECTOR && "expected BUILD_VECTOR");
@@ -6480,8 +6480,7 @@ static SDValue SkipExtensionForVMULL(SDNode *N, SelectionDAG &DAG) {
     // The values are implicitly truncated so sext vs. zext doesn't matter.
     Ops.push_back(DAG.getConstant(CInt.zextOrTrunc(32), dl, MVT::i32));
   }
-  return DAG.getNode(ISD::BUILD_VECTOR, dl,
-                     MVT::getVectorVT(TruncVT, NumElts), Ops);
+  return DAG.getBuildVector(MVT::getVectorVT(TruncVT, NumElts), dl, Ops);
 }
 
 static bool isAddSubSExt(SDNode *N, SelectionDAG &DAG) {
@@ -8059,7 +8058,9 @@ ARMTargetLowering::EmitLowered__chkstk(MachineInstr *MI,
 
   AddDefaultCC(AddDefaultPred(BuildMI(*MBB, MI, DL, TII.get(ARM::t2SUBrr),
                                       ARM::SP)
-                              .addReg(ARM::SP).addReg(ARM::R4)));
+                         .addReg(ARM::SP, RegState::Kill)
+                         .addReg(ARM::R4, RegState::Kill)
+                         .setMIFlags(MachineInstr::FrameSetup)));
 
   MI->eraseFromParent();
   return MBB;
@@ -9503,7 +9504,7 @@ static SDValue PerformBUILD_VECTORCombine(SDNode *N,
     DCI.AddToWorklist(V.getNode());
   }
   EVT FloatVT = EVT::getVectorVT(*DAG.getContext(), MVT::f64, NumElts);
-  SDValue BV = DAG.getNode(ISD::BUILD_VECTOR, dl, FloatVT, Ops);
+  SDValue BV = DAG.getBuildVector(FloatVT, dl, Ops);
   return DAG.getNode(ISD::BITCAST, dl, VT, BV);
 }
 
@@ -11494,6 +11495,26 @@ bool ARMTargetLowering::ExpandInlineAsm(CallInst *CI) const {
   }
 
   return false;
+}
+
+const char *ARMTargetLowering::LowerXConstraint(EVT ConstraintVT) const {
+  // At this point, we have to lower this constraint to something else, so we
+  // lower it to an "r" or "w". However, by doing this we will force the result
+  // to be in register, while the X constraint is much more permissive.
+  //
+  // Although we are correct (we are free to emit anything, without
+  // constraints), we might break use cases that would expect us to be more
+  // efficient and emit something else.
+  if (!Subtarget->hasVFP2())
+    return "r";
+  if (ConstraintVT.isFloatingPoint())
+    return "w";
+  if (ConstraintVT.isVector() && Subtarget->hasNEON() &&
+     (ConstraintVT.getSizeInBits() == 64 ||
+      ConstraintVT.getSizeInBits() == 128))
+    return "w";
+
+  return "r";
 }
 
 /// getConstraintType - Given a constraint letter, return the type of

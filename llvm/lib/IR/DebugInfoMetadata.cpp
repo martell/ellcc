@@ -45,7 +45,6 @@ DILocation *DILocation::getImpl(LLVMContext &Context, unsigned Line,
   // Fixup column.
   adjustColumn(Column);
 
-  assert(Scope && "Expected scope");
   if (Storage == Uniqued) {
     if (auto *N =
             getUniqued(Context.pImpl->DILocations,
@@ -116,13 +115,13 @@ DIScopeRef DIScope::getScope() const {
     return SP->getScope();
 
   if (auto *LB = dyn_cast<DILexicalBlockBase>(this))
-    return DIScopeRef(LB->getScope());
+    return LB->getScope();
 
   if (auto *NS = dyn_cast<DINamespace>(this))
-    return DIScopeRef(NS->getScope());
+    return NS->getScope();
 
   if (auto *M = dyn_cast<DIModule>(this))
-    return DIScopeRef(M->getScope());
+    return M->getScope();
 
   assert((isa<DIFile>(this) || isa<DICompileUnit>(this)) &&
          "Unhandled type of scope.");

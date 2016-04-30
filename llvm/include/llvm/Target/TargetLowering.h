@@ -41,6 +41,7 @@
 #include <vector>
 
 namespace llvm {
+  class BranchProbability;
   class CallInst;
   class CCState;
   class CCValAssign;
@@ -261,6 +262,10 @@ public:
     return PredictableSelectIsExpensive;
   }
 
+  /// If a branch or a select condition is skewed in one direction by more than
+  /// this factor, it is very likely to be predicted correctly.
+  virtual BranchProbability getPredictableBranchThreshold() const;
+
   /// isLoadBitCastBeneficial() - Return true if the following transform
   /// is beneficial.
   /// fold (conv (load x)) -> (load (conv*)x)
@@ -268,9 +273,31 @@ public:
   /// efficiently, casting the load to a smaller vector of larger types and
   /// loading is more efficient, however, this can be undone by optimizations in
   /// dag combiner.
-  virtual bool isLoadBitCastBeneficial(EVT /* Load */,
-                                       EVT /* Bitcast */) const {
+  virtual bool isLoadBitCastBeneficial(EVT LoadVT,
+                                       EVT BitcastVT) const {
+    // Don't do if we could do an indexed load on the original type, but not on
+    // the new one.
+    if (!LoadVT.isSimple() || !BitcastVT.isSimple())
+      return true;
+
+    MVT LoadMVT = LoadVT.getSimpleVT();
+
+    // Don't bother doing this if it's just going to be promoted again later, as
+    // doing so might interfere with other combines.
+    if (getOperationAction(ISD::LOAD, LoadMVT) == Promote &&
+        getTypeToPromoteTo(ISD::LOAD, LoadMVT) == BitcastVT.getSimpleVT())
+      return false;
+
     return true;
+  }
+
+  /// isStoreBitCastBeneficial() - Mirror of isLoadBitCastBeneficial(). Return
+  /// true if the following transform is beneficial.
+  ///
+  /// (store (y (conv x)), y*)) -> (store x, (x*))
+  virtual bool isStoreBitCastBeneficial(EVT StoreVT, EVT BitcastVT) const {
+    // Default to the same logic as loads.
+    return isLoadBitCastBeneficial(StoreVT, BitcastVT);
   }
 
   /// Return true if it is expected to be cheaper to do a store of a non-zero

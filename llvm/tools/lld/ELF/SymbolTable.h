@@ -51,7 +51,6 @@ public:
   }
 
   SymbolBody *addUndefined(StringRef Name);
-  SymbolBody *addUndefinedOpt(StringRef Name);
   DefinedRegular<ELFT> *addAbsolute(StringRef Name,
                                     uint8_t Visibility = llvm::ELF::STV_HIDDEN);
   SymbolBody *addSynthetic(StringRef Name, OutputSectionBase<ELFT> &Section,
@@ -59,8 +58,10 @@ public:
   DefinedRegular<ELFT> *addIgnored(StringRef Name,
                                    uint8_t Visibility = llvm::ELF::STV_HIDDEN);
 
+  void scanUndefinedFlags();
   void scanShlibUndefined();
   void scanDynamicList();
+  void scanVersionScript();
   SymbolBody *find(StringRef Name);
   void wrap(StringRef Name);
   InputFile *findFile(SymbolBody *B);

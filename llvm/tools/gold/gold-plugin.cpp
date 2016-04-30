@@ -166,10 +166,8 @@ namespace options {
   static unsigned Parallelism = 0;
 #ifdef NDEBUG
   static bool DisableVerify = true;
-  static bool DiscardValueNames = true;
 #else
   static bool DisableVerify = false;
-  static bool DiscardValueNames = false;
 #endif
   static std::string obj_path;
   static std::string extra_library_path;
@@ -226,10 +224,6 @@ namespace options {
         message(LDPL_FATAL, "Invalid parallelism level: %s", opt_ + 5);
     } else if (opt == "disable-verify") {
       DisableVerify = true;
-    } else if (opt == "discard-value-names") {
-      DiscardValueNames = true;
-    } else if (opt == "no-discard-value-names") {
-      DiscardValueNames = false;
     } else {
       // Save this option to pass to the code generator.
       // ParseCommandLineOptions() expects argv[0] to be program name. Lazily
@@ -521,7 +515,6 @@ static ld_plugin_status claim_file_hook(const ld_plugin_input_file *file,
       Res.Visibility = getMinVisibility(Res.Visibility, GV->getVisibility());
       switch (GV->getVisibility()) {
       case GlobalValue::DefaultVisibility:
-        sym.visibility = LDPV_DEFAULT;
         break;
       case GlobalValue::HiddenVisibility:
         sym.visibility = LDPV_HIDDEN;
@@ -1097,8 +1090,8 @@ static bool linkInModule(LLVMContext &Context, IRMover &L, claimed_file &F,
     M->setTargetTriple(DefaultTriple);
   }
 
-  if (!L.move(std::move(M), Keep, [](GlobalValue &, IRMover::ValueAdder) {}))
-    return false;
+  if (L.move(std::move(M), Keep, [](GlobalValue &, IRMover::ValueAdder) {}))
+    return true;
 
   for (const auto &I : Realign) {
     GlobalValue *Dst = L.getModule().getNamedValue(I.first());
@@ -1107,7 +1100,7 @@ static bool linkInModule(LLVMContext &Context, IRMover &L, claimed_file &F,
     cast<GlobalVariable>(Dst)->setAlignment(I.second);
   }
 
-  return true;
+  return false;
 }
 
 /// Perform the ThinLTO backend on a single module, invoking the LTO and codegen
@@ -1119,7 +1112,8 @@ static void thinLTOBackendTask(claimed_file &F, const void *View,
                                raw_fd_ostream *OS, unsigned TaskID) {
   // Need to use a separate context for each task
   LLVMContext Context;
-  Context.setDiscardValueNames(options::DiscardValueNames);
+  Context.setDiscardValueNames(options::TheOutputType !=
+                               options::OT_SAVE_TEMPS);
   Context.enableDebugTypeODRUniquing(); // Merge debug info types.
   Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
 
@@ -1242,7 +1236,8 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
   }
 
   LLVMContext Context;
-  Context.setDiscardValueNames(options::DiscardValueNames);
+  Context.setDiscardValueNames(options::TheOutputType !=
+                               options::OT_SAVE_TEMPS);
   Context.enableDebugTypeODRUniquing(); // Merge debug info types.
   Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
 

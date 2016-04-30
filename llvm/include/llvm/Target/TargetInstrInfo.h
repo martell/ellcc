@@ -818,6 +818,11 @@ public:
       MachineInstr &Root,
       SmallVectorImpl<MachineCombinerPattern> &Patterns) const;
 
+  /// Return true when a code sequence can improve throughput. It
+  /// should be called only for instructions in loops.
+  /// \param Pattern - combiner pattern
+  virtual bool isThroughputPattern(MachineCombinerPattern Pattern) const;
+
   /// Return true if the input \P Inst is part of a chain of dependent ops
   /// that are suitable for reassociation, otherwise return false.
   /// If the instruction's operands must be commuted to have a previous
@@ -1099,6 +1104,13 @@ public:
   virtual ScheduleHazardRecognizer*
   CreateTargetPostRAHazardRecognizer(const InstrItineraryData*,
                                      const ScheduleDAG *DAG) const;
+
+  /// Allocate and return a hazard recognizer to use for by non-scheduling
+  /// passes.
+  virtual ScheduleHazardRecognizer*
+  CreateTargetPostRAHazardRecognizer(const MachineFunction &MF) const {
+    return nullptr;
+  }
 
   /// Provide a global flag for disabling the PreRA hazard recognizer that
   /// targets may choose to honor.

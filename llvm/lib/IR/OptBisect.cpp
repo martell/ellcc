@@ -85,50 +85,18 @@ static std::string getDescription(const CallGraphSCC &SCC) {
   return Desc;
 }
 
-static std::string getDescription(const LazyCallGraph::SCC &SCC) {
-  std::string Desc = "SCC (";
-  bool First = true;
-  for (LazyCallGraph::Node &CGN : SCC) {
-    if (First)
-      First = false;
-    else
-      Desc += ", ";
-    Function &F = CGN.getFunction();
-    Desc += F.getName();
-  }
-  Desc += ")";
-  return Desc;
-}
-
 // Force instantiations.
 template bool OptBisect::shouldRunPass(const Pass *, const Module &);
 template bool OptBisect::shouldRunPass(const Pass *, const Function &);
 template bool OptBisect::shouldRunPass(const Pass *, const BasicBlock &);
 template bool OptBisect::shouldRunPass(const Pass *, const Loop &);
 template bool OptBisect::shouldRunPass(const Pass *, const CallGraphSCC &);
-template bool OptBisect::shouldRunPass(const StringRef PassName,
-                                       const Module &);
-template bool OptBisect::shouldRunPass(const StringRef PassName,
-                                       const Function &);
-template bool OptBisect::shouldRunPass(const StringRef PassName,
-                                       const BasicBlock &);
-template bool OptBisect::shouldRunPass(const StringRef PassName, const Loop &);
-template bool OptBisect::shouldRunPass(const StringRef PassName,
-                                       const LazyCallGraph::SCC &);
 
 template <class UnitT>
 bool OptBisect::shouldRunPass(const Pass *P, const UnitT &U) {
   if (!BisectEnabled)
     return true;
   return checkPass(P->getPassName(), getDescription(U));
-}
-
-// Interface function for the new pass manager.
-template <class UnitT>
-bool OptBisect::shouldRunPass(const StringRef PassName, const UnitT &U) {
-  if (!BisectEnabled)
-    return true;
-  return checkPass(PassName, getDescription(U));
 }
 
 bool OptBisect::checkPass(const StringRef PassName,
@@ -148,29 +116,5 @@ bool OptBisect::shouldRunCase(const Twine &Msg) {
   bool ShouldRun = (OptBisectLimit == -1 || CurFuelNum <= OptBisectLimit);
   printCaseMessage(CurFuelNum, Msg.str(), ShouldRun);
   return ShouldRun;
-}
-
-bool llvm::skipPassForModule(const StringRef PassName, const Module &M) {
-  return !M.getContext().getOptBisect().shouldRunPass(PassName, M);
-}
-
-bool llvm::skipPassForFunction(const StringRef PassName, const Function &F) {
-  return !F.getContext().getOptBisect().shouldRunPass(PassName, F);
-}
-#if 0
-bool llvm::skipPassForBasicBlock(const StringRef PassName, const BasicBlock &BB) {
-  return !BB.getContext().getOptBisect().shouldRunPass(PassName, BB);
-}
-
-bool llvm::skipPassForLoop(const StringRef PassName, const Loop &L) {
-  const Function *F = L.getHeader()->getParent();
-  if (!F)
-    return false;
-  return !F->getContext().getOptBisect().shouldRunPass(PassName, L);
-}
-#endif
-bool llvm::skipPassForSCC(const StringRef PassName, const LazyCallGraph::SCC &SCC) {
-  LLVMContext &Context = SCC.begin()->getFunction().getContext();
-  return !Context.getOptBisect().shouldRunPass(PassName, SCC);
 }
 

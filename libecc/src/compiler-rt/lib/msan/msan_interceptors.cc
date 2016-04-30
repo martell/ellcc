@@ -1052,82 +1052,6 @@ INTERCEPTOR(void *, mmap64, void *addr, SIZE_T length, int prot, int flags,
 #define MSAN_MAYBE_INTERCEPT_MMAP64
 #endif
 
-struct dlinfo {
-  char *dli_fname;
-  void *dli_fbase;
-  char *dli_sname;
-  void *dli_saddr;
-};
-
-INTERCEPTOR(int, dladdr, void *addr, dlinfo *info) {
-  ENSURE_MSAN_INITED();
-  int res = REAL(dladdr)(addr, info);
-  if (res != 0) {
-    __msan_unpoison(info, sizeof(*info));
-    if (info->dli_fname)
-      __msan_unpoison(info->dli_fname, REAL(strlen)(info->dli_fname) + 1);
-    if (info->dli_sname)
-      __msan_unpoison(info->dli_sname, REAL(strlen)(info->dli_sname) + 1);
-  }
-  return res;
-}
-
-INTERCEPTOR(char *, dlerror, int fake) {
-  ENSURE_MSAN_INITED();
-  char *res = REAL(dlerror)(fake);
-  if (res) __msan_unpoison(res, REAL(strlen)(res) + 1);
-  return res;
-}
-
-// dlopen() ultimately calls mmap() down inside the loader, which generally
-// doesn't participate in dynamic symbol resolution.  Therefore we won't
-// intercept its calls to mmap, and we have to hook it here.  The loader
-// initializes the module before returning, so without the dynamic component, we
-// won't be able to clear the shadow before the initializers.  Fixing this would
-// require putting our own initializer first to clear the shadow.
-INTERCEPTOR(void *, dlopen, const char *filename, int flag) {
-  ENSURE_MSAN_INITED();
-  EnterLoader();
-  link_map *map = (link_map *)REAL(dlopen)(filename, flag);
-  ExitLoader();
-  if (!__msan_has_dynamic_component() && map) {
-    // If msandr didn't clear the shadow before the initializers ran, we do it
-    // ourselves afterwards.
-    ForEachMappedRegion(map, __msan_unpoison);
-  }
-  return (void *)map;
-}
-
-typedef int (*dl_iterate_phdr_cb)(__sanitizer_dl_phdr_info *info, SIZE_T size,
-                                  void *data);
-struct dl_iterate_phdr_data {
-  dl_iterate_phdr_cb callback;
-  void *data;
-};
-
-static int msan_dl_iterate_phdr_cb(__sanitizer_dl_phdr_info *info, SIZE_T size,
-                                   void *data) {
-  if (info) {
-    __msan_unpoison(info, size);
-    if (info->dlpi_phdr && info->dlpi_phnum)
-      __msan_unpoison(info->dlpi_phdr, struct_ElfW_Phdr_sz * info->dlpi_phnum);
-    if (info->dlpi_name)
-      __msan_unpoison(info->dlpi_name, REAL(strlen)(info->dlpi_name) + 1);
-  }
-  dl_iterate_phdr_data *cbdata = (dl_iterate_phdr_data *)data;
-  UnpoisonParam(3);
-  return cbdata->callback(info, size, cbdata->data);
-}
-
-INTERCEPTOR(int, dl_iterate_phdr, dl_iterate_phdr_cb callback, void *data) {
-  ENSURE_MSAN_INITED();
-  dl_iterate_phdr_data cbdata;
-  cbdata.callback = callback;
-  cbdata.data = data;
-  int res = REAL(dl_iterate_phdr)(msan_dl_iterate_phdr_cb, (void *)&cbdata);
-  return res;
-}
-
 INTERCEPTOR(int, getrusage, int who, void *usage) {
   ENSURE_MSAN_INITED();
   int res = REAL(getrusage)(who, usage);
@@ -1446,7 +1370,16 @@ int OnExit() {
       VReport(1, "MemorySanitizer: failed to intercept '" #name "'\n"); \
   } while (0)
 
+#define MSAN_INTERCEPT_FUNC_VER(name, ver)                                    \
+  do {                                                                        \
+    if ((!INTERCEPT_FUNCTION_VER(name, ver) || !REAL(name)))                  \
+      VReport(                                                                \
+          1, "MemorySanitizer: failed to intercept '" #name "@@" #ver "'\n"); \
+  } while (0)
+
 #define COMMON_INTERCEPT_FUNCTION(name) MSAN_INTERCEPT_FUNC(name)
+#define COMMON_INTERCEPT_FUNCTION_VER(name, ver)                          \
+  MSAN_INTERCEPT_FUNC_VER(name, ver)
 #define COMMON_INTERCEPTOR_UNPOISON_PARAM(count)  \
   UnpoisonParam(count)
 #define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
@@ -1506,6 +1439,66 @@ int OnExit() {
   } while (false)
 #define COMMON_SYSCALL_POST_WRITE_RANGE(p, s) __msan_unpoison(p, s)
 #include "sanitizer_common/sanitizer_common_syscalls.inc"
+
+struct dlinfo {
+  char *dli_fname;
+  void *dli_fbase;
+  char *dli_sname;
+  void *dli_saddr;
+};
+
+INTERCEPTOR(int, dladdr, void *addr, dlinfo *info) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, dladdr, addr, info);
+  int res = REAL(dladdr)(addr, info);
+  if (res != 0) {
+    __msan_unpoison(info, sizeof(*info));
+    if (info->dli_fname)
+      __msan_unpoison(info->dli_fname, REAL(strlen)(info->dli_fname) + 1);
+    if (info->dli_sname)
+      __msan_unpoison(info->dli_sname, REAL(strlen)(info->dli_sname) + 1);
+  }
+  return res;
+}
+
+INTERCEPTOR(char *, dlerror, int fake) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, dlerror, fake);
+  char *res = REAL(dlerror)(fake);
+  if (res) __msan_unpoison(res, REAL(strlen)(res) + 1);
+  return res;
+}
+
+typedef int (*dl_iterate_phdr_cb)(__sanitizer_dl_phdr_info *info, SIZE_T size,
+                                  void *data);
+struct dl_iterate_phdr_data {
+  dl_iterate_phdr_cb callback;
+  void *data;
+};
+
+static int msan_dl_iterate_phdr_cb(__sanitizer_dl_phdr_info *info, SIZE_T size,
+                                   void *data) {
+  if (info) {
+    __msan_unpoison(info, size);
+    if (info->dlpi_phdr && info->dlpi_phnum)
+      __msan_unpoison(info->dlpi_phdr, struct_ElfW_Phdr_sz * info->dlpi_phnum);
+    if (info->dlpi_name)
+      __msan_unpoison(info->dlpi_name, REAL(strlen)(info->dlpi_name) + 1);
+  }
+  dl_iterate_phdr_data *cbdata = (dl_iterate_phdr_data *)data;
+  UnpoisonParam(3);
+  return cbdata->callback(info, size, cbdata->data);
+}
+
+INTERCEPTOR(int, dl_iterate_phdr, dl_iterate_phdr_cb callback, void *data) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, dl_iterate_phdr, callback, data);
+  dl_iterate_phdr_data cbdata;
+  cbdata.callback = callback;
+  cbdata.data = data;
+  int res = REAL(dl_iterate_phdr)(msan_dl_iterate_phdr_cb, (void *)&cbdata);
+  return res;
+}
 
 // These interface functions reside here so that they can use
 // REAL(memset), etc.
@@ -1628,8 +1621,13 @@ void InitializeInterceptors() {
   INTERCEPT_STRTO(wcstoul);
   INTERCEPT_STRTO(wcstoll);
   INTERCEPT_STRTO(wcstoull);
+#ifdef SANITIZER_NLDBL_VERSION
+  INTERCEPT_FUNCTION_VER(vswprintf, SANITIZER_NLDBL_VERSION);
+  INTERCEPT_FUNCTION_VER(swprintf, SANITIZER_NLDBL_VERSION);
+#else
   INTERCEPT_FUNCTION(vswprintf);
   INTERCEPT_FUNCTION(swprintf);
+#endif
   INTERCEPT_FUNCTION(strxfrm);
   INTERCEPT_FUNCTION(strxfrm_l);
   INTERCEPT_FUNCTION(strftime);

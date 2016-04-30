@@ -2318,21 +2318,15 @@ def S4_clbpnorm : T_COUNT_LEADING_64<"normamt", 0b011, 0b000>;
 
 // Count trailing zeros: 64-bit.
 def: Pat<(i32 (trunc (cttz I64:$Rss))), (S2_ct0p I64:$Rss)>;
-def: Pat<(i32 (trunc (cttz_zero_undef I64:$Rss))), (S2_ct0p I64:$Rss)>;
 
 // Count trailing ones: 64-bit.
 def: Pat<(i32 (trunc (cttz (not I64:$Rss)))), (S2_ct1p I64:$Rss)>;
-def: Pat<(i32 (trunc (cttz_zero_undef (not I64:$Rss)))), (S2_ct1p I64:$Rss)>;
 
 // Define leading/trailing patterns that require zero-extensions to 64 bits.
 def: Pat<(i64 (ctlz I64:$Rss)), (Zext64 (S2_cl0p I64:$Rss))>;
-def: Pat<(i64 (ctlz_zero_undef I64:$Rss)), (Zext64 (S2_cl0p I64:$Rss))>;
 def: Pat<(i64 (cttz I64:$Rss)), (Zext64 (S2_ct0p I64:$Rss))>;
-def: Pat<(i64 (cttz_zero_undef I64:$Rss)), (Zext64 (S2_ct0p I64:$Rss))>;
 def: Pat<(i64 (ctlz (not I64:$Rss))), (Zext64 (S2_cl1p I64:$Rss))>;
-def: Pat<(i64 (ctlz_zero_undef (not I64:$Rss))), (Zext64 (S2_cl1p I64:$Rss))>;
 def: Pat<(i64 (cttz (not I64:$Rss))), (Zext64 (S2_ct1p I64:$Rss))>;
-def: Pat<(i64 (cttz_zero_undef (not I64:$Rss))), (Zext64 (S2_ct1p I64:$Rss))>;
 
 
 let hasSideEffects = 0, hasNewValue = 1 in
@@ -3294,43 +3288,43 @@ let isCall = 1, isBarrier = 1, isReturn = 1, isTerminator = 1,
 
 // Restore registers and dealloc frame before a tail call.
 let isCall = 1, Defs = [R29, R30, R31, PC], isAsmParserOnly = 1 in {
-  def RESTORE_DEALLOC_BEFORE_TAILCALL_V4 : T_Call<"">, PredRel;
+  def RESTORE_DEALLOC_BEFORE_TAILCALL_V4 : T_Call<0, "">, PredRel;
 
   let isExtended = 1, opExtendable = 0 in
-  def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_EXT : T_Call<"">, PredRel;
+  def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_EXT : T_Call<0, "">, PredRel;
 
   let Defs = [R14, R15, R28, R29, R30, R31, PC] in {
-    def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_PIC : T_Call<"">, PredRel;
+    def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_PIC : T_Call<0, "">, PredRel;
 
     let isExtended = 1, opExtendable = 0 in
-    def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_EXT_PIC : T_Call<"">, PredRel;
+    def RESTORE_DEALLOC_BEFORE_TAILCALL_V4_EXT_PIC : T_Call<0, "">, PredRel;
   }
 }
 
 // Save registers function call.
 let isCall = 1, Uses = [R29, R31], isAsmParserOnly = 1 in {
-  def SAVE_REGISTERS_CALL_V4 : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4 : T_Call<0, "">, PredRel;
 
   let isExtended = 1, opExtendable = 0 in
-  def SAVE_REGISTERS_CALL_V4_EXT : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4_EXT : T_Call<0, "">, PredRel;
 
   let Defs = [P0] in
-  def SAVE_REGISTERS_CALL_V4STK : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4STK : T_Call<0, "">, PredRel;
 
   let Defs = [P0], isExtended = 1, opExtendable = 0 in
-  def SAVE_REGISTERS_CALL_V4STK_EXT : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4STK_EXT : T_Call<0, "">, PredRel;
 
   let Defs = [R14, R15, R28] in
-  def SAVE_REGISTERS_CALL_V4_PIC : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4_PIC : T_Call<0, "">, PredRel;
 
   let Defs = [R14, R15, R28], isExtended = 1, opExtendable = 0 in
-  def SAVE_REGISTERS_CALL_V4_EXT_PIC : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4_EXT_PIC : T_Call<0, "">, PredRel;
 
   let Defs = [R14, R15, R28, P0] in
-  def SAVE_REGISTERS_CALL_V4STK_PIC : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4STK_PIC : T_Call<0, "">, PredRel;
 
   let Defs = [R14, R15, R28, P0], isExtended = 1, opExtendable = 0 in
-  def SAVE_REGISTERS_CALL_V4STK_EXT_PIC : T_Call<"">, PredRel;
+  def SAVE_REGISTERS_CALL_V4STK_EXT_PIC : T_Call<0, "">, PredRel;
 }
 
 //===----------------------------------------------------------------------===//

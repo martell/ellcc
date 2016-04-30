@@ -352,6 +352,14 @@ def warn_decl_shadow :
           "static data member of %2|"
           "field of %2}1">,
   InGroup<Shadow>, DefaultIgnore;
+def warn_ctor_parm_shadows_field:
+  Warning<"constructor parameter %0 shadows the field %1 of %2">,
+  InGroup<ShadowFieldInConstructor>, DefaultIgnore;
+def warn_modifying_shadowing_decl :
+  Warning<"modifying constructor parameter %0 that shadows a "
+          "field of %1">,
+  InGroup<ShadowFieldInConstructorModified>, DefaultIgnore;
+
 
 // C++ using declarations
 def err_using_requires_qualname : Error<
@@ -1667,7 +1675,7 @@ def warn_maybe_uninit_var : Warning<
   "variable %0 may be uninitialized when "
   "%select{used here|captured by block}1">,
   InGroup<UninitializedMaybe>, DefaultIgnore;
-def note_uninit_var_def : Note<"variable %0 is declared here">;
+def note_var_declared_here : Note<"variable %0 is declared here">;
 def note_uninit_var_use : Note<
   "%select{uninitialized use occurs|variable is captured by block}0 here">;
 def warn_uninit_byref_blockvar_captured_by_block : Warning<
@@ -2504,9 +2512,6 @@ def warn_type_attribute_wrong_type : Warning<
 def warn_incomplete_encoded_type : Warning<
   "encoding of %0 type is incomplete because %1 component has unknown encoding">,
   InGroup<DiagGroup<"encode-type">>;
-def warn_attribute_requires_functions_or_static_globals : Warning<
-  "%0 only applies to variables with static storage duration and functions">,
-  InGroup<IgnoredAttributes>;
 def warn_gnu_inline_attribute_requires_inline : Warning<
   "'gnu_inline' attribute requires function to be marked 'inline',"
   " attribute ignored">,
@@ -2767,13 +2772,6 @@ def warn_impcast_literal_float_to_integer : Warning<
 def warn_impcast_float_integer : Warning<
   "implicit conversion turns floating-point number into integer: %0 to %1">,
   InGroup<FloatConversion>, DefaultIgnore;
-
-def warn_impcast_float_bool : Warning<
-  "implicit conversion turns floating-point number into boolean: %0 to %1">,
-  InGroup<FloatBoolConversion>, DefaultIgnore;
-def warn_impcast_float_to_bool : Warning<
-  "implicit conversion from %0 to %1 changes value from %2 to %3">,
-  InGroup<FloatBoolConstantConversion>;
 
 def warn_impcast_float_to_integer : Warning<
   "implicit conversion of out of range value from %0 to %1 changes value "
@@ -7442,8 +7440,10 @@ def err_ms_va_start_used_in_sysv_function : Error<
 def warn_second_arg_of_va_start_not_last_named_param : Warning<
   "second argument to 'va_start' is not the last named parameter">,
   InGroup<Varargs>;
-def warn_va_start_of_reference_type_is_undefined : Warning<
-  "'va_start' has undefined behavior with reference types">, InGroup<Varargs>;
+def warn_va_start_type_is_undefined : Warning<
+  "passing %select{an object that undergoes default argument promotion|"
+  "an object of reference type|a parameter declared with the 'register' "
+  "keyword}0 to 'va_start' has undefined behavior">, InGroup<Varargs>;
 def err_first_argument_to_va_arg_not_of_type_va_list : Error<
   "first argument to 'va_arg' is of type %0 and not 'va_list'">;
 def err_second_parameter_to_va_arg_incomplete: Error<
@@ -8262,6 +8262,10 @@ def err_module_private_local_class : Error<
   "local %select{struct|interface|union|class|enum}0 cannot be declared "
   "__module_private__">;
 def err_module_unimported_use : Error<
+  "%select{declaration|definition|default argument}0 of %1 must be imported "
+  "from module '%2' before it is required">;
+def err_module_unimported_use_header : Error<
+  "missing '#include %3'; "
   "%select{declaration|definition|default argument}0 of %1 must be imported "
   "from module '%2' before it is required">;
 def err_module_unimported_use_multiple : Error<

@@ -502,19 +502,22 @@ SampleProfileLoader::getInstWeight(const Instruction &Inst) const {
 /// \returns the weight for \p BB.
 ErrorOr<uint64_t>
 SampleProfileLoader::getBlockWeight(const BasicBlock *BB) const {
-  bool Found = false;
-  uint64_t Weight = 0;
+  DenseMap<uint64_t, uint64_t> CM;
   for (auto &I : BB->getInstList()) {
     const ErrorOr<uint64_t> &R = getInstWeight(I);
-    if (R && R.get() >= Weight) {
-      Weight = R.get();
-      Found = true;
+    if (R) CM[R.get()]++;
+  }
+  if (CM.size() == 0) return std::error_code();
+  uint64_t W = 0, C = 0;
+  for (const auto &C_W : CM) {
+    if (C_W.second == W) {
+      C = std::max(C, C_W.first);
+    } else if (C_W.second > W) {
+      C = C_W.first;
+      W = C_W.second;
     }
   }
-  if (Found)
-    return Weight;
-  else
-    return std::error_code();
+  return C;
 }
 
 /// \brief Compute and store the weights of every basic block.
@@ -585,17 +588,12 @@ SampleProfileLoader::findFunctionSamples(const Instruction &Inst) const {
   if (!DIL) {
     return Samples;
   }
-  StringRef CalleeName;
-  for (const DILocation *DIL = Inst.getDebugLoc(); DIL;
-       DIL = DIL->getInlinedAt()) {
+  for (DIL = DIL->getInlinedAt(); DIL; DIL = DIL->getInlinedAt()) {
     DISubprogram *SP = DIL->getScope()->getSubprogram();
     if (!SP)
       return nullptr;
-    if (!CalleeName.empty()) {
-      S.push_back(LineLocation(getOffset(DIL->getLine(), SP->getLine()),
-                               DIL->getDiscriminator()));
-    }
-    CalleeName = SP->getLinkageName();
+    S.push_back(LineLocation(getOffset(DIL->getLine(), SP->getLine()),
+                             DIL->getDiscriminator()));
   }
   if (S.size() == 0)
     return Samples;

@@ -1,3 +1,5 @@
+include(CMakeParseArguments)
+
 # On OS X SDKs can be installed anywhere on the base system and xcode-select can
 # set the default Xcode to use. This function finds the SDKs that are present in
 # the current Xcode.
@@ -16,6 +18,8 @@ function(find_darwin_sdk_dir var sdk_name)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_FILE /dev/null
     )
+  else()
+    set(${var}_INTERNAL ${var_internal} PARENT_SCOPE)
   endif()
   set(${var} ${var_internal} PARENT_SCOPE)
 endfunction()

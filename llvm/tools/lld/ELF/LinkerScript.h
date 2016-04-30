@@ -28,8 +28,7 @@ template <class ELFT> class InputSectionBase;
 template <class ELFT> class OutputSectionBase;
 
 // This class represents each rule in SECTIONS command.
-class SectionRule {
-public:
+struct SectionRule {
   SectionRule(StringRef D, StringRef S)
       : Dest(D), SectionPattern(S) {}
 
@@ -38,7 +37,6 @@ public:
 
   StringRef Dest;
 
-private:
   StringRef SectionPattern;
 };
 
@@ -77,6 +75,8 @@ extern ScriptConfiguration *ScriptConfig;
 
 // This is a runner of the linker script.
 template <class ELFT> class LinkerScript {
+  typedef typename ELFT::uint uintX_t;
+
 public:
   StringRef getOutputSection(InputSectionBase<ELFT> *S);
   ArrayRef<uint8_t> getFiller(StringRef Name);
@@ -90,13 +90,8 @@ private:
   ScriptConfiguration &Opt = *ScriptConfig;
 
   int getSectionIndex(StringRef Name);
-  SectionRule *find(InputSectionBase<ELFT> *S);
 
-  uint64_t evaluate(ArrayRef<StringRef> Tokens);
-  uint64_t parseExpr(ArrayRef<StringRef> &Tokens);
-  uint64_t parsePrimary(ArrayRef<StringRef> &Tokens);
-  uint64_t parseExpr1(ArrayRef<StringRef> &Tokens, uint64_t Lhs, int MinPrec);
-  typename ELFT::uint Dot;
+  uintX_t Dot;
 };
 
 // Variable template is a C++14 feature, so we can't template

@@ -184,8 +184,6 @@ SystemZTargetLowering::SystemZTargetLowering(const TargetMachine &TM,
 
       // No special instructions for these.
       setOperationAction(ISD::CTTZ,            VT, Expand);
-      setOperationAction(ISD::CTTZ_ZERO_UNDEF, VT, Expand);
-      setOperationAction(ISD::CTLZ_ZERO_UNDEF, VT, Expand);
       setOperationAction(ISD::ROTR,            VT, Expand);
 
       // Use *MUL_LOHI where possible instead of MULH*.
@@ -312,8 +310,6 @@ SystemZTargetLowering::SystemZTargetLowering(const TargetMachine &TM,
       setOperationAction(ISD::CTPOP, VT, Custom);
       setOperationAction(ISD::CTTZ, VT, Legal);
       setOperationAction(ISD::CTLZ, VT, Legal);
-      setOperationAction(ISD::CTTZ_ZERO_UNDEF, VT, Custom);
-      setOperationAction(ISD::CTLZ_ZERO_UNDEF, VT, Custom);
 
       // Convert a GPR scalar to a vector by inserting it into element 0.
       setOperationAction(ISD::SCALAR_TO_VECTOR, VT, Custom);
@@ -820,8 +816,7 @@ static SDValue convertLocVTToValVT(SelectionDAG &DAG, SDLoc DL,
     // extend from i64 to full vector size and then bitcast.
     assert(VA.getLocVT() == MVT::i64);
     assert(VA.getValVT().isVector());
-    Value = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v2i64,
-                        Value, DAG.getUNDEF(MVT::i64));
+    Value = DAG.getBuildVector(MVT::v2i64, DL, {Value, DAG.getUNDEF(MVT::i64)});
     Value = DAG.getNode(ISD::BITCAST, DL, VA.getValVT(), Value);
   } else
     assert(VA.getLocInfo() == CCValAssign::Full && "Unsupported getLocInfo");
@@ -1005,9 +1000,11 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
 }
 
 static bool canUseSiblingCall(const CCState &ArgCCInfo,
-                              SmallVectorImpl<CCValAssign> &ArgLocs) {
+                              SmallVectorImpl<CCValAssign> &ArgLocs,
+                              SmallVectorImpl<ISD::OutputArg> &Outs) {
   // Punt if there are any indirect or stack arguments, or if the call
-  // needs the call-saved argument register R6.
+  // needs the callee-saved argument register R6, or if the call uses
+  // the callee-saved register arguments SwiftSelf and SwiftError.
   for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
     CCValAssign &VA = ArgLocs[I];
     if (VA.getLocInfo() == CCValAssign::Indirect)
@@ -1016,6 +1013,8 @@ static bool canUseSiblingCall(const CCState &ArgCCInfo,
       return false;
     unsigned Reg = VA.getLocReg();
     if (Reg == SystemZ::R6H || Reg == SystemZ::R6L || Reg == SystemZ::R6D)
+      return false;
+    if (Outs[I].Flags.isSwiftSelf() || Outs[I].Flags.isSwiftError())
       return false;
   }
   return true;
@@ -1050,7 +1049,7 @@ SystemZTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   // We don't support GuaranteedTailCallOpt, only automatically-detected
   // sibling calls.
-  if (IsTailCall && !canUseSiblingCall(ArgCCInfo, ArgLocs))
+  if (IsTailCall && !canUseSiblingCall(ArgCCInfo, ArgLocs, Outs))
     IsTailCall = false;
 
   // Get a count of how many bytes are to be pushed on the stack.
@@ -3720,7 +3719,7 @@ static SDValue getGeneralPermuteNode(SelectionDAG &DAG, SDLoc DL, SDValue *Ops,
       IndexNodes[I] = DAG.getConstant(Bytes[I], DL, MVT::i32);
     else
       IndexNodes[I] = DAG.getUNDEF(MVT::i32);
-  SDValue Op2 = DAG.getNode(ISD::BUILD_VECTOR, DL, MVT::v16i8, IndexNodes);
+  SDValue Op2 = DAG.getBuildVector(MVT::v16i8, DL, IndexNodes);
   return DAG.getNode(SystemZISD::PERMUTE, DL, MVT::v16i8, Ops[0], Ops[1], Op2);
 }
 
@@ -3904,7 +3903,7 @@ static SDValue buildScalarToVector(SelectionDAG &DAG, SDLoc DL, EVT VT,
   if (Value.getOpcode() == ISD::Constant ||
       Value.getOpcode() == ISD::ConstantFP) {
     SmallVector<SDValue, 16> Ops(VT.getVectorNumElements(), Value);
-    return DAG.getNode(ISD::BUILD_VECTOR, DL, VT, Ops);
+    return DAG.getBuildVector(VT, DL, Ops);
   }
   if (Value.isUndef())
     return DAG.getUNDEF(VT);
@@ -4057,7 +4056,7 @@ static SDValue tryBuildVectorShuffle(SelectionDAG &DAG,
       ResidueOps.push_back(DAG.getUNDEF(ResidueOps[0].getValueType()));
     for (auto &Op : GS.Ops) {
       if (!Op.getNode()) {
-        Op = DAG.getNode(ISD::BUILD_VECTOR, SDLoc(BVN), VT, ResidueOps);
+        Op = DAG.getBuildVector(VT, SDLoc(BVN), ResidueOps);
         break;
       }
     }
@@ -4154,7 +4153,7 @@ static SDValue buildVector(SelectionDAG &DAG, SDLoc DL, EVT VT,
     for (unsigned I = 0; I < NumElements; ++I)
       if (!Constants[I].getNode())
         Constants[I] = DAG.getUNDEF(Elems[I].getValueType());
-    Result = DAG.getNode(ISD::BUILD_VECTOR, DL, VT, Constants);
+    Result = DAG.getBuildVector(VT, DL, Constants);
   } else {
     // Otherwise try to use VLVGP to start the sequence in order to
     // avoid a false dependency on any previous contents of the vector
@@ -4471,12 +4470,6 @@ SDValue SystemZTargetLowering::LowerOperation(SDValue Op,
     return lowerOR(Op, DAG);
   case ISD::CTPOP:
     return lowerCTPOP(Op, DAG);
-  case ISD::CTLZ_ZERO_UNDEF:
-    return DAG.getNode(ISD::CTLZ, SDLoc(Op),
-                       Op.getValueType(), Op.getOperand(0));
-  case ISD::CTTZ_ZERO_UNDEF:
-    return DAG.getNode(ISD::CTTZ, SDLoc(Op),
-                       Op.getValueType(), Op.getOperand(0));
   case ISD::ATOMIC_FENCE:
     return lowerATOMIC_FENCE(Op, DAG);
   case ISD::ATOMIC_SWAP:

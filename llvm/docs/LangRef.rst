@@ -2196,6 +2196,26 @@ function's scope.
     uselistorder i32 (i32) @bar, { 1, 0 }
     uselistorder_bb @foo, %bb, { 5, 1, 3, 2, 0, 4 }
 
+.. _source_filename:
+
+Source Filename
+---------------
+
+The *source filename* string is set to the original module identifier,
+which will be the name of the compiled source file when compiling from
+source through the clang front end, for example. It is then preserved through
+the IR and bitcode.
+
+This is currently necessary to generate a consistent unique global
+identifier for local functions used in profile data, which prepends the
+source file name to the local function name.
+
+The syntax for the source file name is simply:
+
+.. code-block:: llvm
+
+    source_filename = "/path/to/source.c"
+
 .. _typesystem:
 
 Type System
@@ -3999,12 +4019,13 @@ The following ``tag:`` values are valid:
   DW_TAG_volatile_type      = 53
   DW_TAG_restrict_type      = 55
 
+.. _DIDerivedTypeMember:
+
 ``DW_TAG_member`` is used to define a member of a :ref:`composite type
 <DICompositeType>`. The type of the member is the ``baseType:``. The
-``offset:`` is the member's bit offset.  If the composite type has a non-empty
-``identifier:``, then it respects ODR rules.  In that case, the ``scope:``
-reference will be a :ref:`metadata string <metadata-string>`, and the member
-will be uniqued solely based on its ``name:`` and ``scope:``.
+``offset:`` is the member's bit offset.  If the composite type has an ODR
+``identifier:`` and does not set ``flags: DIFwdDecl``, then the member is
+uniqued based only on its ``name:`` and ``scope:``.
 
 ``DW_TAG_inheritance`` and ``DW_TAG_friend`` are used in the ``elements:``
 field of :ref:`composite types <DICompositeType>` to describe parents and
@@ -4027,9 +4048,10 @@ DICompositeType
 structures and unions. ``elements:`` points to a tuple of the composed types.
 
 If the source language supports ODR, the ``identifier:`` field gives the unique
-identifier used for type merging between modules. When specified, other types
-can refer to composite types indirectly via a :ref:`metadata string
-<metadata-string>` that matches their identifier.
+identifier used for type merging between modules.  When specified,
+:ref:`subprogram declarations <DISubprogramDeclaration>` and :ref:`member
+derived types <DIDerivedTypeMember>` that reference the ODR-type in their
+``scope:`` change uniquing rules.
 
 For a given ``identifier:``, there should only be a single composite type that
 does not have  ``flags: DIFlagFwdDecl`` set.  LLVM tools that link modules
@@ -4158,11 +4180,13 @@ metadata. The ``variables:`` field points at :ref:`variables <DILocalVariable>`
 that must be retained, even if their IR counterparts are optimized out of
 the IR. The ``type:`` field must point at an :ref:`DISubroutineType`.
 
+.. _DISubprogramDeclaration:
+
 When ``isDefinition: false``, subprograms describe a declaration in the type
-tree as opposed to a definition of a funciton.  If the scope is a
-:ref:`metadata string <metadata-string>` then the composite type follows ODR
-rules, and the subprogram declaration is uniqued based only on its
-``linkageName:`` and ``scope:``.
+tree as opposed to a definition of a function.  If the scope is a composite
+type with an ODR ``identifier:`` and that does not set ``flags: DIFwdDecl``,
+then the subprogram declaration is uniqued based only on its ``linkageName:``
+and ``scope:``.
 
 .. code-block:: llvm
 
@@ -4388,11 +4412,19 @@ instructions (loads, stores, memory-accessing calls, etc.) that carry
 ``noalias`` metadata can specifically be specified not to alias with some other
 collection of memory access instructions that carry ``alias.scope`` metadata.
 Each type of metadata specifies a list of scopes where each scope has an id and
-a domain. When evaluating an aliasing query, if for some domain, the set
+a domain.
+
+When evaluating an aliasing query, if for some domain, the set
 of scopes with that domain in one instruction's ``alias.scope`` list is a
 subset of (or equal to) the set of scopes for that domain in another
 instruction's ``noalias`` list, then the two memory accesses are assumed not to
 alias.
+
+Because scopes in one domain don't affect scopes in other domains, separate
+domains can be used to compose multiple independent noalias sets.  This is
+used for example during inlining.  As the noalias function parameters are
+turned into noalias scope metadata, a new domain is used every time the
+function is inlined.
 
 The metadata identifying each domain is itself a list containing one or two
 entries. The first entry is the name of the domain. Note that if the name is a
@@ -4679,6 +4711,27 @@ which is the string ``llvm.loop.licm_versioning.disable``. For example:
 
    !0 = !{!"llvm.loop.licm_versioning.disable"}
 
+'``llvm.loop.distribute.enable``' Metadata
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Loop distribution allows splitting a loop into multiple loops.  Currently,
+this is only performed if the entire loop cannot be vectorized due to unsafe
+memory dependencies.  The transformation will atempt to isolate the unsafe
+dependencies into their own loop.
+
+This metadata can be used to selectively enable or disable distribution of the
+loop.  The first operand is the string ``llvm.loop.distribute.enable`` and the
+second operand is a bit. If the bit operand value is 1 distribution is
+enabled. A value of 0 disables distribution:
+
+.. code-block:: llvm
+
+   !0 = !{!"llvm.loop.distribute.enable", i1 0}
+   !1 = !{!"llvm.loop.distribute.enable", i1 1}
+
+This metadata should be used in conjunction with ``llvm.loop`` loop
+identification metadata.
+
 '``llvm.mem``'
 ^^^^^^^^^^^^^^^
 
@@ -4692,7 +4745,8 @@ The ``llvm.mem.parallel_loop_access`` metadata refers to a loop identifier,
 or metadata containing a list of loop identifiers for nested loops.
 The metadata is attached to memory accessing instructions and denotes that
 no loop carried memory dependence exist between it and other instructions denoted
-with the same loop identifier.
+with the same loop identifier. The metadata on memory reads also implies that
+if conversion (i.e. speculative execution within a loop iteration) is safe.
 
 Precisely, given two instructions ``m1`` and ``m2`` that both have the
 ``llvm.mem.parallel_loop_access`` metadata, with ``L1`` and ``L2`` being the
@@ -12321,7 +12375,7 @@ equivalent to:
 
 	define void @llvm.experimental.guard(i1 %pred, <args...>) {
 	  %realPred = and i1 %pred, undef
-	  br i1 %realPred, label %continue, label %leave
+	  br i1 %realPred, label %continue, label %leave [, !make.implicit !{}]
 
 	leave:
 	  call void @llvm.experimental.deoptimize(<args...>) [ "deopt"() ]
@@ -12330,6 +12384,11 @@ equivalent to:
 	continue:
 	  ret void
 	}
+
+
+with the optional ``[, !make.implicit !{}]`` present if and only if it
+is present on the call site.  For more details on ``!make.implicit``,
+see :doc:`FaultMaps`.
 
 In words, ``@llvm.experimental.guard`` executes the attached
 ``"deopt"`` continuation if (but **not** only if) its first argument
@@ -12340,6 +12399,31 @@ if"); and this allows for "check widening" type optimizations.
 
 ``@llvm.experimental.guard`` cannot be invoked.
 
+
+'``llvm.load.relative``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare i8* @llvm.load.relative.iN(i8* %ptr, iN %offset) argmemonly nounwind readonly
+
+Overview:
+"""""""""
+
+This intrinsic loads a 32-bit value from the address ``%ptr + %offset``,
+adds ``%ptr`` to that value and returns it. The constant folder specifically
+recognizes the form of this intrinsic and the constant initializers it may
+load from; if a loaded constant initializer is known to have the form
+``i32 trunc(x - %ptr)``, the intrinsic call is folded to ``x``.
+
+LLVM provides that the calculation of such a constant initializer will
+not overflow at link time under the medium code model if ``x`` is an
+``unnamed_addr`` function. However, it does not provide this guarantee for
+a constant initializer folded into a function body. This intrinsic can be
+used to avoid the possibility of overflows when loading from such a constant.
 
 Stack Map Intrinsics
 --------------------
