@@ -14,17 +14,25 @@
 #include "MipsTargetStreamer.h"
 #include "InstPrinter/MipsInstPrinter.h"
 #include "MipsELFStreamer.h"
+#include "MipsMCExpr.h"
 #include "MipsMCTargetDesc.h"
 #include "MipsTargetObjectFile.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbolELF.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 
 using namespace llvm;
+
+namespace {
+static cl::opt<bool> RoundSectionSizes(
+    "mips-round-section-sizes", cl::init(false),
+    cl::desc("Round section sizes up to the section alignment"), cl::Hidden);
+} // end anonymous namespace
 
 MipsTargetStreamer::MipsTargetStreamer(MCStreamer &S)
     : MCTargetStreamer(S), ModuleDirectiveAllowed(true) {
@@ -644,6 +652,14 @@ MipsTargetELFStreamer::MipsTargetELFStreamer(MCStreamer &S,
                                              const MCSubtargetInfo &STI)
     : MipsTargetStreamer(S), MicroMipsEnabled(false), STI(STI) {
   MCAssembler &MCA = getStreamer().getAssembler();
+
+  // It's possible that MCObjectFileInfo isn't fully initialized at this point
+  // due to an initialization order problem where LLVMTargetMachine creates the
+  // target streamer before TargetLoweringObjectFile calls
+  // InitializeMCObjectFileInfo. There doesn't seem to be a single place that
+  // covers all cases so this statement covers most cases and direct object
+  // emission must call setPic() once MCObjectFileInfo has been initialized. The
+  // cases we don't handle here are covered by MipsAsmPrinter.
   Pic = MCA.getContext().getObjectFileInfo()->getRelocM() == Reloc::PIC_;
 
   const FeatureBitset &Features = STI.getFeatureBits();
@@ -728,18 +744,23 @@ void MipsTargetELFStreamer::finish() {
   DataSection.setAlignment(std::max(16u, DataSection.getAlignment()));
   BSSSection.setAlignment(std::max(16u, BSSSection.getAlignment()));
 
-  // Make sections sizes a multiple of the alignment.
-  MCStreamer &OS = getStreamer();
-  for (MCSection &S : MCA) {
-    MCSectionELF &Section = static_cast<MCSectionELF &>(S);
+  if (RoundSectionSizes) {
+    // Make sections sizes a multiple of the alignment. This is useful for
+    // verifying the output of IAS against the output of other assemblers but
+    // it's not necessary to produce a correct object and increases section
+    // size.
+    MCStreamer &OS = getStreamer();
+    for (MCSection &S : MCA) {
+      MCSectionELF &Section = static_cast<MCSectionELF &>(S);
 
-    unsigned Alignment = Section.getAlignment();
-    if (Alignment) {
-      OS.SwitchSection(&Section);
-      if (Section.UseCodeAlign())
-        OS.EmitCodeAlignment(Alignment, Alignment);
-      else
-        OS.EmitValueToAlignment(Alignment, 0, 1, Alignment);
+      unsigned Alignment = Section.getAlignment();
+      if (Alignment) {
+        OS.SwitchSection(&Section);
+        if (Section.UseCodeAlign())
+          OS.EmitCodeAlignment(Alignment, Alignment);
+        else
+          OS.EmitValueToAlignment(Alignment, 0, 1, Alignment);
+      }
     }
   }
 
@@ -981,8 +1002,11 @@ void MipsTargetELFStreamer::emitDirectiveCpLoad(unsigned RegNo) {
   MCInst TmpInst;
   TmpInst.setOpcode(Mips::LUi);
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
-  const MCSymbolRefExpr *HiSym = MCSymbolRefExpr::create(
-      "_gp_disp", MCSymbolRefExpr::VK_Mips_ABS_HI, MCA.getContext());
+  const MCExpr *HiSym = MipsMCExpr::create(
+      MipsMCExpr::MEK_HI,
+      MCSymbolRefExpr::create("_gp_disp", MCSymbolRefExpr::VK_None,
+                              MCA.getContext()),
+      MCA.getContext());
   TmpInst.addOperand(MCOperand::createExpr(HiSym));
   getStreamer().EmitInstruction(TmpInst, STI);
 
@@ -991,8 +1015,11 @@ void MipsTargetELFStreamer::emitDirectiveCpLoad(unsigned RegNo) {
   TmpInst.setOpcode(Mips::ADDiu);
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
-  const MCSymbolRefExpr *LoSym = MCSymbolRefExpr::create(
-      "_gp_disp", MCSymbolRefExpr::VK_Mips_ABS_LO, MCA.getContext());
+  const MCExpr *LoSym = MipsMCExpr::create(
+      MipsMCExpr::MEK_LO,
+      MCSymbolRefExpr::create("_gp_disp", MCSymbolRefExpr::VK_None,
+                              MCA.getContext()),
+      MCA.getContext());
   TmpInst.addOperand(MCOperand::createExpr(LoSym));
   getStreamer().EmitInstruction(TmpInst, STI);
 
@@ -1055,10 +1082,12 @@ void MipsTargetELFStreamer::emitDirectiveCpsetup(unsigned RegNo,
   getStreamer().EmitInstruction(Inst, STI);
   Inst.clear();
 
-  const MCSymbolRefExpr *HiExpr = MCSymbolRefExpr::create(
-      &Sym, MCSymbolRefExpr::VK_Mips_GPOFF_HI, MCA.getContext());
-  const MCSymbolRefExpr *LoExpr = MCSymbolRefExpr::create(
-      &Sym, MCSymbolRefExpr::VK_Mips_GPOFF_LO, MCA.getContext());
+  const MipsMCExpr *HiExpr = MipsMCExpr::createGpOff(
+      MipsMCExpr::MEK_HI, MCSymbolRefExpr::create(&Sym, MCA.getContext()),
+      MCA.getContext());
+  const MipsMCExpr *LoExpr = MipsMCExpr::createGpOff(
+      MipsMCExpr::MEK_LO, MCSymbolRefExpr::create(&Sym, MCA.getContext()),
+      MCA.getContext());
 
   // lui $gp, %hi(%neg(%gp_rel(funcSym)))
   Inst.setOpcode(Mips::LUi);

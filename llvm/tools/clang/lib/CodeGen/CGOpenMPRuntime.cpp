@@ -3292,6 +3292,7 @@ static llvm::Value *
 emitTaskPrivateMappingFunction(CodeGenModule &CGM, SourceLocation Loc,
                                ArrayRef<const Expr *> PrivateVars,
                                ArrayRef<const Expr *> FirstprivateVars,
+                               ArrayRef<const Expr *> LastprivateVars,
                                QualType PrivatesQTy,
                                ArrayRef<PrivateDataTy> Privates) {
   auto &C = CGM.getContext();
@@ -3313,6 +3314,16 @@ emitTaskPrivateMappingFunction(CodeGenModule &CGM, SourceLocation Loc,
     ++Counter;
   }
   for (auto *E : FirstprivateVars) {
+    Args.push_back(ImplicitParamDecl::Create(
+        C, /*DC=*/nullptr, Loc,
+        /*Id=*/nullptr, C.getPointerType(C.getPointerType(E->getType()))
+                            .withConst()
+                            .withRestrict()));
+    auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
+    PrivateVarsPos[VD] = Counter;
+    ++Counter;
+  }
+  for (auto *E: LastprivateVars) {
     Args.push_back(ImplicitParamDecl::Create(
         C, /*DC=*/nullptr, Loc,
         /*Id=*/nullptr, C.getPointerType(C.getPointerType(E->getType()))
@@ -3361,6 +3372,179 @@ static int array_pod_sort_comparator(const PrivateDataTy *P1,
   return P1->first < P2->first ? 1 : (P2->first < P1->first ? -1 : 0);
 }
 
+/// Emit initialization for private variables in task-based directives.
+/// \return true if cleanups are required, false otherwise.
+static bool emitPrivatesInit(CodeGenFunction &CGF,
+                             const OMPExecutableDirective &D,
+                             Address KmpTaskSharedsPtr, LValue TDBase,
+                             const RecordDecl *KmpTaskTWithPrivatesQTyRD,
+                             QualType SharedsTy, QualType SharedsPtrTy,
+                             const OMPTaskDataTy &Data,
+                             ArrayRef<PrivateDataTy> Privates, bool ForDup) {
+  auto &C = CGF.getContext();
+  bool NeedsCleanup = false;
+  auto FI = std::next(KmpTaskTWithPrivatesQTyRD->field_begin());
+  LValue PrivatesBase = CGF.EmitLValueForField(TDBase, *FI);
+  LValue SrcBase;
+  if (!Data.FirstprivateVars.empty()) {
+    SrcBase = CGF.MakeAddrLValue(
+        CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+            KmpTaskSharedsPtr, CGF.ConvertTypeForMem(SharedsPtrTy)),
+        SharedsTy);
+  }
+  CodeGenFunction::CGCapturedStmtInfo CapturesInfo(
+      cast<CapturedStmt>(*D.getAssociatedStmt()));
+  FI = cast<RecordDecl>(FI->getType()->getAsTagDecl())->field_begin();
+  for (auto &&Pair : Privates) {
+    auto *VD = Pair.second.PrivateCopy;
+    auto *Init = VD->getAnyInitializer();
+    LValue PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
+    if (Init && (!ForDup || (isa<CXXConstructExpr>(Init) &&
+                             !CGF.isTrivialInitializer(Init)))) {
+      if (auto *Elem = Pair.second.PrivateElemInit) {
+        auto *OriginalVD = Pair.second.Original;
+        auto *SharedField = CapturesInfo.lookup(OriginalVD);
+        auto SharedRefLValue = CGF.EmitLValueForField(SrcBase, SharedField);
+        SharedRefLValue = CGF.MakeAddrLValue(
+            Address(SharedRefLValue.getPointer(), C.getDeclAlign(OriginalVD)),
+            SharedRefLValue.getType(), AlignmentSource::Decl);
+        QualType Type = OriginalVD->getType();
+        if (Type->isArrayType()) {
+          // Initialize firstprivate array.
+          if (!isa<CXXConstructExpr>(Init) || CGF.isTrivialInitializer(Init)) {
+            // Perform simple memcpy.
+            CGF.EmitAggregateAssign(PrivateLValue.getAddress(),
+                                    SharedRefLValue.getAddress(), Type);
+          } else {
+            // Initialize firstprivate array using element-by-element
+            // intialization.
+            CGF.EmitOMPAggregateAssign(
+                PrivateLValue.getAddress(), SharedRefLValue.getAddress(), Type,
+                [&CGF, Elem, Init, &CapturesInfo](Address DestElement,
+                                                  Address SrcElement) {
+                  // Clean up any temporaries needed by the initialization.
+                  CodeGenFunction::OMPPrivateScope InitScope(CGF);
+                  InitScope.addPrivate(
+                      Elem, [SrcElement]() -> Address { return SrcElement; });
+                  (void)InitScope.Privatize();
+                  // Emit initialization for single element.
+                  CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(
+                      CGF, &CapturesInfo);
+                  CGF.EmitAnyExprToMem(Init, DestElement,
+                                       Init->getType().getQualifiers(),
+                                       /*IsInitializer=*/false);
+                });
+          }
+        } else {
+          CodeGenFunction::OMPPrivateScope InitScope(CGF);
+          InitScope.addPrivate(Elem, [SharedRefLValue]() -> Address {
+            return SharedRefLValue.getAddress();
+          });
+          (void)InitScope.Privatize();
+          CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(CGF, &CapturesInfo);
+          CGF.EmitExprAsInit(Init, VD, PrivateLValue,
+                             /*capturedByInit=*/false);
+        }
+      } else
+        CGF.EmitExprAsInit(Init, VD, PrivateLValue, /*capturedByInit=*/false);
+    }
+    NeedsCleanup = NeedsCleanup || FI->getType().isDestructedType();
+    ++FI;
+  }
+  return NeedsCleanup;
+}
+
+/// Check if duplication function is required for taskloops.
+static bool checkInitIsRequired(CodeGenFunction &CGF,
+                                ArrayRef<PrivateDataTy> Privates) {
+  bool InitRequired = false;
+  for (auto &&Pair : Privates) {
+    auto *VD = Pair.second.PrivateCopy;
+    auto *Init = VD->getAnyInitializer();
+    InitRequired = InitRequired || (Init && isa<CXXConstructExpr>(Init) &&
+                                    !CGF.isTrivialInitializer(Init));
+  }
+  return InitRequired;
+}
+
+
+/// Emit task_dup function (for initialization of
+/// private/firstprivate/lastprivate vars and last_iter flag)
+/// \code
+/// void __task_dup_entry(kmp_task_t *task_dst, const kmp_task_t *task_src, int
+/// lastpriv) {
+/// // setup lastprivate flag
+///    task_dst->last = lastpriv;
+/// // could be constructor calls here...
+/// }
+/// \endcode
+static llvm::Value *
+emitTaskDupFunction(CodeGenModule &CGM, SourceLocation Loc,
+                    const OMPExecutableDirective &D,
+                    QualType KmpTaskTWithPrivatesPtrQTy,
+                    const RecordDecl *KmpTaskTWithPrivatesQTyRD,
+                    const RecordDecl *KmpTaskTQTyRD, QualType SharedsTy,
+                    QualType SharedsPtrTy, const OMPTaskDataTy &Data,
+                    ArrayRef<PrivateDataTy> Privates, bool WithLastIter) {
+  auto &C = CGM.getContext();
+  FunctionArgList Args;
+  ImplicitParamDecl DstArg(C, /*DC=*/nullptr, Loc,
+                           /*Id=*/nullptr, KmpTaskTWithPrivatesPtrQTy);
+  ImplicitParamDecl SrcArg(C, /*DC=*/nullptr, Loc,
+                           /*Id=*/nullptr, KmpTaskTWithPrivatesPtrQTy);
+  ImplicitParamDecl LastprivArg(C, /*DC=*/nullptr, Loc,
+                                /*Id=*/nullptr, C.IntTy);
+  Args.push_back(&DstArg);
+  Args.push_back(&SrcArg);
+  Args.push_back(&LastprivArg);
+  auto &TaskDupFnInfo =
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(C.VoidTy, Args);
+  auto *TaskDupTy = CGM.getTypes().GetFunctionType(TaskDupFnInfo);
+  auto *TaskDup =
+      llvm::Function::Create(TaskDupTy, llvm::GlobalValue::InternalLinkage,
+                             ".omp_task_dup.", &CGM.getModule());
+  CGM.SetInternalFunctionAttributes(/*D=*/nullptr, TaskDup, TaskDupFnInfo);
+  CodeGenFunction CGF(CGM);
+  CGF.disableDebugInfo();
+  CGF.StartFunction(GlobalDecl(), C.VoidTy, TaskDup, TaskDupFnInfo, Args);
+
+  LValue TDBase = CGF.EmitLoadOfPointerLValue(
+      CGF.GetAddrOfLocalVar(&DstArg),
+      KmpTaskTWithPrivatesPtrQTy->castAs<PointerType>());
+  // task_dst->liter = lastpriv;
+  if (WithLastIter) {
+    auto LIFI = std::next(KmpTaskTQTyRD->field_begin(), KmpTaskTLastIter);
+    LValue Base = CGF.EmitLValueForField(
+        TDBase, *KmpTaskTWithPrivatesQTyRD->field_begin());
+    LValue LILVal = CGF.EmitLValueForField(Base, *LIFI);
+    llvm::Value *Lastpriv = CGF.EmitLoadOfScalar(
+        CGF.GetAddrOfLocalVar(&LastprivArg), /*Volatile=*/false, C.IntTy, Loc);
+    CGF.EmitStoreOfScalar(Lastpriv, LILVal);
+  }
+
+  // Emit initial values for private copies (if any).
+  assert(!Privates.empty());
+  Address KmpTaskSharedsPtr = Address::invalid();
+  if (!Data.FirstprivateVars.empty()) {
+    LValue TDBase = CGF.EmitLoadOfPointerLValue(
+        CGF.GetAddrOfLocalVar(&SrcArg),
+        KmpTaskTWithPrivatesPtrQTy->castAs<PointerType>());
+    LValue Base = CGF.EmitLValueForField(
+        TDBase, *KmpTaskTWithPrivatesQTyRD->field_begin());
+    KmpTaskSharedsPtr = Address(
+        CGF.EmitLoadOfScalar(CGF.EmitLValueForField(
+                                 Base, *std::next(KmpTaskTQTyRD->field_begin(),
+                                                  KmpTaskTShareds)),
+                             Loc),
+        CGF.getNaturalTypeAlignment(SharedsTy));
+  }
+  (void)emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, TDBase,
+                         KmpTaskTWithPrivatesQTyRD, SharedsTy, SharedsPtrTy,
+                         Data, Privates, /*ForDup=*/true);
+  CGF.FinishFunction();
+  return TaskDup;
+}
+
 CGOpenMPRuntime::TaskResultTy
 CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
                               const OMPExecutableDirective &D,
@@ -3389,6 +3573,15 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
             cast<VarDecl>(cast<DeclRefExpr>(*IElemInitRef)->getDecl()))));
     ++I;
     ++IElemInitRef;
+  }
+  I = Data.LastprivateCopies.begin();
+  for (auto *E : Data.LastprivateVars) {
+    auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
+    Privates.push_back(std::make_pair(
+        C.getDeclAlign(VD),
+        PrivateHelpersTy(VD, cast<VarDecl>(cast<DeclRefExpr>(*I)->getDecl()),
+                         /*PrivateElemInit=*/nullptr)));
+    ++I;
   }
   llvm::array_pod_sort(Privates.begin(), Privates.end(),
                        array_pod_sort_comparator);
@@ -3420,9 +3613,9 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
           ->getType();
   if (!Privates.empty()) {
     auto FI = std::next(KmpTaskTWithPrivatesQTyRD->field_begin());
-    TaskPrivatesMap = emitTaskPrivateMappingFunction(CGM, Loc, Data.PrivateVars,
-                                                     Data.FirstprivateVars,
-                                                     FI->getType(), Privates);
+    TaskPrivatesMap = emitTaskPrivateMappingFunction(
+        CGM, Loc, Data.PrivateVars, Data.FirstprivateVars, Data.LastprivateVars,
+        FI->getType(), Privates);
     TaskPrivatesMap = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
         TaskPrivatesMap, TaskPrivatesMapTy);
   } else {
@@ -3480,78 +3673,19 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
     CGF.EmitAggregateCopy(KmpTaskSharedsPtr, Shareds, SharedsTy);
   }
   // Emit initial values for private copies (if any).
+  TaskResultTy Result;
   bool NeedsCleanup = false;
   if (!Privates.empty()) {
-    auto FI = std::next(KmpTaskTWithPrivatesQTyRD->field_begin());
-    auto PrivatesBase = CGF.EmitLValueForField(Base, *FI);
-    FI = cast<RecordDecl>(FI->getType()->getAsTagDecl())->field_begin();
-    LValue SharedsBase;
-    if (!Data.FirstprivateVars.empty()) {
-      SharedsBase = CGF.MakeAddrLValue(
-          CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
-              KmpTaskSharedsPtr, CGF.ConvertTypeForMem(SharedsPtrTy)),
-          SharedsTy);
-    }
-    CodeGenFunction::CGCapturedStmtInfo CapturesInfo(
-        cast<CapturedStmt>(*D.getAssociatedStmt()));
-    for (auto &&Pair : Privates) {
-      auto *VD = Pair.second.PrivateCopy;
-      auto *Init = VD->getAnyInitializer();
-      LValue PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
-      if (Init) {
-        if (auto *Elem = Pair.second.PrivateElemInit) {
-          auto *OriginalVD = Pair.second.Original;
-          auto *SharedField = CapturesInfo.lookup(OriginalVD);
-          auto SharedRefLValue =
-              CGF.EmitLValueForField(SharedsBase, SharedField);
-          SharedRefLValue = CGF.MakeAddrLValue(
-              Address(SharedRefLValue.getPointer(), C.getDeclAlign(OriginalVD)),
-              SharedRefLValue.getType(), AlignmentSource::Decl);
-          QualType Type = OriginalVD->getType();
-          if (Type->isArrayType()) {
-            // Initialize firstprivate array.
-            if (!isa<CXXConstructExpr>(Init) ||
-                CGF.isTrivialInitializer(Init)) {
-              // Perform simple memcpy.
-              CGF.EmitAggregateAssign(PrivateLValue.getAddress(),
-                                      SharedRefLValue.getAddress(), Type);
-            } else {
-              // Initialize firstprivate array using element-by-element
-              // intialization.
-              CGF.EmitOMPAggregateAssign(
-                  PrivateLValue.getAddress(), SharedRefLValue.getAddress(),
-                  Type, [&CGF, Elem, Init, &CapturesInfo](
-                            Address DestElement, Address SrcElement) {
-                    // Clean up any temporaries needed by the initialization.
-                    CodeGenFunction::OMPPrivateScope InitScope(CGF);
-                    InitScope.addPrivate(Elem, [SrcElement]() -> Address {
-                      return SrcElement;
-                    });
-                    (void)InitScope.Privatize();
-                    // Emit initialization for single element.
-                    CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(
-                        CGF, &CapturesInfo);
-                    CGF.EmitAnyExprToMem(Init, DestElement,
-                                         Init->getType().getQualifiers(),
-                                         /*IsInitializer=*/false);
-                  });
-            }
-          } else {
-            CodeGenFunction::OMPPrivateScope InitScope(CGF);
-            InitScope.addPrivate(Elem, [SharedRefLValue]() -> Address {
-              return SharedRefLValue.getAddress();
-            });
-            (void)InitScope.Privatize();
-            CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(CGF, &CapturesInfo);
-            CGF.EmitExprAsInit(Init, VD, PrivateLValue,
-                               /*capturedByInit=*/false);
-          }
-        } else {
-          CGF.EmitExprAsInit(Init, VD, PrivateLValue, /*capturedByInit=*/false);
-        }
-      }
-      NeedsCleanup = NeedsCleanup || FI->getType().isDestructedType();
-      ++FI;
+    NeedsCleanup = emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, Base,
+                                    KmpTaskTWithPrivatesQTyRD, SharedsTy,
+                                    SharedsPtrTy, Data, Privates,
+                                    /*ForDup=*/false);
+    if (isOpenMPTaskLoopDirective(D.getDirectiveKind()) &&
+        (!Data.LastprivateVars.empty() || checkInitIsRequired(CGF, Privates))) {
+      Result.TaskDupFn = emitTaskDupFunction(
+          CGM, Loc, D, KmpTaskTWithPrivatesPtrQTy, KmpTaskTWithPrivatesQTyRD,
+          KmpTaskTQTyRD, SharedsTy, SharedsPtrTy, Data, Privates,
+          /*WithLastIter=*/!Data.LastprivateVars.empty());
     }
   }
   // Provide pointer to function with destructors for privates.
@@ -3566,7 +3700,6 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
   CGF.EmitStoreOfScalar(CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
                             DestructorFn, KmpRoutineEntryPtrTy),
                         Destructor);
-  TaskResultTy Result;
   Result.NewTask = NewTask;
   Result.TaskEntry = TaskEntry;
   Result.NewTaskNewTaskTTy = NewTaskNewTaskTTy;
@@ -3823,7 +3956,10 @@ void CGOpenMPRuntime::emitTaskLoopCall(CodeGenFunction &CGF, SourceLocation Loc,
           ? CGF.Builder.CreateIntCast(Data.Schedule.getPointer(), CGF.Int64Ty,
                                       /*isSigned=*/false)
           : llvm::ConstantInt::get(CGF.Int64Ty, /*V=*/0),
-      llvm::ConstantPointerNull::get(CGF.VoidPtrTy)};
+      Result.TaskDupFn
+          ? CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(Result.TaskDupFn,
+                                                            CGF.VoidPtrTy)
+          : llvm::ConstantPointerNull::get(CGF.VoidPtrTy)};
   CGF.EmitRuntimeCall(createRuntimeFunction(OMPRTL__kmpc_taskloop), TaskArgs);
 }
 
@@ -5904,5 +6040,230 @@ void CGOpenMPRuntime::emitTargetEnterOrExitDataCall(
   } else {
     RegionCodeGenTy ThenGenRCG(ThenGen);
     ThenGenRCG(CGF);
+  }
+}
+
+namespace {
+  /// Kind of parameter in a function with 'declare simd' directive.
+  enum ParamKindTy { LinearWithVarStride, Linear, Uniform, Vector };
+  /// Attribute set of the parameter.
+  struct ParamAttrTy {
+    ParamKindTy Kind = Vector;
+    llvm::APSInt StrideOrArg;
+    llvm::APSInt Alignment;
+  };
+} // namespace
+
+static unsigned evaluateCDTSize(const FunctionDecl *FD,
+                                ArrayRef<ParamAttrTy> ParamAttrs) {
+  // Every vector variant of a SIMD-enabled function has a vector length (VLEN).
+  // If OpenMP clause "simdlen" is used, the VLEN is the value of the argument
+  // of that clause. The VLEN value must be power of 2.
+  // In other case the notion of the function`s "characteristic data type" (CDT)
+  // is used to compute the vector length.
+  // CDT is defined in the following order:
+  //   a) For non-void function, the CDT is the return type.
+  //   b) If the function has any non-uniform, non-linear parameters, then the
+  //   CDT is the type of the first such parameter.
+  //   c) If the CDT determined by a) or b) above is struct, union, or class
+  //   type which is pass-by-value (except for the type that maps to the
+  //   built-in complex data type), the characteristic data type is int.
+  //   d) If none of the above three cases is applicable, the CDT is int.
+  // The VLEN is then determined based on the CDT and the size of vector
+  // register of that ISA for which current vector version is generated. The
+  // VLEN is computed using the formula below:
+  //   VLEN  = sizeof(vector_register) / sizeof(CDT),
+  // where vector register size specified in section 3.2.1 Registers and the
+  // Stack Frame of original AMD64 ABI document.
+  QualType RetType = FD->getReturnType();
+  if (RetType.isNull())
+    return 0;
+  ASTContext &C = FD->getASTContext();
+  QualType CDT;
+  if (!RetType.isNull() && !RetType->isVoidType())
+    CDT = RetType;
+  else {
+    unsigned Offset = 0;
+    if (auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
+      if (ParamAttrs[Offset].Kind == Vector)
+        CDT = C.getPointerType(C.getRecordType(MD->getParent()));
+      ++Offset;
+    }
+    if (CDT.isNull()) {
+      for (unsigned I = 0, E = FD->getNumParams(); I < E; ++I) {
+        if (ParamAttrs[I + Offset].Kind == Vector) {
+          CDT = FD->getParamDecl(I)->getType();
+          break;
+        }
+      }
+    }
+  }
+  if (CDT.isNull())
+    CDT = C.IntTy;
+  CDT = CDT->getCanonicalTypeUnqualified();
+  if (CDT->isRecordType() || CDT->isUnionType())
+    CDT = C.IntTy;
+  return C.getTypeSize(CDT);
+}
+
+static void
+emitX86DeclareSimdFunction(const FunctionDecl *FD, llvm::Function *Fn,
+                           llvm::APSInt VLENVal,
+                           ArrayRef<ParamAttrTy> ParamAttrs,
+                           OMPDeclareSimdDeclAttr::BranchStateTy State) {
+  struct ISADataTy {
+    char ISA;
+    unsigned VecRegSize;
+  };
+  ISADataTy ISAData[] = {
+      {
+          'b', 128
+      }, // SSE
+      {
+          'c', 256
+      }, // AVX
+      {
+          'd', 256
+      }, // AVX2
+      {
+          'e', 512
+      }, // AVX512
+  };
+  llvm::SmallVector<char, 2> Masked;
+  switch (State) {
+  case OMPDeclareSimdDeclAttr::BS_Undefined:
+    Masked.push_back('N');
+    Masked.push_back('M');
+    break;
+  case OMPDeclareSimdDeclAttr::BS_Notinbranch:
+    Masked.push_back('N');
+    break;
+  case OMPDeclareSimdDeclAttr::BS_Inbranch:
+    Masked.push_back('M');
+    break;
+  }
+  for (auto Mask : Masked) {
+    for (auto &Data : ISAData) {
+      SmallString<256> Buffer;
+      llvm::raw_svector_ostream Out(Buffer);
+      Out << "_ZGV" << Data.ISA << Mask;
+      if (!VLENVal) {
+        Out << llvm::APSInt::getUnsigned(Data.VecRegSize /
+                                         evaluateCDTSize(FD, ParamAttrs));
+      } else
+        Out << VLENVal;
+      for (auto &ParamAttr : ParamAttrs) {
+        switch (ParamAttr.Kind){
+        case LinearWithVarStride:
+          Out << 's' << ParamAttr.StrideOrArg;
+          break;
+        case Linear:
+          Out << 'l';
+          if (!!ParamAttr.StrideOrArg)
+            Out << ParamAttr.StrideOrArg;
+          break;
+        case Uniform:
+          Out << 'u';
+          break;
+        case Vector:
+          Out << 'v';
+          break;
+        }
+        if (!!ParamAttr.Alignment)
+          Out << 'a' << ParamAttr.Alignment;
+      }
+      Out << '_' << Fn->getName();
+      Fn->addFnAttr(Out.str());
+    }
+  }
+}
+
+void CGOpenMPRuntime::emitDeclareSimdFunction(const FunctionDecl *FD,
+                                              llvm::Function *Fn) {
+  ASTContext &C = CGM.getContext();
+  FD = FD->getCanonicalDecl();
+  // Map params to their positions in function decl.
+  llvm::DenseMap<const Decl *, unsigned> ParamPositions;
+  if (isa<CXXMethodDecl>(FD))
+    ParamPositions.insert({FD, 0});
+  unsigned ParamPos = ParamPositions.size();
+  for (auto *P : FD->params()) {
+    ParamPositions.insert({P->getCanonicalDecl(), ParamPos});
+    ++ParamPos;
+  }
+  for (auto *Attr : FD->specific_attrs<OMPDeclareSimdDeclAttr>()) {
+    llvm::SmallVector<ParamAttrTy, 8> ParamAttrs(ParamPositions.size());
+    // Mark uniform parameters.
+    for (auto *E : Attr->uniforms()) {
+      E = E->IgnoreParenImpCasts();
+      unsigned Pos;
+      if (isa<CXXThisExpr>(E))
+        Pos = ParamPositions[FD];
+      else {
+        auto *PVD = cast<ParmVarDecl>(cast<DeclRefExpr>(E)->getDecl())
+                        ->getCanonicalDecl();
+        Pos = ParamPositions[PVD];
+      }
+      ParamAttrs[Pos].Kind = Uniform;
+    }
+    // Get alignment info.
+    auto NI = Attr->alignments_begin();
+    for (auto *E : Attr->aligneds()) {
+      E = E->IgnoreParenImpCasts();
+      unsigned Pos;
+      QualType ParmTy;
+      if (isa<CXXThisExpr>(E)) {
+        Pos = ParamPositions[FD];
+        ParmTy = E->getType();
+      } else {
+        auto *PVD = cast<ParmVarDecl>(cast<DeclRefExpr>(E)->getDecl())
+                        ->getCanonicalDecl();
+        Pos = ParamPositions[PVD];
+        ParmTy = PVD->getType();
+      }
+      ParamAttrs[Pos].Alignment =
+          (*NI) ? (*NI)->EvaluateKnownConstInt(C)
+                : llvm::APSInt::getUnsigned(
+                      C.toCharUnitsFromBits(C.getOpenMPDefaultSimdAlign(ParmTy))
+                          .getQuantity());
+      ++NI;
+    }
+    // Mark linear parameters.
+    auto SI = Attr->steps_begin();
+    auto MI = Attr->modifiers_begin();
+    for (auto *E : Attr->linears()) {
+      E = E->IgnoreParenImpCasts();
+      unsigned Pos;
+      if (isa<CXXThisExpr>(E))
+        Pos = ParamPositions[FD];
+      else {
+        auto *PVD = cast<ParmVarDecl>(cast<DeclRefExpr>(E)->getDecl())
+                        ->getCanonicalDecl();
+        Pos = ParamPositions[PVD];
+      }
+      auto &ParamAttr = ParamAttrs[Pos];
+      ParamAttr.Kind = Linear;
+      if (*SI) {
+        if (!(*SI)->EvaluateAsInt(ParamAttr.StrideOrArg, C,
+                                  Expr::SE_AllowSideEffects)) {
+          if (auto *DRE = cast<DeclRefExpr>((*SI)->IgnoreParenImpCasts())) {
+            if (auto *StridePVD = cast<ParmVarDecl>(DRE->getDecl())) {
+              ParamAttr.Kind = LinearWithVarStride;
+              ParamAttr.StrideOrArg = llvm::APSInt::getUnsigned(
+                  ParamPositions[StridePVD->getCanonicalDecl()]);
+            }
+          }
+        }
+      }
+      ++SI;
+      ++MI;
+    }
+    llvm::APSInt VLENVal;
+    if (const Expr *VLEN = Attr->getSimdlen())
+      VLENVal = VLEN->EvaluateKnownConstInt(C);
+    OMPDeclareSimdDeclAttr::BranchStateTy State = Attr->getBranchState();
+    if (CGM.getTriple().getArch() == llvm::Triple::x86 ||
+        CGM.getTriple().getArch() == llvm::Triple::x86_64)
+      emitX86DeclareSimdFunction(FD, Fn, VLENVal, ParamAttrs, State);
   }
 }

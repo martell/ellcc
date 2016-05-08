@@ -144,9 +144,9 @@ template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody &Sym) {
 }
 
 template <class ELFT> bool GotSection<ELFT>::addDynTlsEntry(SymbolBody &Sym) {
-  if (Sym.hasGlobalDynIndex())
+  if (Sym.symbol()->GlobalDynIndex != -1U)
     return false;
-  Sym.GlobalDynIndex = Entries.size();
+  Sym.symbol()->GlobalDynIndex = Entries.size();
   // Global Dynamic TLS entries take two GOT slots.
   Entries.push_back(&Sym);
   Entries.push_back(nullptr);
@@ -186,13 +186,13 @@ GotSection<ELFT>::getMipsLocalEntryOffset(uintX_t EntryValue) {
 template <class ELFT>
 typename GotSection<ELFT>::uintX_t
 GotSection<ELFT>::getGlobalDynAddr(const SymbolBody &B) const {
-  return this->getVA() + B.GlobalDynIndex * sizeof(uintX_t);
+  return this->getVA() + B.symbol()->GlobalDynIndex * sizeof(uintX_t);
 }
 
 template <class ELFT>
 typename GotSection<ELFT>::uintX_t
 GotSection<ELFT>::getGlobalDynOffset(const SymbolBody &B) const {
-  return B.GlobalDynIndex * sizeof(uintX_t);
+  return B.symbol()->GlobalDynIndex * sizeof(uintX_t);
 }
 
 template <class ELFT>
@@ -1249,8 +1249,8 @@ template <class ELFT> void MergeOutputSection<ELFT>::writeTo(uint8_t *Buf) {
     memcpy(Buf, Data.data(), Data.size());
     return;
   }
-  for (const std::pair<StringRef, size_t> &P : Builder.getMap()) {
-    StringRef Data = P.first;
+  for (const std::pair<CachedHash<StringRef>, size_t> &P : Builder.getMap()) {
+    StringRef Data = P.first.Val;
     memcpy(Buf + P.second, Data.data(), Data.size());
   }
 }
@@ -1271,7 +1271,7 @@ void MergeOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
   if (this->Header.sh_flags & SHF_STRINGS) {
     for (unsigned I = 0, N = Offsets.size(); I != N; ++I) {
       auto &P = Offsets[I];
-      if (P.second == (uintX_t)-1)
+      if (P.second == MergeInputSection<ELFT>::PieceDead)
         continue;
 
       uintX_t Start = P.first;
@@ -1279,7 +1279,7 @@ void MergeOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
       StringRef Entry = Data.substr(Start, End - Start);
       uintX_t OutputOffset = Builder.add(Entry);
       if (shouldTailMerge())
-        OutputOffset = -1;
+        OutputOffset = MergeInputSection<ELFT>::PieceLive;
       P.second = OutputOffset;
     }
     return;
@@ -1371,7 +1371,7 @@ static bool sortMipsSymbols(const std::pair<SymbolBody *, unsigned> &L,
 }
 
 static uint8_t getSymbolBinding(SymbolBody *Body) {
-  Symbol *S = Body->Backref;
+  Symbol *S = Body->symbol();
   uint8_t Visibility = S->Visibility;
   if (Visibility != STV_DEFAULT && Visibility != STV_PROTECTED)
     return STB_LOCAL;
@@ -1472,7 +1472,7 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
     ESym->setBindingAndType(getSymbolBinding(Body), Type);
     ESym->st_size = Size;
     ESym->st_name = StrOff;
-    ESym->setVisibility(Body->Backref->Visibility);
+    ESym->setVisibility(Body->symbol()->Visibility);
     ESym->st_value = Body->getVA<ELFT>();
 
     if (const OutputSectionBase<ELFT> *OutSec = getOutputSection(Body))
@@ -1496,7 +1496,7 @@ const OutputSectionBase<ELFT> *
 SymbolTableSection<ELFT>::getOutputSection(SymbolBody *Sym) {
   switch (Sym->kind()) {
   case SymbolBody::DefinedSyntheticKind:
-    return &cast<DefinedSynthetic<ELFT>>(Sym)->Section;
+    return cast<DefinedSynthetic<ELFT>>(Sym)->Section;
   case SymbolBody::DefinedRegularKind: {
     auto &D = cast<DefinedRegular<ELFT>>(*Sym);
     if (D.Section)
@@ -1636,35 +1636,36 @@ template <class ELFT> void BuildIdSection<ELFT>::writeTo(uint8_t *Buf) {
   HashBuf = Buf + 16;
 }
 
-template <class ELFT> void BuildIdFnv1<ELFT>::update(ArrayRef<uint8_t> Buf) {
-  // 64-bit FNV-1 hash
-  const uint64_t Prime = 0x100000001b3;
-  for (uint8_t B : Buf) {
-    Hash *= Prime;
-    Hash ^= B;
-  }
-}
-
-template <class ELFT> void BuildIdFnv1<ELFT>::writeBuildId() {
+template <class ELFT>
+void BuildIdFnv1<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
   const endianness E = ELFT::TargetEndianness;
+
+  // 64-bit FNV-1 hash
+  uint64_t Hash = 0xcbf29ce484222325;
+  for (ArrayRef<uint8_t> Buf : Bufs) {
+    for (uint8_t B : Buf) {
+      Hash *= 0x100000001b3;
+      Hash ^= B;
+    }
+  }
   write64<E>(this->HashBuf, Hash);
 }
 
-template <class ELFT> void BuildIdMd5<ELFT>::update(ArrayRef<uint8_t> Buf) {
-  Hash.update(Buf);
-}
-
-template <class ELFT> void BuildIdMd5<ELFT>::writeBuildId() {
+template <class ELFT>
+void BuildIdMd5<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
+  llvm::MD5 Hash;
+  for (ArrayRef<uint8_t> Buf : Bufs)
+    Hash.update(Buf);
   MD5::MD5Result Res;
   Hash.final(Res);
   memcpy(this->HashBuf, Res, 16);
 }
 
-template <class ELFT> void BuildIdSha1<ELFT>::update(ArrayRef<uint8_t> Buf) {
-  Hash.update(Buf);
-}
-
-template <class ELFT> void BuildIdSha1<ELFT>::writeBuildId() {
+template <class ELFT>
+void BuildIdSha1<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
+  llvm::SHA1 Hash;
+  for (ArrayRef<uint8_t> Buf : Bufs)
+    Hash.update(Buf);
   memcpy(this->HashBuf, Hash.final().data(), 20);
 }
 
@@ -1688,6 +1689,34 @@ void MipsReginfoOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
   // Copy input object file's .reginfo gprmask to output.
   auto *S = cast<MipsReginfoInputSection<ELFT>>(C);
   GprMask |= S->Reginfo->ri_gprmask;
+}
+
+template <class ELFT>
+MipsOptionsOutputSection<ELFT>::MipsOptionsOutputSection()
+    : OutputSectionBase<ELFT>(".MIPS.options", SHT_MIPS_OPTIONS,
+                              SHF_ALLOC | SHF_MIPS_NOSTRIP) {
+  this->Header.sh_addralign = 8;
+  this->Header.sh_entsize = 1;
+  this->Header.sh_size = sizeof(Elf_Mips_Options) + sizeof(Elf_Mips_RegInfo);
+}
+
+template <class ELFT>
+void MipsOptionsOutputSection<ELFT>::writeTo(uint8_t *Buf) {
+  auto *Opt = reinterpret_cast<Elf_Mips_Options *>(Buf);
+  Opt->kind = ODK_REGINFO;
+  Opt->size = this->Header.sh_size;
+  Opt->section = 0;
+  Opt->info = 0;
+  auto *Reg = reinterpret_cast<Elf_Mips_RegInfo *>(Buf + sizeof(*Opt));
+  Reg->ri_gp_value = Out<ELFT>::Got->getVA() + MipsGPOffset;
+  Reg->ri_gprmask = GprMask;
+}
+
+template <class ELFT>
+void MipsOptionsOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  auto *S = cast<MipsOptionsInputSection<ELFT>>(C);
+  if (S->Reginfo)
+    GprMask |= S->Reginfo->ri_gprmask;
 }
 
 namespace lld {
@@ -1756,6 +1785,11 @@ template class MipsReginfoOutputSection<ELF32LE>;
 template class MipsReginfoOutputSection<ELF32BE>;
 template class MipsReginfoOutputSection<ELF64LE>;
 template class MipsReginfoOutputSection<ELF64BE>;
+
+template class MipsOptionsOutputSection<ELF32LE>;
+template class MipsOptionsOutputSection<ELF32BE>;
+template class MipsOptionsOutputSection<ELF64LE>;
+template class MipsOptionsOutputSection<ELF64BE>;
 
 template class MergeOutputSection<ELF32LE>;
 template class MergeOutputSection<ELF32BE>;

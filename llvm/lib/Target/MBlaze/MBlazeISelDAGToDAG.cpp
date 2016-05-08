@@ -83,7 +83,7 @@ private:
   }
 
   SDNode *getGlobalBaseReg();
-  SDNode *Select(SDNode *N) override;
+  SDNode *SelectImpl(SDNode *N) override;
 
   // Address Selection
   bool SelectAddrRegReg(SDValue N, SDValue &Base, SDValue &Index);
@@ -203,7 +203,7 @@ SDNode *MBlazeDAGToDAGISel::getGlobalBaseReg() {
 
 /// Select instructions not customized! Used for
 /// expanded, promoted and normal instructions
-SDNode* MBlazeDAGToDAGISel::Select(SDNode *Node) {
+SDNode *MBlazeDAGToDAGISel::SelectImpl(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc dl(Node);
 

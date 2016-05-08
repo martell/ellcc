@@ -34,6 +34,21 @@ enum PdbRaw_DbiVer : uint32_t {
   PdbDbiV70 = 19990903,
   PdbDbiV110 = 20091201
 };
+
+enum PdbRaw_TpiVer : uint32_t {
+  PdbTpiV40 = 19950410,
+  PdbTpiV41 = 19951122,
+  PdbTpiV50 = 19961031,
+  PdbTpiV70 = 19990903,
+  PdbTpiV80 = 20040203,
+};
+
+enum SpecialStream : uint32_t {
+  StreamPDB = 1,
+  StreamTPI = 2,
+  StreamDBI = 3,
+  StreamIPI = 4,
+};
 }
 }
 

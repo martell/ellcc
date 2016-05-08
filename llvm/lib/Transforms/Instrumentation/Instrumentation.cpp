@@ -60,8 +60,8 @@ void llvm::initializeInstrumentation(PassRegistry &Registry) {
   initializeAddressSanitizerModulePass(Registry);
   initializeBoundsCheckingPass(Registry);
   initializeGCOVProfilerPass(Registry);
-  initializePGOInstrumentationGenPass(Registry);
-  initializePGOInstrumentationUsePass(Registry);
+  initializePGOInstrumentationGenLegacyPassPass(Registry);
+  initializePGOInstrumentationUseLegacyPassPass(Registry);
   initializePGOIndirectCallPromotionPass(Registry);
   initializeInstrProfilingLegacyPassPass(Registry);
   initializeMemorySanitizerPass(Registry);

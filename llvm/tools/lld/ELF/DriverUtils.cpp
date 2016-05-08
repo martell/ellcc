@@ -17,6 +17,7 @@
 #include "Error.h"
 #include "lld/Config/Version.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Option/Option.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -57,7 +58,7 @@ opt::InputArgList ELFOptTable::parse(ArrayRef<const char *> Argv) {
   // Expand response files. '@<filename>' is replaced by the file's contents.
   SmallVector<const char *, 256> Vec(Argv.data(), Argv.data() + Argv.size());
   StringSaver Saver(Alloc);
-  llvm::cl::ExpandResponseFiles(Saver, llvm::cl::TokenizeGNUCommandLine, Vec);
+  cl::ExpandResponseFiles(Saver, cl::TokenizeGNUCommandLine, Vec);
 
   // Parse options and then do error checking.
   opt::InputArgList Args = this->ParseArgs(Vec, MissingIndex, MissingCount);
@@ -87,37 +88,140 @@ void elf::printVersion() {
   outs() << "\n";
 }
 
-// Concatenates S and T so that the resulting path becomes S/T.
-// There are a few exceptions:
-//
-//  1. The result will never escape from S. Therefore, all ".."
-//     are removed from T before concatenatig them.
-//  2. Windows drive letters are removed from T before concatenation.
-std::string elf::concat_paths(StringRef S, StringRef T) {
-  // Remove leading '/' or a drive letter, and then remove "..".
-  SmallString<128> T2(path::relative_path(T));
-  path::remove_dots(T2, /*remove_dot_dot=*/true);
+// Makes a given pathname an absolute path first, and then remove
+// beginning /. For example, "../foo.o" is converted to "home/john/foo.o",
+// assuming that the current directory is "/home/john/bar".
+static std::string relativeToRoot(StringRef Path) {
+  SmallString<128> Abs = Path;
+  if (std::error_code EC = fs::make_absolute(Abs))
+    fatal("make_absolute failed: " + EC.message());
+  path::remove_dots(Abs, /*remove_dot_dot=*/true);
 
+  // This is Windows specific. root_name() returns a drive letter
+  // (e.g. "c:") or a UNC name (//net). We want to keep it as part
+  // of the result.
   SmallString<128> Res;
-  path::append(Res, S, T2);
+  StringRef Root = path::root_name(Abs);
+  if (Root.endswith(":"))
+    Res = Root.drop_back();
+  else if (Root.startswith("//"))
+    Res = Root.substr(2);
+
+  path::append(Res, path::relative_path(Abs));
   return Res.str();
 }
 
-void elf::copyFile(StringRef Src, StringRef Dest) {
-  SmallString<128> Dir(Dest);
-  path::remove_filename(Dir);
-  if (std::error_code EC = sys::fs::create_directories(Dir)) {
-    error(EC, Dir + ": can't create directory");
+static std::string getDestPath(StringRef Path) {
+  std::string Relpath = relativeToRoot(Path);
+  SmallString<128> Dest;
+  path::append(Dest, path::filename(Config->Reproduce), Relpath);
+  return Dest.str();
+}
+
+static void maybePrintCpioMemberAux(raw_fd_ostream &OS, StringRef Path,
+                                    StringRef Data) {
+  OS << "070707"; // c_magic
+
+  // The c_dev/c_ino pair should be unique according to the spec, but no one
+  // seems to care.
+  OS << "000000"; // c_dev
+  OS << "000000"; // c_ino
+
+  OS << "100664";                        // c_mode: C_ISREG | rw-rw-r--
+  OS << "000000";                        // c_uid
+  OS << "000000";                        // c_gid
+  OS << "000001";                        // c_nlink
+  OS << "000000";                        // c_rdev
+  OS << "00000000000";                   // c_mtime
+  OS << format("%06o", Path.size() + 1); // c_namesize
+  OS << format("%011o", Data.size());    // c_filesize
+  OS << Path << '\0';                    // c_name
+  OS << Data;                            // c_filedata
+}
+
+static void maybePrintCpioMember(StringRef Path, StringRef Data) {
+  if (Config->Reproduce.empty())
     return;
+
+  if (!Driver->IncludedFiles.insert(Path).second)
+    return;
+  raw_fd_ostream &OS = *Driver->ReproduceArchive;
+  maybePrintCpioMemberAux(OS, Path, Data);
+
+  // Print the trailer and seek back. This way we have a valid archive if we
+  // crash.
+  uint64_t Pos = OS.tell();
+  maybePrintCpioMemberAux(OS, "TRAILER!!!", "");
+  OS.seek(Pos);
+}
+
+// Write file Src with content Data to the archive.
+void elf::maybeCopyInputFile(StringRef Src, StringRef Data) {
+  std::string Dest = getDestPath(Src);
+  maybePrintCpioMember(Dest, Data);
+}
+
+// Quote a given string if it contains a space character.
+static std::string quote(StringRef S) {
+  if (S.find(' ') == StringRef::npos)
+    return S;
+  return ("\"" + S + "\"").str();
+}
+
+static std::string rewritePath(StringRef S) {
+  if (fs::exists(S))
+    return relativeToRoot(S);
+  return S;
+}
+
+static std::string stringize(opt::Arg *Arg) {
+  std::string K = Arg->getSpelling();
+  if (Arg->getNumValues() == 0)
+    return K;
+  std::string V = quote(Arg->getValue());
+  if (Arg->getOption().getRenderStyle() == opt::Option::RenderJoinedStyle)
+    return K + V;
+  return K + " " + V;
+}
+
+// Copies all input files to Config->Reproduce directory and
+// create a response file as "response.txt", so that you can re-run
+// the same command with the same inputs just by executing
+// "ld.lld @response.txt". Used by --reproduce. This feature is
+// supposed to be used by users to report an issue to LLD developers.
+void elf::createResponseFile(const opt::InputArgList &Args) {
+  SmallString<0> Data;
+  raw_svector_ostream OS(Data);
+  // Copy the command line to response.txt while rewriting paths.
+  for (auto *Arg : Args) {
+    switch (Arg->getOption().getID()) {
+    case OPT_reproduce:
+      break;
+    case OPT_INPUT:
+      OS << quote(rewritePath(Arg->getValue())) << "\n";
+      break;
+    case OPT_L:
+    case OPT_dynamic_list:
+    case OPT_rpath:
+    case OPT_script:
+    case OPT_version_script:
+      OS << Arg->getSpelling() << " "
+         << quote(rewritePath(Arg->getValue())) << "\n";
+      break;
+    default:
+      OS << stringize(Arg) << "\n";
+    }
   }
-  if (std::error_code EC = sys::fs::copy_file(Src, Dest))
-    error(EC, "failed to copy file: " + Dest);
+
+  SmallString<128> Dest;
+  path::append(Dest, path::filename(Config->Reproduce), "response.txt");
+  maybePrintCpioMember(Dest, Data);
 }
 
 std::string elf::findFromSearchPaths(StringRef Path) {
   for (StringRef Dir : Config->SearchPaths) {
     std::string FullPath = buildSysrootedPath(Dir, Path);
-    if (sys::fs::exists(FullPath))
+    if (fs::exists(FullPath))
       return FullPath;
   }
   return "";
@@ -142,8 +246,8 @@ std::string elf::searchLibrary(StringRef Path) {
 std::string elf::buildSysrootedPath(StringRef Dir, StringRef File) {
   SmallString<128> Path;
   if (Dir.startswith("="))
-    sys::path::append(Path, Config->Sysroot, Dir.substr(1), File);
+    path::append(Path, Config->Sysroot, Dir.substr(1), File);
   else
-    sys::path::append(Path, Dir, File);
+    path::append(Path, Dir, File);
   return Path.str();
 }

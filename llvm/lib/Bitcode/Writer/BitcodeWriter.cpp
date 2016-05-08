@@ -1353,7 +1353,8 @@ void ModuleBitcodeWriter::writeDICompileUnit(const DICompileUnit *N,
 void ModuleBitcodeWriter::writeDISubprogram(const DISubprogram *N,
                                             SmallVectorImpl<uint64_t> &Record,
                                             unsigned Abbrev) {
-  Record.push_back(N->isDistinct());
+  uint64_t HasUnitFlag = 1 << 1;
+  Record.push_back(N->isDistinct() | HasUnitFlag);
   Record.push_back(VE.getMetadataOrNullID(N->getScope()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawName()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawLinkageName()));
@@ -3121,10 +3122,8 @@ void ModuleBitcodeWriter::writePerModuleGlobalValueSummary() {
       report_fatal_error("Unexpected anonymous function when writing summary");
 
     auto *Summary = Index->getGlobalValueSummary(F);
-    writePerModuleFunctionSummaryRecord(
-        NameVals, Summary,
-        VE.getValueID(M.getValueSymbolTable().lookup(F.getName())),
-        FSCallsAbbrev, FSCallsProfileAbbrev, F);
+    writePerModuleFunctionSummaryRecord(NameVals, Summary, VE.getValueID(&F),
+                                        FSCallsAbbrev, FSCallsProfileAbbrev, F);
   }
 
   // Capture references from GlobalVariable initializers, which are outside

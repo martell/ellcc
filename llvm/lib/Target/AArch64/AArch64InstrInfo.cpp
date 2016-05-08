@@ -545,8 +545,10 @@ static bool canBeExpandedToORR(const MachineInstr *MI, unsigned BitSize) {
 // micro-architecture target hook should be introduced here in future.
 bool AArch64InstrInfo::isAsCheapAsAMove(const MachineInstr *MI) const {
   if (!Subtarget.isCortexA57() && !Subtarget.isCortexA53() &&
-      !Subtarget.isKryo())
+      !Subtarget.isExynosM1() && !Subtarget.isKryo())
     return MI->isAsCheapAsAMove();
+
+  unsigned Imm;
 
   switch (MI->getOpcode()) {
   default:
@@ -557,7 +559,17 @@ bool AArch64InstrInfo::isAsCheapAsAMove(const MachineInstr *MI) const {
   case AArch64::ADDXri:
   case AArch64::SUBWri:
   case AArch64::SUBXri:
-    return (MI->getOperand(3).getImm() == 0);
+    return (Subtarget.isExynosM1() ||
+            MI->getOperand(3).getImm() == 0);
+
+  // add/sub on register with shift
+  case AArch64::ADDWrs:
+  case AArch64::ADDXrs:
+  case AArch64::SUBWrs:
+  case AArch64::SUBXrs:
+    Imm = MI->getOperand(3).getImm();
+    return (Subtarget.isExynosM1() &&
+            AArch64_AM::getArithShiftValue(Imm) < 4);
 
   // logical ops on immediate
   case AArch64::ANDWri:
@@ -582,6 +594,25 @@ bool AArch64InstrInfo::isAsCheapAsAMove(const MachineInstr *MI) const {
   case AArch64::ORRWrr:
   case AArch64::ORRXrr:
     return true;
+
+  // logical ops on register with shift
+  case AArch64::ANDWrs:
+  case AArch64::ANDXrs:
+  case AArch64::BICWrs:
+  case AArch64::BICXrs:
+  case AArch64::EONWrs:
+  case AArch64::EONXrs:
+  case AArch64::EORWrs:
+  case AArch64::EORXrs:
+  case AArch64::ORNWrs:
+  case AArch64::ORNXrs:
+  case AArch64::ORRWrs:
+  case AArch64::ORRXrs:
+    Imm = MI->getOperand(3).getImm();
+    return (Subtarget.isExynosM1() &&
+            AArch64_AM::getShiftValue(Imm) < 4 &&
+            AArch64_AM::getShiftType(Imm) == AArch64_AM::LSL);
+
   // If MOVi32imm or MOVi64imm can be expanded into ORRWri or
   // ORRXri, it is as cheap as MOV
   case AArch64::MOVi32imm:
@@ -2362,6 +2393,9 @@ void llvm::emitFrameOffset(MachineBasicBlock &MBB,
   if (DestReg == SrcReg && Offset == 0)
     return;
 
+  assert((DestReg != AArch64::SP || Offset % 16 == 0) &&
+         "SP increment/decrement not 16-byte aligned");
+
   bool isSub = Offset < 0;
   if (isSub)
     Offset = -Offset;
@@ -2724,9 +2758,10 @@ void AArch64InstrInfo::getNoopForMachoTarget(MCInst &NopInst) const {
   NopInst.setOpcode(AArch64::HINT);
   NopInst.addOperand(MCOperand::createImm(0));
 }
-/// useMachineCombiner - return true when a target supports MachineCombiner
+
+// AArch64 supports MachineCombiner.
 bool AArch64InstrInfo::useMachineCombiner() const {
-  // AArch64 supports the combiner
+
   return true;
 }
 //
@@ -3887,6 +3922,8 @@ bool AArch64InstrInfo::optimizeCondBranch(MachineInstr *MI) const {
                               .addReg(NewReg)
                               .addImm(Imm)
                               .addMBB(TBB);
+    // Register lives on to the CBZ now.
+    MO.setIsKill(false);
 
     // For immediate smaller than 32, we need to use the 32-bit
     // variant (W) in all cases. Indeed the 64-bit variant does not

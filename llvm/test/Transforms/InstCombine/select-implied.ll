@@ -40,7 +40,7 @@ end:
 ; CHECK-LABEL: @test3
 ; CHECK-NOT: select
 ; CHECK: call void @foo(i32 30)
-define void @test3(i32 %a, i32 %b) {
+define void @test3(i32 %a) {
   %cmp1 = icmp ugt i32 %a, 10
   br i1 %cmp1, label %taken, label %end
 
@@ -71,7 +71,8 @@ end:
 }
 
 ; We know the condition of the select is true based on a dominating condition.
-; Therefore, we can replace %cond with %len.
+; Therefore, we can replace %cond with %len. However, now the inner icmp is
+; always false and can be elided.
 ; CHECK-LABEL: @test4
 ; CHECK-NOT: select
 define void @test4(i32 %len) {
@@ -81,8 +82,9 @@ entry:
   br i1 %cmp, label %bb, label %b1
 bb:
   %cond = select i1 %cmp, i32 %len, i32 8
-; CHECK:  %cmp11 = icmp eq i32 %len, 8
+; CHECK-NOT:  %cmp11 = icmp eq i32 %{{.*}}, 8
   %cmp11 = icmp eq i32 %cond, 8
+; CHECK: br i1 false, label %b0, label %b1
   br i1 %cmp11, label %b0, label %b1
 
 b0:
@@ -96,6 +98,24 @@ b1:
 
 ret:
   call void @foo(i32 %1)
+  ret void
+}
+
+; A >u 10 implies A >u 9 is true.
+; CHECK-LABEL: @test5
+; CHECK-NOT: select
+; CHECK: call void @foo(i32 30)
+define void @test5(i32 %a) {
+  %cmp1 = icmp ugt i32 %a, 10
+  br i1 %cmp1, label %taken, label %end
+
+taken:
+  %cmp2 = icmp ugt i32 %a, 9
+  %c = select i1 %cmp2, i32 30, i32 0
+  call void @foo(i32 %c)
+  br label %end
+
+end:
   ret void
 }
 

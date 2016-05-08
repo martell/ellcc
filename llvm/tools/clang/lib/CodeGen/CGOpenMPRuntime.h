@@ -93,6 +93,8 @@ struct OMPTaskDataTy final {
   SmallVector<const Expr *, 4> FirstprivateVars;
   SmallVector<const Expr *, 4> FirstprivateCopies;
   SmallVector<const Expr *, 4> FirstprivateInits;
+  SmallVector<const Expr *, 4> LastprivateVars;
+  SmallVector<const Expr *, 4> LastprivateCopies;
   SmallVector<std::pair<OpenMPDependClauseKind, const Expr *>, 4> Dependences;
   llvm::PointerIntPair<llvm::Value *, 1, bool> Final;
   llvm::PointerIntPair<llvm::Value *, 1, bool> Schedule;
@@ -453,6 +455,7 @@ private:
     llvm::Value *NewTaskNewTaskTTy = nullptr;
     LValue TDBase;
     RecordDecl *KmpTaskTQTyRD = nullptr;
+    llvm::Value *TaskDupFn = nullptr;
   };
   /// Emit task region for the task directive. The task region is emitted in
   /// several steps:
@@ -1010,6 +1013,13 @@ public:
                                              const OMPExecutableDirective &D,
                                              const Expr *IfCond,
                                              const Expr *Device);
+
+  /// Marks function \a Fn with properly mangled versions of vector functions.
+  /// \param FD Function marked as 'declare simd'.
+  /// \param Fn LLVM function that must be marked with 'declare simd'
+  /// attributes.
+  virtual void emitDeclareSimdFunction(const FunctionDecl *FD,
+                                       llvm::Function *Fn);
 };
 
 } // namespace CodeGen

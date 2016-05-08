@@ -513,7 +513,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
     getAllNoBuiltinFuncValues(Args, Opts.NoBuiltinFuncs);
   Opts.UnrollLoops =
       Args.hasFlag(OPT_funroll_loops, OPT_fno_unroll_loops,
-                   (Opts.OptimizationLevel > 1 && !Opts.OptimizeSize));
+                   (Opts.OptimizationLevel > 1));
   Opts.RerollLoops = Args.hasArg(OPT_freroll_loops);
 
   Opts.DisableIntegratedAS = Args.hasArg(OPT_fno_integrated_as);
@@ -781,6 +781,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.CudaGpuBinaryFileNames =
       Args.getAllArgValues(OPT_fcuda_include_gpubinary);
+
+  Opts.Backchain = Args.hasArg(OPT_mbackchain);
 
   return Success;
 }
@@ -1276,6 +1278,8 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
 
   // Add -I..., -F..., and -index-header-map options in order.
   bool IsIndexHeaderMap = false;
+  bool IsSysrootSpecified =
+      Args.hasArg(OPT__sysroot_EQ) || Args.hasArg(OPT_isysroot);
   for (const Arg *A : Args.filtered(OPT_I, OPT_F, OPT_index_header_map)) {
     if (A->getOption().matches(OPT_index_header_map)) {
       // -index-header-map applies to the next -I or -F.
@@ -1286,8 +1290,18 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
     frontend::IncludeDirGroup Group =
         IsIndexHeaderMap ? frontend::IndexHeaderMap : frontend::Angled;
 
-    Opts.AddPath(A->getValue(), Group,
-                 /*IsFramework=*/A->getOption().matches(OPT_F), true);
+    bool IsFramework = A->getOption().matches(OPT_F);
+    std::string Path = A->getValue();
+
+    if (IsSysrootSpecified && !IsFramework && A->getValue()[0] == '=') {
+      SmallString<32> Buffer;
+      llvm::sys::path::append(Buffer, Opts.Sysroot,
+                              llvm::StringRef(A->getValue()).substr(1));
+      Path = Buffer.str();
+    }
+
+    Opts.AddPath(Path.c_str(), Group, IsFramework,
+                 /*IgnoreSysroot*/ true);
     IsIndexHeaderMap = false;
   }
 
@@ -1758,6 +1772,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.EmitAllDecls = Args.hasArg(OPT_femit_all_decls);
   Opts.PackStruct = getLastArgIntValue(Args, OPT_fpack_struct_EQ, 0, Diags);
   Opts.MaxTypeAlign = getLastArgIntValue(Args, OPT_fmax_type_align_EQ, 0, Diags);
+  Opts.AlignDouble = Args.hasArg(OPT_malign_double);
   Opts.PICLevel = getLastArgIntValue(Args, OPT_pic_level, 0, Diags);
   Opts.PIELevel = getLastArgIntValue(Args, OPT_pie_level, 0, Diags);
   Opts.Static = Args.hasArg(OPT_static_define);

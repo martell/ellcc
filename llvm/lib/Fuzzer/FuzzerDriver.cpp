@@ -189,7 +189,7 @@ static std::mutex Mu;
 
 static void PulseThread() {
   while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(600));
+    SleepSeconds(600);
     std::lock_guard<std::mutex> Lock(Mu);
     Printf("pulse...\n");
   }
@@ -234,11 +234,26 @@ static int RunInMultipleProcesses(const std::vector<std::string> &Args,
   return HasErrors ? 1 : 0;
 }
 
+static void RssThread(Fuzzer *F, size_t RssLimitMb) {
+  while (true) {
+    SleepSeconds(1);
+    size_t Peak = GetPeakRSSMb();
+    if (Peak > RssLimitMb)
+      F->RssLimitCallback();
+  }
+}
+
+static void StartRssThread(Fuzzer *F, size_t RssLimitMb) {
+  if (!RssLimitMb) return;
+  std::thread T(RssThread, F, RssLimitMb);
+  T.detach();
+}
+
 int RunOneTest(Fuzzer *F, const char *InputFilePath) {
   Unit U = FileToVector(InputFilePath);
   Unit PreciseSizedU(U);
   assert(PreciseSizedU.size() == PreciseSizedU.capacity());
-  F->ExecuteCallback(PreciseSizedU.data(), PreciseSizedU.size());
+  F->RunOne(PreciseSizedU.data(), PreciseSizedU.size());
   return 0;
 }
 
@@ -295,6 +310,7 @@ static int FuzzerDriver(const std::vector<std::string> &Args,
   Options.OnlyASCII = Flags.only_ascii;
   Options.OutputCSV = Flags.output_csv;
   Options.DetectLeaks = Flags.detect_leaks;
+  Options.RssLimitMb = Flags.rss_limit_mb;
   if (Flags.runs >= 0)
     Options.MaxNumberOfRuns = Flags.runs;
   if (!Inputs->empty())
@@ -331,6 +347,8 @@ static int FuzzerDriver(const std::vector<std::string> &Args,
     if (U.size() <= Word::GetMaxSize())
       MD.AddWordToManualDictionary(Word(U.data(), U.size()));
 
+  StartRssThread(&F, Flags.rss_limit_mb);
+
   // Timer
   if (Flags.timeout > 0)
     SetTimer(Flags.timeout / 2 + 1);
@@ -355,6 +373,7 @@ static int FuzzerDriver(const std::vector<std::string> &Args,
       auto MS = duration_cast<milliseconds>(StopTime - StartTime).count();
       Printf("%s: %zd ms\n", Path.c_str(), (long)MS);
     }
+    F.PrintFinalStats();
     exit(0);
   }
 

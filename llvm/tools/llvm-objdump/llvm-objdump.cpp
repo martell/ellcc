@@ -277,7 +277,7 @@ LLVM_ATTRIBUTE_NORETURN void llvm::report_error(StringRef File,
   raw_string_ostream OS(Buf);
   logAllUnhandledErrors(std::move(E), OS, "");
   OS.flush();
-  errs() << ToolName << ": " << Buf;
+  errs() << ToolName << ": '" << File << "': " << Buf;
   exit(1);
 }
 
@@ -490,9 +490,9 @@ static std::error_code getRelocationValueString(const ELFObjectFile<ELFT> *Obj,
   const Elf_Sym *symb = Obj->getSymbol(SI->getRawDataRefImpl());
   StringRef Target;
   if (symb->getType() == ELF::STT_SECTION) {
-    ErrorOr<section_iterator> SymSI = SI->getSection();
-    if (std::error_code EC = SymSI.getError())
-      return EC;
+    Expected<section_iterator> SymSI = SI->getSection();
+    if (!SymSI)
+      return errorToErrorCode(SymSI.takeError());
     const Elf_Shdr *SymSec = Obj->getSection((*SymSI)->getRawDataRefImpl());
     ErrorOr<StringRef> SecName = EF.getSectionName(SymSec);
     if (std::error_code EC = SecName.getError())
@@ -967,8 +967,8 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
     if (Name->empty())
       continue;
 
-    ErrorOr<section_iterator> SectionOrErr = Symbol.getSection();
-    error(SectionOrErr.getError());
+    Expected<section_iterator> SectionOrErr = Symbol.getSection();
+    error(errorToErrorCode(SectionOrErr.takeError()));
     section_iterator SecI = *SectionOrErr;
     if (SecI == Obj->section_end())
       continue;
@@ -1357,12 +1357,13 @@ void llvm::PrintSymbolTable(const ObjectFile *o) {
     ErrorOr<uint64_t> AddressOrError = Symbol.getAddress();
     error(AddressOrError.getError());
     uint64_t Address = *AddressOrError;
-    ErrorOr<SymbolRef::Type> TypeOrError = Symbol.getType();
-    error(TypeOrError.getError());
+    Expected<SymbolRef::Type> TypeOrError = Symbol.getType();
+    if (!TypeOrError)
+      report_error(o->getFileName(), TypeOrError.takeError());
     SymbolRef::Type Type = *TypeOrError;
     uint32_t Flags = Symbol.getFlags();
-    ErrorOr<section_iterator> SectionOrErr = Symbol.getSection();
-    error(SectionOrErr.getError());
+    Expected<section_iterator> SectionOrErr = Symbol.getSection();
+    error(errorToErrorCode(SectionOrErr.takeError()));
     section_iterator Section = *SectionOrErr;
     StringRef Name;
     if (Type == SymbolRef::ST_Debug && Section != o->section_end()) {
@@ -1678,7 +1679,7 @@ static void DumpInput(StringRef file) {
   // Attempt to open the binary.
   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(file);
   if (!BinaryOrErr)
-    report_error(file, errorToErrorCode(BinaryOrErr.takeError()));
+    report_error(file, BinaryOrErr.takeError());
   Binary &Binary = *BinaryOrErr.get().getBinary();
 
   if (Archive *a = dyn_cast<Archive>(&Binary))

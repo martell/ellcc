@@ -692,11 +692,10 @@ bool MipsFastISel::emitCmp(unsigned ResultReg, const CmpInst *CI) {
     emitInst(Mips::ADDiu, RegWithOne).addReg(Mips::ZERO).addImm(1);
     emitInst(Opc).addReg(LeftReg).addReg(RightReg).addReg(
         Mips::FCC0, RegState::ImplicitDefine);
-    MachineInstrBuilder MI = emitInst(CondMovOpc, ResultReg)
-                                 .addReg(RegWithOne)
-                                 .addReg(Mips::FCC0)
-                                 .addReg(RegWithZero, RegState::Implicit);
-    MI->tieOperands(0, 3);
+    emitInst(CondMovOpc, ResultReg)
+        .addReg(RegWithOne)
+        .addReg(Mips::FCC0)
+        .addReg(RegWithZero);
     break;
   }
   }
@@ -1208,7 +1207,7 @@ bool MipsFastISel::processCallArgs(CallLoweringInfo &CLI,
 bool MipsFastISel::finishCall(CallLoweringInfo &CLI, MVT RetVT,
                               unsigned NumBytes) {
   CallingConv::ID CC = CLI.CallConv;
-  emitInst(Mips::ADJCALLSTACKUP).addImm(16);
+  emitInst(Mips::ADJCALLSTACKUP).addImm(16).addImm(0);
   if (RetVT != MVT::isVoid) {
     SmallVector<CCValAssign, 16> RVLocs;
     CCState CCInfo(CC, false, *FuncInfo.MF, RVLocs, *Context);

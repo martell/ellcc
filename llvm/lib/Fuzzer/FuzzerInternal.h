@@ -109,6 +109,8 @@ bool IsASCII(const Unit &U);
 
 int NumberOfCpuCores();
 int GetPid();
+int SignalToMainThread();
+void SleepSeconds(int Seconds);
 
 // Clears the current PC Map.
 void PcMapResetCurrent();
@@ -283,6 +285,7 @@ public:
     int TimeoutExitCode = 77;
     int ErrorExitCode = 77;
     int MaxTotalTimeSec = 0;
+    int RssLimitMb = 0;
     bool DoCrossOver = true;
     int MutateDepth = 5;
     bool UseCounters = false;
@@ -344,6 +347,7 @@ public:
   static void StaticInterruptCallback();
 
   void ExecuteCallback(const uint8_t *Data, size_t Size);
+  bool RunOne(const uint8_t *Data, size_t Size);
 
   // Merge Corpora[1:] into Corpora[0].
   void Merge(const std::vector<std::string> &Corpora);
@@ -352,6 +356,7 @@ public:
   MutationDispatcher &GetMD() { return MD; }
   void PrintFinalStats();
   void SetMaxLen(size_t MaxLen);
+  void RssLimitCallback();
 
 private:
   void AlarmCallback();
@@ -359,7 +364,6 @@ private:
   void InterruptCallback();
   void MutateAndTestOne();
   void ReportNewCoverage(const Unit &U);
-  bool RunOne(const uint8_t *Data, size_t Size);
   bool RunOne(const Unit &U) { return RunOne(U.data(), U.size()); }
   void RunOneAndUpdateCorpus(uint8_t *Data, size_t Size);
   void WriteToOutputCorpus(const Unit &U);
@@ -396,6 +400,7 @@ private:
 
   uint8_t *CurrentUnitData = nullptr;
   size_t CurrentUnitSize = 0;
+  bool InOOMState = false;
 
   size_t TotalNumberOfRuns = 0;
   size_t NumberOfNewUnitsAdded = 0;

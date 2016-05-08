@@ -19,7 +19,6 @@
 #include "Writer.h"
 #include "lld/Driver/Driver.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <utility>
@@ -106,16 +105,16 @@ LinkerDriver::getArchiveMembers(MemoryBufferRef MB) {
 // Opens and parses a file. Path has to be resolved already.
 // Newly created memory buffers are owned by this driver.
 void LinkerDriver::addFile(StringRef Path) {
-  using namespace llvm::sys::fs;
+  using namespace sys::fs;
   if (Config->Verbose)
-    llvm::outs() << Path << "\n";
-  if (!Config->Reproduce.empty())
-    copyFile(Path, concat_paths(Config->Reproduce, Path));
+    outs() << Path << "\n";
 
   Optional<MemoryBufferRef> Buffer = readFile(Path);
   if (!Buffer.hasValue())
     return;
   MemoryBufferRef MBRef = *Buffer;
+
+  maybeCopyInputFile(Path, MBRef.getBuffer());
 
   switch (identify_magic(MBRef.getBuffer())) {
   case file_magic::unknown:
@@ -238,25 +237,6 @@ static bool hasZOption(opt::InputArgList &Args, StringRef Key) {
   return false;
 }
 
-static void logCommandline(ArrayRef<const char *> Args) {
-  if (std::error_code EC = sys::fs::create_directories(
-        Config->Reproduce, /*IgnoreExisting=*/false)) {
-    error(EC, Config->Reproduce + ": can't create directory");
-    return;
-  }
-
-  SmallString<128> Path;
-  path::append(Path, Config->Reproduce, "invocation.txt");
-  std::error_code EC;
-  raw_fd_ostream OS(Path, EC, sys::fs::OpenFlags::F_None);
-  check(EC);
-
-  OS << Args[0];
-  for (size_t I = 1, E = Args.size(); I < E; ++I)
-    OS << " " << Args[I];
-  OS << "\n";
-}
-
 void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   ELFOptTable Parser;
   opt::InputArgList Args = Parser.parse(ArgsArr.slice(1));
@@ -272,8 +252,16 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   readConfigs(Args);
   initLLVM(Args);
 
-  if (!Config->Reproduce.empty())
-    logCommandline(ArgsArr);
+  if (!Config->Reproduce.empty()) {
+    std::error_code EC;
+    std::string File = Config->Reproduce + ".cpio";
+    ReproduceArchive = llvm::make_unique<raw_fd_ostream>(File, EC, fs::F_None);
+    if (EC) {
+      error(EC, "--reproduce: failed to open " + File);
+      return;
+    }
+    createResponseFile(Args);
+  }
 
   createFiles(Args);
   checkOptions(Args);
@@ -396,11 +384,13 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
     Config->BuildId = BuildIdKind::Fnv1;
   if (auto *Arg = Args.getLastArg(OPT_build_id_eq)) {
     StringRef S = Arg->getValue();
-    if (S == "md5") {
+    if (S == "md5")
       Config->BuildId = BuildIdKind::Md5;
-    } else if (S == "sha1") {
+    else if (S == "sha1")
       Config->BuildId = BuildIdKind::Sha1;
-    } else
+    else if (S == "none")
+      Config->BuildId = BuildIdKind::None;
+    else
       error("unknown --build-id style: " + S);
   }
 
@@ -466,6 +456,7 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
 // all linker scripts have already been parsed.
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   SymbolTable<ELFT> Symtab;
+  elf::Symtab<ELFT>::X = &Symtab;
 
   std::unique_ptr<TargetInfo> TI(createTarget());
   Target = TI.get();
@@ -487,7 +478,7 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   if (!Config->Entry.empty()) {
     StringRef S = Config->Entry;
     if (S.getAsInteger(0, Config->EntryAddr))
-      Config->EntrySym = Symtab.addUndefined(S)->Backref;
+      Config->EntrySym = Symtab.addUndefined(S);
   }
 
   for (std::unique_ptr<InputFile> &F : Files)
@@ -507,8 +498,8 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   // Write the result to the file.
   if (Config->GcSections)
-    markLive<ELFT>(&Symtab);
+    markLive<ELFT>();
   if (Config->ICF)
-    doIcf<ELFT>(&Symtab);
+    doIcf<ELFT>();
   writeResult<ELFT>(&Symtab);
 }

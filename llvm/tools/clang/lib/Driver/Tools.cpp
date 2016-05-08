@@ -1727,6 +1727,12 @@ void Clang::AddSparcTargetArgs(const ArgList &Args,
   }
 }
 
+void Clang::AddSystemZTargetArgs(const ArgList &Args,
+                                 ArgStringList &CmdArgs) const {
+  if (Args.hasFlag(options::OPT_mbackchain, options::OPT_mno_backchain, false))
+    CmdArgs.push_back("-mbackchain");
+}
+
 static const char *getSystemZTargetCPU(const ArgList &Args) {
   if (const Arg *A = Args.getLastArg(options::OPT_march_EQ))
     return A->getValue();
@@ -4322,6 +4328,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     AddSparcTargetArgs(Args, CmdArgs);
     break;
 
+  case llvm::Triple::systemz:
+    AddSystemZTargetArgs(Args, CmdArgs);
+    break;
+
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     AddX86TargetArgs(Args, CmdArgs);
@@ -6332,8 +6342,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     // Set the AT_producer to the clang version when using the integrated
     // assembler on assembly source files.
     CmdArgs.push_back("-dwarf-debug-producer");
-    std::string QuotedClangVersion("'" + getClangFullVersion() + "'");
-    CmdArgs.push_back(Args.MakeArgString(QuotedClangVersion));
+    CmdArgs.push_back(Args.MakeArgString(getClangFullVersion()));
 
     // And pass along -I options
     Args.AddAllArgs(CmdArgs, options::OPT_I);
@@ -7026,6 +7035,8 @@ void amdgpu::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   std::string Linker = getToolChain().GetProgramPath(getShortName());
   ArgStringList CmdArgs;
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
+  CmdArgs.push_back("-shared");
+  CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
   C.addCommand(llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Linker),
                                           CmdArgs, Inputs));

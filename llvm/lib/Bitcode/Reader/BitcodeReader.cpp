@@ -526,11 +526,6 @@ public:
   std::error_code parseSummaryIndexInto(std::unique_ptr<DataStreamer> Streamer,
                                         ModuleSummaryIndex *I);
 
-  /// \brief Interface for parsing a summary lazily.
-  std::error_code
-  parseGlobalValueSummary(std::unique_ptr<DataStreamer> Streamer,
-                          ModuleSummaryIndex *I, size_t SummaryOffset);
-
 private:
   std::error_code parseModule();
   std::error_code parseValueSymbolTable(
@@ -2477,28 +2472,30 @@ std::error_code BitcodeReader::parseMetadata(bool ModuleLevel) {
         return error("Invalid record");
 
       IsDistinct =
-          Record[0] || Record[8]; // All definitions should be distinct.
+          (Record[0] & 1) || Record[8]; // All definitions should be distinct.
       // Version 1 has a Function as Record[15].
       // Version 2 has removed Record[15].
       // Version 3 has the Unit as Record[15].
+      bool HasUnit = Record[0] >= 2;
+      if (HasUnit && Record.size() != 19)
+        return error("Invalid record");
       Metadata *CUorFn = getMDOrNull(Record[15]);
       unsigned Offset = Record.size() == 19 ? 1 : 0;
-      bool HasFn = Offset && dyn_cast_or_null<ConstantAsMetadata>(CUorFn);
-      bool HasCU = Offset && !HasFn;
+      bool HasFn = Offset && !HasUnit;
       DISubprogram *SP = GET_OR_DISTINCT(
           DISubprogram,
           (Context, getDITypeRefOrNull(Record[1]), getMDString(Record[2]),
            getMDString(Record[3]), getMDOrNull(Record[4]), Record[5],
            getMDOrNull(Record[6]), Record[7], Record[8], Record[9],
            getDITypeRefOrNull(Record[10]), Record[11], Record[12], Record[13],
-           Record[14], HasCU ? CUorFn : nullptr,
+           Record[14], HasUnit ? CUorFn : nullptr,
            getMDOrNull(Record[15 + Offset]), getMDOrNull(Record[16 + Offset]),
            getMDOrNull(Record[17 + Offset])));
       MetadataList.assignValue(SP, NextMetadataNo++);
 
       // Upgrade sp->function mapping to function->sp mapping.
       if (HasFn) {
-        if (auto *CMD = dyn_cast<ConstantAsMetadata>(CUorFn))
+        if (auto *CMD = dyn_cast_or_null<ConstantAsMetadata>(CUorFn))
           if (auto *F = dyn_cast<Function>(CMD->getValue())) {
             if (F->isMaterializable())
               // Defer until materialized; unmaterialized functions may not have
@@ -6329,49 +6326,6 @@ std::error_code ModuleSummaryIndexBitcodeReader::parseSummaryIndexInto(
     if (Stream.SkipBlock())
       return error("Invalid record");
   }
-}
-
-// Parse the summary information at the given offset in the buffer into
-// the index. Used to support lazy parsing of summaries from the
-// combined index during importing.
-// TODO: This function is not yet complete as it won't have a consumer
-// until ThinLTO function importing is added.
-std::error_code ModuleSummaryIndexBitcodeReader::parseGlobalValueSummary(
-    std::unique_ptr<DataStreamer> Streamer, ModuleSummaryIndex *I,
-    size_t SummaryOffset) {
-  TheIndex = I;
-
-  if (std::error_code EC = initStream(std::move(Streamer)))
-    return EC;
-
-  // Sniff for the signature.
-  if (!hasValidBitcodeHeader(Stream))
-    return error("Invalid bitcode signature");
-
-  Stream.JumpToBit(SummaryOffset);
-
-  BitstreamEntry Entry = Stream.advanceSkippingSubblocks();
-
-  switch (Entry.Kind) {
-  default:
-    return error("Malformed block");
-  case BitstreamEntry::Record:
-    // The expected case.
-    break;
-  }
-
-  // TODO: Read a record. This interface will be completed when ThinLTO
-  // importing is added so that it can be tested.
-  SmallVector<uint64_t, 64> Record;
-  switch (Stream.readRecord(Entry.ID, Record)) {
-  case bitc::FS_COMBINED:
-  case bitc::FS_COMBINED_PROFILE:
-  case bitc::FS_COMBINED_GLOBALVAR_INIT_REFS:
-  default:
-    return error("Invalid record");
-  }
-
-  return std::error_code();
 }
 
 std::error_code ModuleSummaryIndexBitcodeReader::initStream(

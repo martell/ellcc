@@ -226,7 +226,6 @@ set(LLVM_ALL_TARGETS
   AMDGPU
   ARM
   BPF
-  CppBackend
   Hexagon
   Mips
   MBlaze
@@ -250,11 +249,6 @@ set(LLVM_EXPERIMENTAL_TARGETS_TO_BUILD ""
 
 option(BUILD_SHARED_LIBS
   "Build all libraries as shared libraries instead of static" OFF)
-
-option(LLVM_ENABLE_TIMESTAMPS "Enable embedding timestamp information in build" ON)
-if(LLVM_ENABLE_TIMESTAMPS)
-  set(ENABLE_TIMESTAMPS 1)
-endif()
 
 option(LLVM_ENABLE_BACKTRACES "Enable embedding backtraces on crash." ON)
 if(LLVM_ENABLE_BACKTRACES)
@@ -344,8 +338,26 @@ set(LLVM_USE_SANITIZER "" CACHE STRING
 option(LLVM_USE_SPLIT_DWARF
   "Use -gsplit-dwarf when compiling llvm." OFF)
 
-option(WITH_POLLY "Build LLVM with Polly" ON)
-option(LINK_POLLY_INTO_TOOLS "Static link Polly into tools" ON)
+option(LLVM_POLLY_LINK_INTO_TOOLS "Statically link Polly into tools (if available)" ON)
+option(LLVM_POLLY_BUILD "Build LLVM with Polly" ON)
+
+if (EXISTS ${LLVM_MAIN_SRC_DIR}/tools/polly/CMakeLists.txt)
+  set(POLLY_IN_TREE TRUE)
+else()
+  set(POLLY_IN_TREE FALSE)
+endif()
+
+if (LLVM_POLLY_BUILD AND POLLY_IN_TREE)
+  set(WITH_POLLY ON)
+else()
+  set(WITH_POLLY OFF)
+endif()
+
+if (LLVM_POLLY_LINK_INTO_TOOLS AND WITH_POLLY)
+  set(LINK_POLLY_INTO_TOOLS ON)
+else()
+  set(LINK_POLLY_INTO_TOOLS OFF)
+endif()
 
 # Define an option controlling whether we should build for 32-bit on 64-bit
 # platforms, where supported.
@@ -395,16 +407,6 @@ option (LLVM_ENABLE_SPHINX "Use Sphinx to generate llvm documentation." OFF)
 
 option (LLVM_BUILD_EXTERNAL_COMPILER_RT
   "Build compiler-rt as an external project." OFF)
-
-if(WITH_POLLY)
-  if(NOT EXISTS ${LLVM_MAIN_SRC_DIR}/tools/polly/CMakeLists.txt)
-    set(WITH_POLLY OFF)
-  endif()
-endif(WITH_POLLY)
-
-if (NOT WITH_POLLY)
- set(LINK_POLLY_INTO_TOOLS OFF)
-endif (NOT WITH_POLLY)
 
 # You can configure which libraries from LLVM you want to include in the
 # shared library by setting LLVM_DYLIB_COMPONENTS to a semi-colon delimited

@@ -25,8 +25,11 @@ class MappedBlockStream : public StreamInterface {
 public:
   MappedBlockStream(uint32_t StreamIdx, const PDBFile &File);
 
-  std::error_code readBytes(uint32_t Offset,
-                            MutableArrayRef<uint8_t> Buffer) const override;
+  Error readBytes(uint32_t Offset,
+                  MutableArrayRef<uint8_t> Buffer) const override;
+  Error getArrayRef(uint32_t Offset, ArrayRef<uint8_t> &Buffer,
+                    uint32_t Length) const override;
+
   uint32_t getLength() const override { return StreamLength; }
 
 private:

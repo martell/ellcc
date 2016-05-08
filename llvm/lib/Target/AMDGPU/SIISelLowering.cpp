@@ -95,11 +95,27 @@ SITargetLowering::SITargetLowering(TargetMachine &TM,
   setOperationAction(ISD::LOAD, MVT::v8i32, Custom);
   setOperationAction(ISD::LOAD, MVT::v16i32, Custom);
 
+  setOperationAction(ISD::LOAD, MVT::f64, Promote);
+  AddPromotedToType(ISD::LOAD, MVT::f64, MVT::v2i32);
+
+  setOperationAction(ISD::LOAD, MVT::i64, Promote);
+  AddPromotedToType(ISD::LOAD, MVT::i64, MVT::v2i32);
+
+  setOperationAction(ISD::LOAD, MVT::v2i32, Custom);
+
   setOperationAction(ISD::STORE, MVT::v8i32, Custom);
   setOperationAction(ISD::STORE, MVT::v16i32, Custom);
 
   setOperationAction(ISD::STORE, MVT::i1, Custom);
   setOperationAction(ISD::STORE, MVT::v4i32, Custom);
+
+  setOperationAction(ISD::STORE, MVT::f64, Promote);
+  AddPromotedToType(ISD::STORE, MVT::f64, MVT::v2i32);
+
+  setOperationAction(ISD::STORE, MVT::i64, Promote);
+  AddPromotedToType(ISD::STORE, MVT::i64, MVT::v2i32);
+
+  setOperationAction(ISD::STORE, MVT::v2i32, Custom);
 
   setOperationAction(ISD::SELECT, MVT::i64, Custom);
   setOperationAction(ISD::SELECT, MVT::f64, Promote);
@@ -679,26 +695,26 @@ SDValue SITargetLowering::LowerFormalArguments(
       ++PSInputNum;
     }
 
-    // Second split vertices into their elements
-    if (AMDGPU::isShader(CallConv) &&
-        Arg.VT.isVector()) {
-      ISD::InputArg NewArg = Arg;
-      NewArg.Flags.setSplit();
-      NewArg.VT = Arg.VT.getVectorElementType();
+    if (AMDGPU::isShader(CallConv)) {
+      // Second split vertices into their elements
+      if (Arg.VT.isVector()) {
+        ISD::InputArg NewArg = Arg;
+        NewArg.Flags.setSplit();
+        NewArg.VT = Arg.VT.getVectorElementType();
 
-      // We REALLY want the ORIGINAL number of vertex elements here, e.g. a
-      // three or five element vertex only needs three or five registers,
-      // NOT four or eight.
-      Type *ParamType = FType->getParamType(Arg.getOrigArgIndex());
-      unsigned NumElements = ParamType->getVectorNumElements();
+        // We REALLY want the ORIGINAL number of vertex elements here, e.g. a
+        // three or five element vertex only needs three or five registers,
+        // NOT four or eight.
+        Type *ParamType = FType->getParamType(Arg.getOrigArgIndex());
+        unsigned NumElements = ParamType->getVectorNumElements();
 
-      for (unsigned j = 0; j != NumElements; ++j) {
-        Splits.push_back(NewArg);
-        NewArg.PartOffset += NewArg.VT.getStoreSize();
+        for (unsigned j = 0; j != NumElements; ++j) {
+          Splits.push_back(NewArg);
+          NewArg.PartOffset += NewArg.VT.getStoreSize();
+        }
+      } else {
+        Splits.push_back(Arg);
       }
-
-    } else if (AMDGPU::isShader(CallConv)) {
-      Splits.push_back(Arg);
     }
   }
 
@@ -1340,14 +1356,13 @@ SDValue SITargetLowering::LowerBRCOND(SDValue BRCOND,
     Target = BR->getOperand(1);
   }
 
-  if (Intr->getOpcode() != ISD::INTRINSIC_W_CHAIN) {
+  if (!isCFIntrinsic(Intr)) {
     // This is a uniform branch so we don't need to legalize.
     return BRCOND;
   }
 
   assert(!SetCC ||
         (SetCC->getConstantOperandVal(1) == 1 &&
-         isCFIntrinsic(Intr) &&
          cast<CondCodeSDNode>(SetCC->getOperand(2).getNode())->get() ==
                                                              ISD::SETNE));
 
@@ -1893,10 +1908,17 @@ SDValue SITargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
 
   assert(Op.getValueType().getVectorElementType() == MVT::i32 &&
          "Custom lowering for non-i32 vectors hasn't been implemented.");
-  unsigned NumElements = MemVT.getVectorNumElements();
-  assert(NumElements != 2 && "v2 loads are supported for all address spaces.");
 
-  switch (Load->getAddressSpace()) {
+  unsigned AS = Load->getAddressSpace();
+  if (!allowsMemoryAccess(*DAG.getContext(), DAG.getDataLayout(), MemVT,
+                          AS, Load->getAlignment())) {
+    SDValue Ops[2];
+    std::tie(Ops[0], Ops[1]) = expandUnalignedLoad(Load, DAG);
+    return DAG.getMergeValues(Ops, DL);
+  }
+
+  unsigned NumElements = MemVT.getVectorNumElements();
+  switch (AS) {
   case AMDGPUAS::CONSTANT_ADDRESS:
     if (isMemOpUniform(Load))
       return SDValue();
@@ -1931,9 +1953,16 @@ SDValue SITargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
       llvm_unreachable("unsupported private_element_size");
     }
   }
-  case AMDGPUAS::LOCAL_ADDRESS:
+  case AMDGPUAS::LOCAL_ADDRESS: {
+    if (NumElements > 2)
+      return SplitVectorLoad(Op, DAG);
+
+    if (NumElements == 2)
+      return SDValue();
+
     // If properly aligned, if we split we might be able to use ds_read_b64.
     return SplitVectorLoad(Op, DAG);
+  }
   default:
     return SDValue();
   }
@@ -2138,10 +2167,17 @@ SDValue SITargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
        Store->getBasePtr(), MVT::i1, Store->getMemOperand());
   }
 
-  assert(Store->getValue().getValueType().getScalarType() == MVT::i32);
+  assert(VT.isVector() &&
+         Store->getValue().getValueType().getScalarType() == MVT::i32);
+
+  unsigned AS = Store->getAddressSpace();
+  if (!allowsMemoryAccess(*DAG.getContext(), DAG.getDataLayout(), VT,
+                          AS, Store->getAlignment())) {
+    return expandUnalignedStore(Store, DAG);
+  }
 
   unsigned NumElements = VT.getVectorNumElements();
-  switch (Store->getAddressSpace()) {
+  switch (AS) {
   case AMDGPUAS::GLOBAL_ADDRESS:
   case AMDGPUAS::FLAT_ADDRESS:
     if (NumElements > 4)
@@ -2163,9 +2199,16 @@ SDValue SITargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
       llvm_unreachable("unsupported private_element_size");
     }
   }
-  case AMDGPUAS::LOCAL_ADDRESS:
+  case AMDGPUAS::LOCAL_ADDRESS: {
+    if (NumElements > 2)
+      return SplitVectorStore(Op, DAG);
+
+    if (NumElements == 2)
+      return Op;
+
     // If properly aligned, if we split we might be able to use ds_write_b64.
     return SplitVectorStore(Op, DAG);
+  }
   default:
     llvm_unreachable("unhandled address space");
   }
