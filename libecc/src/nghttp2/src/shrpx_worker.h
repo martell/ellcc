@@ -52,6 +52,7 @@ namespace shrpx {
 
 class Http2Session;
 class ConnectBlocker;
+class LiveCheck;
 class MemcachedDispatcher;
 struct UpstreamAddr;
 
@@ -79,8 +80,21 @@ struct DownstreamAddr {
   bool host_unix;
 
   std::unique_ptr<ConnectBlocker> connect_blocker;
+  std::unique_ptr<LiveCheck> live_check;
+  size_t fall;
+  size_t rise;
   // Client side TLS session cache
   TLSSessionCache tls_session_cache;
+  // Http2Session object created for this address.  This list chains
+  // all Http2Session objects that is not in group scope
+  // http2_avail_freelist, and is not reached in maximum concurrency.
+  DList<Http2Session> http2_extra_freelist;
+  // true if Http2Session for this address is in group scope
+  // SharedDownstreamAddr.http2_avail_freelist
+  bool in_avail;
+  // total number of streams created in HTTP/2 connections for this
+  // address.
+  size_t num_dconn;
 };
 
 struct SharedDownstreamAddr {
@@ -94,7 +108,7 @@ struct SharedDownstreamAddr {
   //
   // TODO Verify that this approach performs better in performance
   // wise.
-  DList<Http2Session> http2_freelist;
+  DList<Http2Session> http2_avail_freelist;
   DownstreamConnectionPool dconn_pool;
   // Next downstream address index in addrs.
   size_t next;
@@ -214,6 +228,8 @@ size_t match_downstream_addr_group(
     const Router &router, const std::vector<WildcardPattern> &wildcard_patterns,
     const StringRef &hostport, const StringRef &path,
     const std::vector<DownstreamAddrGroup> &groups, size_t catch_all);
+
+void downstream_failure(DownstreamAddr *addr);
 
 } // namespace shrpx
 

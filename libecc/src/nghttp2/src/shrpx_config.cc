@@ -644,6 +644,8 @@ int parse_upstream_params(UpstreamParams &out, const StringRef &src_params) {
 } // namespace
 
 struct DownstreamParams {
+  size_t fall;
+  size_t rise;
   shrpx_proto proto;
   bool tls;
 };
@@ -675,6 +677,34 @@ int parse_downstream_params(DownstreamParams &out,
         LOG(ERROR) << "backend: proto: unknown protocol " << protostr;
         return -1;
       }
+    } else if (util::istarts_with_l(param, "fall=")) {
+      auto valstr = StringRef{first + str_size("fall="), end};
+      if (valstr.empty()) {
+        LOG(ERROR) << "backend: fall: non-negative integer is expected";
+        return -1;
+      }
+
+      auto n = util::parse_uint(valstr);
+      if (n == -1) {
+        LOG(ERROR) << "backend: fall: non-negative integer is expected";
+        return -1;
+      }
+
+      out.fall = n;
+    } else if (util::istarts_with_l(param, "rise=")) {
+      auto valstr = StringRef{first + str_size("rise="), end};
+      if (valstr.empty()) {
+        LOG(ERROR) << "backend: rise: non-negative integer is expected";
+        return -1;
+      }
+
+      auto n = util::parse_uint(valstr);
+      if (n == -1) {
+        LOG(ERROR) << "backend: rise: non-negative integer is expected";
+        return -1;
+      }
+
+      out.rise = n;
     } else if (util::strieq_l("tls", param)) {
       out.tls = true;
     } else if (util::strieq_l("no-tls", param)) {
@@ -703,8 +733,8 @@ namespace {
 // as catch-all.  We also parse protocol specified in |src_proto|.
 //
 // This function returns 0 if it succeeds, or -1.
-int parse_mapping(const DownstreamAddrConfig &addr,
-                  const StringRef &src_pattern, const StringRef &src_params) {
+int parse_mapping(DownstreamAddrConfig addr, const StringRef &src_pattern,
+                  const StringRef &src_params) {
   // This returns at least 1 element (it could be empty string).  We
   // will append '/' to all patterns, so it becomes catch-all pattern.
   auto mapping = util::split_str(src_pattern, ':');
@@ -717,6 +747,9 @@ int parse_mapping(const DownstreamAddrConfig &addr,
   if (parse_downstream_params(params, src_params) != 0) {
     return -1;
   }
+
+  addr.fall = params.fall;
+  addr.rise = params.rise;
 
   for (const auto &raw_pattern : mapping) {
     auto done = false;

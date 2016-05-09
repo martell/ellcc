@@ -223,6 +223,7 @@ LTLIBOBJS = @LTLIBOBJS@
 LT_AGE = @LT_AGE@
 LT_CURRENT = @LT_CURRENT@
 LT_REVISION = @LT_REVISION@
+LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -446,8 +447,8 @@ maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
 @ENABLE_PYTHON_BINDINGS_FALSE@uninstall-local:
-@ENABLE_PYTHON_BINDINGS_FALSE@clean-local:
 @ENABLE_PYTHON_BINDINGS_FALSE@install-exec-local:
+@ENABLE_PYTHON_BINDINGS_FALSE@clean-local:
 clean: clean-am
 
 clean-am: clean-generic clean-libtool clean-local mostlyclean-am

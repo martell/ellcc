@@ -1066,6 +1066,33 @@ Types (structs, unions and typedefs)
     this structure are intentionally hidden from the public API.
 
 
+.. type:: nghttp2_ext_altsvc
+
+    
+    The payload of ALTSVC frame.  ALTSVC frame is a non-critical
+    extension to HTTP/2.  If this frame is received, and
+    `nghttp2_option_set_user_recv_extension_type()` is not set, and
+    `nghttp2_option_set_builtin_recv_extension_type()` is set for
+    :macro:`NGHTTP2_ALTSVC`, ``nghttp2_extension.payload`` will point to
+    this struct.
+    
+    It has the following members:
+
+    .. member::   uint8_t *origin
+
+        The pointer to origin which this alternative service is
+        associated with.  This is not necessarily NULL-terminated.
+    .. member::   size_t origin_len
+
+        The length of the *origin*.
+    .. member::   uint8_t *field_value
+
+        The pointer to Alt-Svc field value contained in ALTSVC frame.
+        This is not necessarily NULL-terminated.
+    .. member::   size_t field_value_len
+
+        The length of the *field_value*.
+
 .. type:: nghttp2_hd_deflater
 
     

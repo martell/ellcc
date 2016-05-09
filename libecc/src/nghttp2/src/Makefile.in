@@ -187,6 +187,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 	shrpx_io_control.h shrpx_ssl.cc shrpx_ssl.h shrpx_worker.cc \
 	shrpx_worker.h shrpx_log_config.cc shrpx_log_config.h \
 	shrpx_connect_blocker.cc shrpx_connect_blocker.h \
+	shrpx_live_check.cc shrpx_live_check.h \
 	shrpx_downstream_connection_pool.cc \
 	shrpx_downstream_connection_pool.h shrpx_rate_limit.cc \
 	shrpx_rate_limit.h shrpx_connection.cc shrpx_connection.h \
@@ -231,6 +232,7 @@ am__libnghttpx_a_SOURCES_DIST = util.cc util.h http2.cc http2.h \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_worker.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_log_config.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_connect_blocker.$(OBJEXT) \
+@ENABLE_APP_TRUE@	libnghttpx_a-shrpx_live_check.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_downstream_connection_pool.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_rate_limit.$(OBJEXT) \
 @ENABLE_APP_TRUE@	libnghttpx_a-shrpx_connection.$(OBJEXT) \
@@ -822,6 +824,7 @@ LTLIBOBJS = @LTLIBOBJS@
 LT_AGE = @LT_AGE@
 LT_CURRENT = @LT_CURRENT@
 LT_REVISION = @LT_REVISION@
+LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -1021,7 +1024,8 @@ LDADD = $(top_builddir)/lib/libnghttp2.la \
 @ENABLE_APP_TRUE@	shrpx_ssl.cc shrpx_ssl.h shrpx_worker.cc \
 @ENABLE_APP_TRUE@	shrpx_worker.h shrpx_log_config.cc \
 @ENABLE_APP_TRUE@	shrpx_log_config.h shrpx_connect_blocker.cc \
-@ENABLE_APP_TRUE@	shrpx_connect_blocker.h \
+@ENABLE_APP_TRUE@	shrpx_connect_blocker.h shrpx_live_check.cc \
+@ENABLE_APP_TRUE@	shrpx_live_check.h \
 @ENABLE_APP_TRUE@	shrpx_downstream_connection_pool.cc \
 @ENABLE_APP_TRUE@	shrpx_downstream_connection_pool.h \
 @ENABLE_APP_TRUE@	shrpx_rate_limit.cc shrpx_rate_limit.h \
@@ -1351,6 +1355,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_http_downstream_connection.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_https_upstream.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_io_control.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_live_check.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_log.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_log_config.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnghttpx_a-shrpx_memcached_connection.Po@am__quote@
@@ -1810,6 +1815,20 @@ libnghttpx_a-shrpx_connect_blocker.obj: shrpx_connect_blocker.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_connect_blocker.cc' object='libnghttpx_a-shrpx_connect_blocker.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_connect_blocker.obj `if test -f 'shrpx_connect_blocker.cc'; then $(CYGPATH_W) 'shrpx_connect_blocker.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_connect_blocker.cc'; fi`
+
+libnghttpx_a-shrpx_live_check.o: shrpx_live_check.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_live_check.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_live_check.Tpo -c -o libnghttpx_a-shrpx_live_check.o `test -f 'shrpx_live_check.cc' || echo '$(srcdir)/'`shrpx_live_check.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_live_check.Tpo $(DEPDIR)/libnghttpx_a-shrpx_live_check.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_live_check.cc' object='libnghttpx_a-shrpx_live_check.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_live_check.o `test -f 'shrpx_live_check.cc' || echo '$(srcdir)/'`shrpx_live_check.cc
+
+libnghttpx_a-shrpx_live_check.obj: shrpx_live_check.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_live_check.obj -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_live_check.Tpo -c -o libnghttpx_a-shrpx_live_check.obj `if test -f 'shrpx_live_check.cc'; then $(CYGPATH_W) 'shrpx_live_check.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_live_check.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libnghttpx_a-shrpx_live_check.Tpo $(DEPDIR)/libnghttpx_a-shrpx_live_check.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='shrpx_live_check.cc' object='libnghttpx_a-shrpx_live_check.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libnghttpx_a-shrpx_live_check.obj `if test -f 'shrpx_live_check.cc'; then $(CYGPATH_W) 'shrpx_live_check.cc'; else $(CYGPATH_W) '$(srcdir)/shrpx_live_check.cc'; fi`
 
 libnghttpx_a-shrpx_downstream_connection_pool.o: shrpx_downstream_connection_pool.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnghttpx_a_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libnghttpx_a-shrpx_downstream_connection_pool.o -MD -MP -MF $(DEPDIR)/libnghttpx_a-shrpx_downstream_connection_pool.Tpo -c -o libnghttpx_a-shrpx_downstream_connection_pool.o `test -f 'shrpx_downstream_connection_pool.cc' || echo '$(srcdir)/'`shrpx_downstream_connection_pool.cc

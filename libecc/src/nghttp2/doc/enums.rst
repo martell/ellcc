@@ -272,6 +272,11 @@ Enums
         The CONTINUATION frame.  This frame type won't be passed to any
         callbacks because the library processes this frame type and its
         preceding HEADERS/PUSH_PROMISE as a single frame.
+    .. macro:: NGHTTP2_ALTSVC
+
+        (``0x0a``) 
+        The ALTSVC frame, which is defined in `RFC 7383
+        <https://tools.ietf.org/html/rfc7838#section-4>`_.
 
 .. type:: nghttp2_flag
 

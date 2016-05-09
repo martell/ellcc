@@ -1,4 +1,536 @@
-commit d8e908286d69a747dace72e73f5c6d108979e686 (HEAD, tag: v1.9.2, origin/v1.9.x, origin/HEAD, v1.9.x)
+commit 918ca4ca7c935dcea4e314949aefb29aa9123093 (HEAD, tag: v1.10.0, origin/master, origin/HEAD, master)
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-25
+
+    Update man pages
+
+commit 7d7dc830ef924b2e5fe9d0fd230674fa00f2ff63
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-25
+
+    Bump up version number to 1.10.0, LT revision to 21:0:7
+
+commit f939000ad9e36fdb38557c3383a3796a71dbce37
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-25
+
+    Update man pages
+
+commit 4b34bc583d0dbf50ea1f143bcc8e56cf565a154b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-25
+
+    Update AUTHORS
+
+commit 91fce2f0e6ffdb21a905e8a75c3b9d4629726160
+Merge: b271073 5487b64
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-25
+
+    Merge branch 'bsuh-master'
+
+commit 5487b64fa606d4eba9f6917b018cb026b649588c
+Author:     Brian Suh <brian.j.suh@gmail.com>
+AuthorDate: 2016-04-24
+Commit:     Brian Suh <brian.j.suh@gmail.com>
+CommitDate: 2016-04-24
+
+    nghttpx: Fix downstream connect callback called early
+
+commit b27107385e131cddb4724239482e3fc29f20a0e8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-24
+
+    Update AUTHORS
+
+commit 3d00dd6537e453e6f9e3b10d56ea0877e9f21cb3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-24
+
+    nghttpx: Fix erroneous division by sizeof(...)
+
+commit e85bc70bef3d5aa3b5ccad589c614cf5fe0113c1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-24
+
+    clang-format
+
+commit b0e98718f5b167ea6cc421859a6ec2df4a530dc6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-24
+
+    src: Handle return value of getsockopt
+
+commit 3d4a4cb61733a29b344f9e4e30d7ae73f4abfb91
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-23
+
+    Disable integration tests due to golang build failure
+
+commit 86777defa87eb45a42985dcddeb14b409bbc3d85
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-23
+
+    nghttpx: Workaround for some older gcc4.9
+
+commit 52b455cfeb8577f9a6183ef0578292b840f6d55b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-23
+
+    Mention the removal of --backend-http2-connections-per-worker in migration guide
+
+commit add182b4952f39d64db75dad7e5d6db7907cafa3
+Merge: 68059cc 3d948fd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-23
+
+    Merge branch 'meconlen-data_unset'
+
+commit 3d948fd3d7b5efbff01b9c63280436acea4590e9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-23
+
+    Zero fill in nghttp2_session_mem_send
+
+commit e04e24c1c27516a32293c7e67cc2a80e2125c095
+Author:     Mike Conlen <mconlen@akamai.com>
+AuthorDate: 2016-04-21
+Commit:     Mike Conlen <mconlen@akamai.com>
+CommitDate: 2016-04-21
+
+    in nghttp2_session_send() data is declared uninitialized and used
+    after a call to nghttp2_session_mem_send_internal() which should
+    set it, however in nghttp2_session_mem_send_internal() it is
+    possible to return before setting the pointer.
+    
+    This change initializes the variable to NULL where delcared and
+    sets the variable in nghttp2_session_mem_send_internal() to
+    NULL before possibly returning rather than after.
+    
+    both options are not necessary but are both ideal practice
+
+commit 68059ccda90e541771bd929e0c8c02e045292ec1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-21
+
+    nghttp: Use nghttp2_session_mem_recv
+
+commit bc2b9418665cd62ccea393cc64aef1100af51b84
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-21
+
+    nghttpx: Wildcard match for CN
+
+commit 9b81eec94480d60f1b413e39369c7cd156c212c3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-21
+
+    nghttpx: Remove trailing "." from SAN DNS name and CN
+
+commit 00bf7016003beda6d1d7bc53cbcde0bc6ae12977
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-18
+
+    nghttpx: Truncate too long -b option signature
+
+commit 5339c1774c248aa036aaaebbbf7924575bab807d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-16
+
+    nghttpx: Log when backend group is shared
+
+commit e41d8c2f621a3bb030477748e7b8e97e5e3c8443
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-16
+
+    Update man pages
+
+commit 73740477fb8d5e0af5c5a6467fba2152a8966aa2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-16
+
+    Update doc
+
+commit f86a9d654da210638f3d74a01531b33630434d23
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-16
+
+    Update doc
+
+commit 6f52da834bb7bb7b21b5bc9577d82487d967e8fb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-16
+
+    nghttpx: Fix bug that server push from mruby script did not work
+
+commit 4041d1eb26b46c4bb59445367aa1df296f6ba0d6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-15
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-15
+
+    Don't send ALTSVC if stream is closing
+
+commit 81f81e6b70937280b86b2451d8fe313e7e05ada3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-13
+
+    nghttpx: Error handling without assert
+
+commit a16daf109b58a6fbacb46a9f766f03739f74df50
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-13
+
+    nghttpx: Try next HTTP/1 backend address when connection cannot be made
+
+commit b6708a4b87d56f59f8ddee99f8abd5585ccd13fe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-13
+
+    nghttpx: Retry next HTTP/2 backend address when connection cannot be made
+
+commit bda352bf73afeed04f6fc2fce756ee35ad9c6bb4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-11
+
+    Update http-parser
+
+commit ca261a7971b2c8c40967f69d7700c7264513f736
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-11
+
+    Update sphinx_rtd_theme
+
+commit 0819716332da4f7060cdb3a453a0d35b0e10658b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-11
+
+    Update doc
+
+commit a14cea6363aadc237b06ab7bfc4e3de69f0d0d2f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-10
+
+    nghttpx: Enable link header field based push for non-final response
+
+commit 2cac7bb838678b96b8ab44c9f2fe223a723319f1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-10
+
+    Update bash_completion
+
+commit 65378f80ea8c12c9bcb18275b3ac14f73a859e5c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-10
+
+    Update man pages
+
+commit 40f3779eb18f6526ad8dce8e580bebca4f182bc3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-10
+
+    Pass unknown SETTINGS values to nghttp2_on_frame_recv_callback
+
+commit d88f9625653c42d5aa0708ffb6ac2661daa5b506
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    Add test for altsvc frame
+
+commit 9c0bd8c60a54801466dac71539752ec9b3a9c955
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    Fix compile error (again) with gcc and --enable-werror
+
+commit 9e64d102232a73e112ef9d9e3ec4a55e8beb68fe
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    nghttpx: Move fall/rise configuration to --backend option
+    
+    This commit removes --backend-fall and --backend-rise options.  The
+    these configurations are now set as fall and rise parameters in
+    --backend option.
+
+commit 94c8a8fbde69f7d1548a4b3766babe943ba92f1a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    doc: Add missing rst files for cleaning
+
+commit 16647622f59b5dca18ba1ed695e88216fc611f29
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    Fix compile error with gcc and --enable-werror
+
+commit 9028512a5fad765ff3d4da8f45f6411ab931a4b9
+Merge: 4a6fc6c 3086d65
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    Merge branch 'altsvc'
+
+commit 3086d65657ef24fb8b3f8f51e9d0d9bf85131791
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    altsvc: Update doc
+
+commit d4144a74758782553f7065ab9363a34496628cdd
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    altsvc: Add tests, ignore altsvc if stream does not exist
+
+commit 6638ca93334607becd426b6a4c9ac2dd936d7edf
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-09
+
+    altsvc: Reduce bitfield size
+
+commit b924ef5fff3f5fc15db133074d30a7333d835264
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    altsvc: Discard altsvc when it is received by server in earlier point
+
+commit df56f55f8451b4ec0cc3c82f42478ee7a391b597
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    Assign nghttp2_frame.ext.payload early
+
+commit 31595c2416504c15c94594deeff7353b276f9aa0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    Embed nghttp2_ext_frame_payload into nghttp2_outbound_item
+
+commit 795ee8c20fc7ba36bae9651c64d4e0afa2d34be1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    altsvc: Receive ALTSVC frame
+
+commit efbd48b1224e8b021dfbbf0131ec3826f334092b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    altsvc: Add tx tests
+
+commit 9b4089c2446916c23f815f2865c191b8d80ac780
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    src: Log ALTSVC
+
+commit 8b5a85ae1dbe85150e51d391256162f75466886b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    altsvc: Add error handling about origin and stream_id
+
+commit ecabef2dc719e5c2afff19df92dc67348c13e4cb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    altsvc: Add ALTSVC frame support
+
+commit 4a6fc6cede47a37933575230c0b7b373b0b3f042
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    src: Add missing source file to CMakeLists.txt
+
+commit 287d4e35f397dac2e02588c31a3cb737f00e148e
+Merge: ffddefc a803be9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    Merge branch 'nghttpx-downstream-live-check'
+
+commit a803be9171ec96e5a840e92ec1f2e28d7f7b82d2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Check negotiated ALPN in LiveCheck
+
+commit ece365413917b64fb1f005ba37d1cbe48346cb88
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Remove unused function declaration
+
+commit bf5392dafed31a0992572f2643db40e5a1ccdd28
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Use exponential backoff between failed connection attempts in LiveCheck
+
+commit 7bc35044c7ec1149240c38868ae4ab762d7f9851
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Add --backend-fall and --backend-rise options
+    
+    These options are analogous to fall and rise parameter found in
+    haproxy.
+
+commit f9b872ab7883e59ffb3f3bf830e0eca23975b65c
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Detect online/offline state of backend servers
+
+commit ffddefc17733a065283f5c219eb2cc40d2ccad46
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Refactor handling of negotiated ALPN
+
+commit 2a59c832c184236de8c96e3eef298242da981585
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-08
+
+    nghttpx: Set 0 to next_proto_len explicitly for clarification
+
+commit ea5f424decfe38deeda3125f059e9ce4c5ccacf6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-05
+
+    nghttpx: Use gRPC's exponential backoff algorithm
+
+commit 46514074a487e147ca1f011396da37939b7c312f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-03
+
+    nghttpx: Better load balancing between backend HTTP/2 servers
+
+commit 1816af4fb29f27da88e35ad8c71ed0d3429e4341
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-04-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
@@ -6,23 +538,7 @@ CommitDate: 2016-04-03
 
     Update authors
 
-commit 915e26b33d5214fb835221769aa8eac62d6b3b1d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
-
-    Update man pages
-
-commit 5ab05402e4991064fc2427c261bb883ee6bd9f74
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
-
-    Bump up version number to 1.9.2
-
-commit 0af9629cc1e1608646a023b99fa8be99ad66b999
+commit b1662a31f47d838570e481fd1cb2e93291eb38d2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-04-03
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
@@ -30,36 +546,212 @@ CommitDate: 2016-04-03
 
     nghttpx: Fix crash with backend failure
 
-commit 53989dc70c7070203076a073b5e563fc6f0e44b4
+commit 5974abad757a06a50e07625db3fdaa6192cfe86c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-04-02
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
+CommitDate: 2016-04-02
+
+    Run error callback when peer does not send initial SETTINGS frame
+
+commit 344541dd897f3046121cc92c0b5f648a7cb2fe88
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-04-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-04-02
 
     nghttpx: Better distribute load to backend h2 servers
 
-commit 290a697bf9426d92334f838b33b278e8d6f13ede
+commit c17b3b8517bcf0f1cc484949385283fb903b5d72
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-31
+
+    clang-format
+
+commit b26503f51c9836688e5b61c759ac51b1ad0b3ef4
+Merge: 8667bbb 2b22ec4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-31
+
+    Merge branch 'jchampio-dev/expect-continue'
+
+commit 2b22ec42c7c0f60ad11f51c3977aa1e11c837e2b
+Merge: 8667bbb dfdeeb3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-31
+
+    Merge branch 'dev/expect-continue' of https://github.com/jchampio/nghttp2 into jchampio-dev/expect-continue
+
+commit dfdeeb3815b2760ad27498dcba5a5e3da51f750d
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-29
+
+    nghttp: only stop ContinueTimers if they exist
+    
+    Fix a crash on disconnect if --expect-continue isn't actually in use.
+
+commit 4bed7854b59f85ad99f024eb2e3fb3d32924f225
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-29
+
+    nghttp: move ownership of ContinueTimer to Request
+    
+    Each Request now owns its own (optional) ContinueTimer for
+    Expect/Continue handshakes. This removes the need for
+    shared_ptr/weak_ptr logic.
+
+commit aa64e7ad3c749ff27ba224d20c694c8169389c38
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-29
+
+    nghttp: stop ContinueTimers on response or reset
+    
+    If the stream itself is reset, or the server sends a final response
+    immediately, any Expect/Continue handshake should be cancelled.
+
+commit 8667bbb82328b61ac259010b2a2525f0beafabed
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-03-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
+CommitDate: 2016-03-29
+
+    Don't send WINDOW_UPDATE if session is being closed
+
+commit 1fef49aaa4976ed4d29f6e0a460c3276b99b83f8
+Merge: fe0843b e30edb0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-29
 
     Merge branch 'tsing-patch-1'
 
-commit b63c88aab7a732ab98a053cd036f33a1b12e3966
+commit e30edb096ac42be74b785f82c48f3bcca179f1cb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-29
+
+    clang-format
+
+commit cdb466956d1c196976506eaf3cc263dd79bc1328
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-29
+
+    nghttpx: One more fix for usage help
+
+commit 199600af7349ca1048fceb746d815aeac0814285
+Author:     Jianqing Wang <tsing@jianqing.org>
+AuthorDate: 2016-03-29
+Commit:     Jianqing Wang <tsing@jianqing.org>
+CommitDate: 2016-03-29
+
+    Fix error messages on deprecated mode
+
+commit edb874e659ca3c5d7cc414d8cd3768b989b06706
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-28
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-28
+
+    nghttp: move ContinueTimer start to on_frame_send
+    
+    The ContinueTimer could expire before the full HEADERS frame was
+    actually sent. By moving the call to timer->start() to the
+    on_frame_send_callback(), this race is fixed.
+
+commit fe0843be8841ee7066ae62d8c14e2a894254311b
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-03-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
+CommitDate: 2016-03-28
 
     nghttpx: Fix bug that logger wrote string which was not NULL-terminated
 
-commit 73e513601fa487911ed433720cc3e335b641f005
+commit ff070187203d77352b4e085c623242cb49342882
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 AuthorDate: 2016-03-28
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-03
+CommitDate: 2016-03-28
 
     nghttpx: Fix bug that proxy with HTTP/1.1 CONNECT did not work
     
     This was a regression in 5fbe4cc2257d95dfa51c5dd8969b3f5201e0f9db.
+
+commit 402eccf06dc80097a4ab59372713f9becb7f3085
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-03-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-03-27
+
+    Bump up version number to 1.10.0-DEV
+
+commit 3b7b6a660eb0a5cdd53b47624ba1d38cfff7f10d
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-23
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-23
+
+    nghttp: prevent ContinueTimer double-invocation
+    
+    If a 100 Continue interim response was received after the continue
+    timeout was reached, dispatch_continue() would force a double submission
+    of DATA frames. This patch prevents dispatch_continue() from doing
+    anything if the timer callback has already been invoked. This makes
+    ContinueTimer a single-shot mechanism, as originally intended.
+
+commit 1bc5cf5ee42ff772e099bf4d4c53688104f0d376
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-22
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-22
+
+    nghttp: time out on long Expect/Continue waits
+    
+    To deal with servers that don't conform to RFC 7231 (or, potentially,
+    connections with a large round-trip time), don't wait forever for a 100
+    Continue status to come back. Currently, the timeout is hard-coded to
+    one second.
+    
+    A ContinueTimer encapsulates the handshake timeout logic for a single
+    request. Somewhat counterintuitively, ContinueTimers are owned by the
+    HttpClient instead of the Request object, because their lifetime must be
+    bound to the life of the connection (which is owned by the HttpClient
+    and not the Requests). A Request is associated with its corresponding
+    ContinueTimer through a std::weak_ptr.
+
+commit f4c7ebcbcad1881256db2ae19dee0a8f1b44e535
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-21
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-22
+
+    nghttp: implement Expect/Continue handshake
+    
+    Requests that expect a 100 Continue will not submit their DATA frames
+    until the server sends the interim response.
+
+commit feb3d1b47812a28cb1450c4df8ad483f34a4a061
+Author:     Jacob Champion <champion.p@gmail.com>
+AuthorDate: 2016-03-21
+Commit:     Jacob Champion <champion.p@gmail.com>
+CommitDate: 2016-03-22
+
+    nghttp: add an --expect-continue option
+    
+    Add a placeholder for the expect-continue option, which will perform an
+    Expect/Continue handshake for DATA uploads.

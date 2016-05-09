@@ -142,6 +142,10 @@ static int session_detect_idle_stream(nghttp2_session *session,
   return 0;
 }
 
+static int check_ext_type_set(const uint8_t *ext_types, uint8_t type) {
+  return (ext_types[type / 8] & (1 << (type & 0x7))) > 0;
+}
+
 static int session_call_error_callback(nghttp2_session *session,
                                        const char *fmt, ...) {
   size_t bufsize;
@@ -301,6 +305,13 @@ static void session_inbound_frame_reset(nghttp2_session *session) {
     break;
   case NGHTTP2_SETTINGS:
     nghttp2_frame_settings_free(&iframe->frame.settings, mem);
+
+    nghttp2_mem_free(mem, iframe->iv);
+
+    iframe->iv = NULL;
+    iframe->niv = 0;
+    iframe->max_niv = 0;
+
     break;
   case NGHTTP2_PUSH_PROMISE:
     nghttp2_frame_push_promise_free(&iframe->frame.push_promise, mem);
@@ -316,7 +327,20 @@ static void session_inbound_frame_reset(nghttp2_session *session) {
     break;
   default:
     /* extension frame */
-    nghttp2_frame_extension_free(&iframe->frame.ext);
+    if (check_ext_type_set(session->user_recv_ext_types,
+                           iframe->frame.hd.type)) {
+      nghttp2_frame_extension_free(&iframe->frame.ext);
+    } else {
+      switch (iframe->frame.hd.type) {
+      case NGHTTP2_ALTSVC:
+        if ((session->builtin_recv_ext_types & NGHTTP2_TYPEMASK_ALTSVC) == 0) {
+          break;
+        }
+        nghttp2_frame_altsvc_free(&iframe->frame.ext, mem);
+        break;
+      }
+    }
+
     break;
   }
 
@@ -332,12 +356,10 @@ static void session_inbound_frame_reset(nghttp2_session *session) {
   nghttp2_buf_free(&iframe->lbuf, mem);
   nghttp2_buf_wrap_init(&iframe->lbuf, NULL, 0);
 
-  iframe->niv = 0;
+  iframe->raw_lbuf = NULL;
+
   iframe->payloadleft = 0;
   iframe->padlen = 0;
-  iframe->iv[NGHTTP2_INBOUND_NUM_IV - 1].settings_id =
-      NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
-  iframe->iv[NGHTTP2_INBOUND_NUM_IV - 1].value = UINT32_MAX;
 }
 
 static void init_settings(nghttp2_settings_storage *settings) {
@@ -472,6 +494,10 @@ static int session_new(nghttp2_session **session_ptr,
     if (option->opt_set_mask & NGHTTP2_OPT_USER_RECV_EXT_TYPES) {
       memcpy((*session_ptr)->user_recv_ext_types, option->user_recv_ext_types,
              sizeof((*session_ptr)->user_recv_ext_types));
+    }
+
+    if (option->opt_set_mask & NGHTTP2_OPT_BUILTIN_RECV_EXT_TYPES) {
+      (*session_ptr)->builtin_recv_ext_types = option->builtin_recv_ext_types;
     }
 
     if ((option->opt_set_mask & NGHTTP2_OPT_NO_AUTO_PING_ACK) &&
@@ -1642,6 +1668,11 @@ static int session_predicate_push_promise_send(nghttp2_session *session,
 static int session_predicate_window_update_send(nghttp2_session *session,
                                                 int32_t stream_id) {
   nghttp2_stream *stream;
+
+  if (session_is_closing(session)) {
+    return NGHTTP2_ERR_SESSION_CLOSING;
+  }
+
   if (stream_id == 0) {
     /* Connection-level window update */
     return 0;
@@ -1650,15 +1681,35 @@ static int session_predicate_window_update_send(nghttp2_session *session,
   if (stream == NULL) {
     return NGHTTP2_ERR_STREAM_CLOSED;
   }
-  if (session_is_closing(session)) {
-    return NGHTTP2_ERR_SESSION_CLOSING;
-  }
   if (stream->state == NGHTTP2_STREAM_CLOSING) {
     return NGHTTP2_ERR_STREAM_CLOSING;
   }
   if (state_reserved_local(session, stream)) {
     return NGHTTP2_ERR_INVALID_STREAM_STATE;
   }
+  return 0;
+}
+
+static int session_predicate_altsvc_send(nghttp2_session *session,
+                                         int32_t stream_id) {
+  nghttp2_stream *stream;
+
+  if (session_is_closing(session)) {
+    return NGHTTP2_ERR_SESSION_CLOSING;
+  }
+
+  if (stream_id == 0) {
+    return 0;
+  }
+
+  stream = nghttp2_session_get_stream(session, stream_id);
+  if (stream == NULL) {
+    return NGHTTP2_ERR_STREAM_CLOSED;
+  }
+  if (stream->state == NGHTTP2_STREAM_CLOSING) {
+    return NGHTTP2_ERR_STREAM_CLOSING;
+  }
+
   return 0;
 }
 
@@ -2101,18 +2152,44 @@ static int session_prep_frame(nghttp2_session *session,
       /* We never handle CONTINUATION here. */
       assert(0);
       break;
-    default:
+    default: {
+      nghttp2_ext_aux_data *aux_data;
+
       /* extension frame */
-      if (session_is_closing(session)) {
-        return NGHTTP2_ERR_SESSION_CLOSING;
+
+      aux_data = &item->aux_data.ext;
+
+      if (aux_data->builtin == 0) {
+        if (session_is_closing(session)) {
+          return NGHTTP2_ERR_SESSION_CLOSING;
+        }
+
+        rv = session_pack_extension(session, &session->aob.framebufs, frame);
+        if (rv != 0) {
+          return rv;
+        }
+
+        break;
       }
 
-      rv = session_pack_extension(session, &session->aob.framebufs, frame);
-      if (rv != 0) {
-        return rv;
+      switch (frame->hd.type) {
+      case NGHTTP2_ALTSVC:
+        rv = session_predicate_altsvc_send(session, frame->hd.stream_id);
+        if (rv != 0) {
+          return rv;
+        }
+
+        nghttp2_frame_pack_altsvc(&session->aob.framebufs, &frame->ext);
+
+        break;
+      default:
+        /* Unreachable here */
+        assert(0);
+        break;
       }
 
       break;
+    }
     }
     return 0;
   } else {
@@ -2808,7 +2885,6 @@ static ssize_t nghttp2_session_mem_send_internal(nghttp2_session *session,
     return rv;
   }
 
-  *data_ptr = NULL;
   for (;;) {
     switch (aob->state) {
     case NGHTTP2_OB_POP_ITEM: {
@@ -3065,6 +3141,8 @@ ssize_t nghttp2_session_mem_send(nghttp2_session *session,
   int rv;
   ssize_t len;
 
+  *data_ptr = NULL;
+
   len = nghttp2_session_mem_send_internal(session, data_ptr, 1);
   if (len <= 0) {
     return len;
@@ -3086,7 +3164,7 @@ ssize_t nghttp2_session_mem_send(nghttp2_session *session,
 }
 
 int nghttp2_session_send(nghttp2_session *session) {
-  const uint8_t *data;
+  const uint8_t *data = NULL;
   ssize_t datalen;
   ssize_t sentlen;
   nghttp2_bufs *framebufs;
@@ -4294,39 +4372,39 @@ int nghttp2_session_on_settings_received(nghttp2_session *session,
 }
 
 static int session_process_settings_frame(nghttp2_session *session) {
-  int rv;
   nghttp2_inbound_frame *iframe = &session->iframe;
   nghttp2_frame *frame = &iframe->frame;
   size_t i;
   nghttp2_settings_entry min_header_size_entry;
-  nghttp2_mem *mem;
 
-  mem = &session->mem;
-  min_header_size_entry = iframe->iv[NGHTTP2_INBOUND_NUM_IV - 1];
+  if (iframe->max_niv) {
+    min_header_size_entry = iframe->iv[iframe->max_niv - 1];
 
-  if (min_header_size_entry.value < UINT32_MAX) {
-    /* If we have less value, then we must have
-       SETTINGS_HEADER_TABLE_SIZE in i < iframe->niv */
-    for (i = 0; i < iframe->niv; ++i) {
-      if (iframe->iv[i].settings_id == NGHTTP2_SETTINGS_HEADER_TABLE_SIZE) {
-        break;
+    if (min_header_size_entry.value < UINT32_MAX) {
+      /* If we have less value, then we must have
+         SETTINGS_HEADER_TABLE_SIZE in i < iframe->niv */
+      for (i = 0; i < iframe->niv; ++i) {
+        if (iframe->iv[i].settings_id == NGHTTP2_SETTINGS_HEADER_TABLE_SIZE) {
+          break;
+        }
+      }
+
+      assert(i < iframe->niv);
+
+      if (min_header_size_entry.value != iframe->iv[i].value) {
+        iframe->iv[iframe->niv++] = iframe->iv[i];
+        iframe->iv[i] = min_header_size_entry;
       }
     }
-
-    assert(i < iframe->niv);
-
-    if (min_header_size_entry.value != iframe->iv[i].value) {
-      iframe->iv[iframe->niv++] = iframe->iv[i];
-      iframe->iv[i] = min_header_size_entry;
-    }
   }
 
-  rv = nghttp2_frame_unpack_settings_payload(&frame->settings, iframe->iv,
-                                             iframe->niv, mem);
-  if (rv != 0) {
-    assert(nghttp2_is_fatal(rv));
-    return rv;
-  }
+  nghttp2_frame_unpack_settings_payload(&frame->settings, iframe->iv,
+                                        iframe->niv);
+
+  iframe->iv = NULL;
+  iframe->niv = 0;
+  iframe->max_niv = 0;
+
   return nghttp2_session_on_settings_received(session, frame, 0 /* ACK */);
 }
 
@@ -4587,6 +4665,52 @@ static int session_process_window_update_frame(nghttp2_session *session) {
       &frame->window_update, iframe->sbuf.pos, nghttp2_buf_len(&iframe->sbuf));
 
   return nghttp2_session_on_window_update_received(session, frame);
+}
+
+int nghttp2_session_on_altsvc_received(nghttp2_session *session,
+                                       nghttp2_frame *frame) {
+  nghttp2_ext_altsvc *altsvc;
+  nghttp2_stream *stream;
+
+  altsvc = frame->ext.payload;
+
+  /* session->server case has been excluded */
+
+  if (frame->hd.stream_id == 0) {
+    if (altsvc->origin_len == 0) {
+      return 0;
+    }
+  } else {
+    if (altsvc->origin_len > 0) {
+      return 0;
+    }
+
+    stream = nghttp2_session_get_stream(session, frame->hd.stream_id);
+    if (!stream) {
+      return 0;
+    }
+
+    if (stream->state == NGHTTP2_STREAM_CLOSING) {
+      return 0;
+    }
+  }
+
+  return session_call_on_frame_received(session, frame);
+}
+
+static int session_process_altsvc_frame(nghttp2_session *session) {
+  nghttp2_inbound_frame *iframe = &session->iframe;
+  nghttp2_frame *frame = &iframe->frame;
+
+  nghttp2_frame_unpack_altsvc_payload(
+      &frame->ext, nghttp2_get_uint16(iframe->sbuf.pos), iframe->lbuf.pos,
+      nghttp2_buf_len(&iframe->lbuf));
+
+  /* nghttp2_frame_unpack_altsvc_payload steals buffer from
+     iframe->lbuf */
+  nghttp2_buf_wrap_init(&iframe->lbuf, NULL, 0);
+
+  return nghttp2_session_on_altsvc_received(session, frame);
 }
 
 static int session_process_extension_frame(nghttp2_session *session) {
@@ -4936,6 +5060,7 @@ static size_t inbound_frame_buf_read(nghttp2_inbound_frame *iframe,
  */
 static void inbound_frame_set_settings_entry(nghttp2_inbound_frame *iframe) {
   nghttp2_settings_entry iv;
+  nghttp2_settings_entry *min_header_table_size_entry;
   size_t i;
 
   nghttp2_frame_unpack_settings_entry(&iv, iframe->sbuf.pos);
@@ -4949,8 +5074,11 @@ static void inbound_frame_set_settings_entry(nghttp2_inbound_frame *iframe) {
   case NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE:
     break;
   default:
-    DEBUGF(fprintf(stderr, "recv: ignore unknown settings id=0x%02x\n",
-                   iv.settings_id));
+    DEBUGF(
+        fprintf(stderr, "recv: unknown settings id=0x%02x\n", iv.settings_id));
+
+    iframe->iv[iframe->niv++] = iv;
+
     return;
   }
 
@@ -4965,10 +5093,13 @@ static void inbound_frame_set_settings_entry(nghttp2_inbound_frame *iframe) {
     iframe->iv[iframe->niv++] = iv;
   }
 
-  if (iv.settings_id == NGHTTP2_SETTINGS_HEADER_TABLE_SIZE &&
-      iv.value < iframe->iv[NGHTTP2_INBOUND_NUM_IV - 1].value) {
+  if (iv.settings_id == NGHTTP2_SETTINGS_HEADER_TABLE_SIZE) {
+    /* Keep track of minimum value of SETTINGS_HEADER_TABLE_SIZE */
+    min_header_table_size_entry = &iframe->iv[iframe->max_niv - 1];
 
-    iframe->iv[NGHTTP2_INBOUND_NUM_IV - 1] = iv;
+    if (iv.value < min_header_table_size_entry->value) {
+      min_header_table_size_entry->value = iv.value;
+    }
   }
 }
 
@@ -5096,6 +5227,15 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
           (iframe->sbuf.pos[4] & NGHTTP2_FLAG_ACK)) {
 
         iframe->state = NGHTTP2_IB_IGN_ALL;
+
+        rv = session_call_error_callback(
+            session, "Remote peer returned unexpected data while we expected "
+                     "SETTINGS frame.  Perhaps, peer does not support HTTP/2 "
+                     "properly.");
+
+        if (nghttp2_is_fatal(rv)) {
+          return rv;
+        }
 
         rv = nghttp2_session_terminate_session_with_reason(
             session, NGHTTP2_PROTOCOL_ERROR, "SETTINGS expected");
@@ -5332,6 +5472,25 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         iframe->state = NGHTTP2_IB_READ_SETTINGS;
 
         if (iframe->payloadleft) {
+          nghttp2_settings_entry *min_header_table_size_entry;
+
+          /* We allocate iv with addtional one entry, to store the
+             minimum header table size. */
+          iframe->max_niv =
+              iframe->frame.hd.length / NGHTTP2_FRAME_SETTINGS_ENTRY_LENGTH + 1;
+
+          iframe->iv = nghttp2_mem_malloc(mem, sizeof(nghttp2_settings_entry) *
+                                                   iframe->max_niv);
+
+          if (!iframe->iv) {
+            return NGHTTP2_ERR_NOMEM;
+          }
+
+          min_header_table_size_entry = &iframe->iv[iframe->max_niv - 1];
+          min_header_table_size_entry->settings_id =
+              NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
+          min_header_table_size_entry->value = UINT32_MAX;
+
           inbound_frame_set_mark(iframe, NGHTTP2_FRAME_SETTINGS_ENTRY_LENGTH);
           break;
         }
@@ -5423,25 +5582,66 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
 
         break;
       default:
-        DEBUGF(fprintf(stderr, "recv: unknown frame\n"));
+        DEBUGF(fprintf(stderr, "recv: extension frame\n"));
 
-        if (!session->callbacks.unpack_extension_callback ||
-            (session->user_recv_ext_types[iframe->frame.hd.type / 8] &
-             (1 << (iframe->frame.hd.type & 0x7))) == 0) {
-          /* Silently ignore unknown frame type. */
+        if (check_ext_type_set(session->user_recv_ext_types,
+                               iframe->frame.hd.type)) {
+          if (!session->callbacks.unpack_extension_callback) {
+            /* Silently ignore unknown frame type. */
+
+            busy = 1;
+
+            iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
+
+            break;
+          }
 
           busy = 1;
 
-          iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
+          iframe->state = NGHTTP2_IB_READ_EXTENSION_PAYLOAD;
 
           break;
+        } else {
+          switch (iframe->frame.hd.type) {
+          case NGHTTP2_ALTSVC:
+            if ((session->builtin_recv_ext_types & NGHTTP2_TYPEMASK_ALTSVC) ==
+                0) {
+              busy = 1;
+              iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
+              break;
+            }
+
+            DEBUGF(fprintf(stderr, "recv: ALTSVC\n"));
+
+            iframe->frame.hd.flags = NGHTTP2_FLAG_NONE;
+            iframe->frame.ext.payload = &iframe->ext_frame_payload.altsvc;
+
+            if (session->server) {
+              busy = 1;
+              iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
+              break;
+            }
+
+            if (iframe->payloadleft < 2) {
+              busy = 1;
+              iframe->state = NGHTTP2_IB_FRAME_SIZE_ERROR;
+              break;
+            }
+
+            busy = 1;
+
+            iframe->state = NGHTTP2_IB_READ_NBYTE;
+            inbound_frame_set_mark(iframe, 2);
+
+            break;
+          default:
+            busy = 1;
+
+            iframe->state = NGHTTP2_IB_IGN_PAYLOAD;
+
+            break;
+          }
         }
-
-        busy = 1;
-
-        iframe->state = NGHTTP2_IB_READ_EXTENSION_PAYLOAD;
-
-        break;
       }
 
       if (!on_begin_frame_called) {
@@ -5651,6 +5851,37 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
         session_inbound_frame_reset(session);
 
         break;
+      case NGHTTP2_ALTSVC: {
+        size_t origin_len;
+
+        origin_len = nghttp2_get_uint16(iframe->sbuf.pos);
+
+        DEBUGF(fprintf(stderr, "recv: origin_len=%zu\n", origin_len));
+
+        if (2 + origin_len > iframe->payloadleft) {
+          busy = 1;
+          iframe->state = NGHTTP2_IB_FRAME_SIZE_ERROR;
+          break;
+        }
+
+        if (iframe->frame.hd.length > 2) {
+          iframe->raw_lbuf =
+              nghttp2_mem_malloc(mem, iframe->frame.hd.length - 2);
+
+          if (iframe->raw_lbuf == NULL) {
+            return NGHTTP2_ERR_NOMEM;
+          }
+
+          nghttp2_buf_wrap_init(&iframe->lbuf, iframe->raw_lbuf,
+                                iframe->frame.hd.length);
+        }
+
+        busy = 1;
+
+        iframe->state = NGHTTP2_IB_READ_ALTSVC_PAYLOAD;
+
+        break;
+      }
       default:
         /* This is unknown frame */
         session_inbound_frame_reset(session);
@@ -6170,6 +6401,36 @@ ssize_t nghttp2_session_mem_recv(nghttp2_session *session, const uint8_t *in,
       }
 
       rv = session_process_extension_frame(session);
+      if (nghttp2_is_fatal(rv)) {
+        return rv;
+      }
+
+      session_inbound_frame_reset(session);
+
+      break;
+    case NGHTTP2_IB_READ_ALTSVC_PAYLOAD:
+      DEBUGF(fprintf(stderr, "recv: [IB_READ_ALTSVC_PAYLOAD]\n"));
+
+      readlen = inbound_frame_payload_readlen(iframe, in, last);
+
+      if (readlen > 0) {
+        iframe->lbuf.last = nghttp2_cpymem(iframe->lbuf.last, in, readlen);
+
+        iframe->payloadleft -= readlen;
+        in += readlen;
+      }
+
+      DEBUGF(fprintf(stderr, "recv: readlen=%zu, payloadleft=%zu\n", readlen,
+                     iframe->payloadleft));
+
+      if (iframe->payloadleft) {
+        assert(nghttp2_buf_avail(&iframe->lbuf) > 0);
+
+        break;
+      }
+
+      rv = session_process_altsvc_frame(session);
+
       if (nghttp2_is_fatal(rv)) {
         return rv;
       }

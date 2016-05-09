@@ -335,6 +335,8 @@ struct DownstreamAddrConfig {
   // <HOST>:<PORT>.  This does not treat 80 and 443 specially.  If
   // |host_unix| is true, this is "localhost".
   ImmutableString hostport;
+  size_t fall;
+  size_t rise;
   // backend port.  0 if |host_unix| is true.
   uint16_t port;
   // true if |host| contains UNIX domain socket path.

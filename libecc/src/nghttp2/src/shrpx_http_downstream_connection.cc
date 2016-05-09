@@ -102,6 +102,17 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto upstream = downstream->get_upstream();
   auto handler = upstream->get_client_handler();
   if (dconn->connected() != 0) {
+    downstream->pop_downstream_connection();
+
+    auto ndconn = handler->get_downstream_connection(downstream);
+    if (ndconn) {
+      if (downstream->attach_downstream_connection(std::move(ndconn)) == 0) {
+        return;
+      }
+    }
+
+    downstream->set_request_state(Downstream::CONNECT_FAIL);
+
     if (upstream->on_downstream_abort_request(downstream, 503) != 0) {
       delete handler;
     }
@@ -121,6 +132,7 @@ HttpDownstreamConnection::HttpDownstreamConnection(DownstreamAddrGroup *group,
             get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP1),
       do_read_(&HttpDownstreamConnection::noop),
       do_write_(&HttpDownstreamConnection::noop),
+      do_signal_write_(&HttpDownstreamConnection::noop),
       worker_(worker),
       ssl_ctx_(group->shared_addr->tls ? worker->get_cl_ssl_ctx() : nullptr),
       group_(group),
@@ -1054,9 +1066,7 @@ int HttpDownstreamConnection::connected() {
                         << util::to_numeric_addr(&addr_->addr);
     }
 
-    connect_blocker->on_failure();
-
-    downstream_->set_request_state(Downstream::CONNECT_FAIL);
+    downstream_failure(addr_);
 
     return -1;
   }
@@ -1070,6 +1080,8 @@ int HttpDownstreamConnection::connected() {
   conn_.rlimit.startw();
 
   ev_set_cb(&conn_.wev, writecb);
+
+  do_signal_write_ = &HttpDownstreamConnection::actual_signal_write;
 
   if (conn_.tls.ssl) {
     do_read_ = &HttpDownstreamConnection::tls_handshake;
@@ -1090,8 +1102,11 @@ int HttpDownstreamConnection::on_write() { return do_write_(*this); }
 
 void HttpDownstreamConnection::on_upstream_change(Upstream *upstream) {}
 
-void HttpDownstreamConnection::signal_write() {
+void HttpDownstreamConnection::signal_write() { do_signal_write_(*this); }
+
+int HttpDownstreamConnection::actual_signal_write() {
   ev_feed_event(conn_.loop, &conn_.wev, EV_WRITE);
+  return 0;
 }
 
 int HttpDownstreamConnection::noop() { return 0; }

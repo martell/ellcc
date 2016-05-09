@@ -36,6 +36,7 @@
 #include "shrpx_http2_session.h"
 #include "shrpx_log_config.h"
 #include "shrpx_connect_blocker.h"
+#include "shrpx_live_check.h"
 #include "shrpx_memcached_dispatcher.h"
 #ifdef HAVE_MRUBY
 #include "shrpx_mruby.h"
@@ -81,7 +82,8 @@ bool match_shared_downstream_addr(
       }
 
       auto &b = rhs->addrs[i];
-      if (a.host == b.host && a.port == b.port && a.host_unix == b.host_unix) {
+      if (a.host == b.host && a.port == b.port && a.host_unix == b.host_unix &&
+          a.fall == b.fall && a.rise == b.rise) {
         break;
       }
     }
@@ -143,8 +145,7 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
 
     // TODO for some reason, clang-3.6 which comes with Ubuntu 15.10
     // does not value initialize SharedDownstreamAddr above.
-    *shared_addr = SharedDownstreamAddr{};
-
+    shared_addr->next = 0;
     shared_addr->addrs.resize(src.addrs.size());
     shared_addr->proto = src.proto;
     shared_addr->tls = src.tls;
@@ -158,8 +159,13 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       dst_addr.hostport = src_addr.hostport;
       dst_addr.port = src_addr.port;
       dst_addr.host_unix = src_addr.host_unix;
+      dst_addr.fall = src_addr.fall;
+      dst_addr.rise = src_addr.rise;
 
       dst_addr.connect_blocker = make_unique<ConnectBlocker>(randgen_, loop_);
+      dst_addr.live_check = make_unique<LiveCheck>(
+          loop_, shared_addr->tls ? cl_ssl_ctx_ : nullptr, this, &dst,
+          &dst_addr, randgen_);
     }
 
     // share the connection if patterns have the same set of backend
@@ -174,6 +180,10 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
     if (it == end) {
       dst.shared_addr = shared_addr;
     } else {
+      if (LOG_ENABLED(INFO)) {
+        LOG(INFO) << dst.pattern << " shares the same backend group with "
+                  << (*it).pattern;
+      }
       dst.shared_addr = (*it).shared_addr;
     }
   }
@@ -462,6 +472,29 @@ size_t match_downstream_addr_group(
   }
   return match_downstream_addr_group_host(router, wildcard_patterns, host, path,
                                           groups, catch_all);
+}
+
+void downstream_failure(DownstreamAddr *addr) {
+  const auto &connect_blocker = addr->connect_blocker;
+
+  connect_blocker->on_failure();
+
+  if (addr->fall == 0) {
+    return;
+  }
+
+  auto fail_count = connect_blocker->get_fail_count();
+
+  if (fail_count >= addr->fall) {
+    LOG(WARN) << "Could not connect to " << util::to_numeric_addr(&addr->addr)
+              << " " << fail_count << " times in a row; considered as offline";
+
+    connect_blocker->offline();
+
+    if (addr->rise) {
+      addr->live_check->schedule();
+    }
+  }
 }
 
 } // namespace shrpx
