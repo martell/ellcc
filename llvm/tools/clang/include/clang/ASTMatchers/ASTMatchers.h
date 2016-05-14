@@ -1560,7 +1560,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches "abcd", L"abcd"
 /// \code
-///   char *s = "abcd"; wchar_t *ws = L"abcd"
+///   char *s = "abcd";
+///   wchar_t *ws = L"abcd";
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -1573,7 +1574,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches 'a', L'a'
 /// \code
-///   char ch = 'a'; wchar_t chw = L'a';
+///   char ch = 'a';
+///   wchar_t chw = L'a';
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -1609,7 +1611,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example match: {1}, (1, 2)
 /// \code
-///   int array[4] = {1}; vector int myvec = (vector int)(1, 2);
+///   int array[4] = {1};
+///   vector int myvec = (vector int)(1, 2);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -3548,6 +3551,17 @@ AST_POLYMORPHIC_MATCHER_P(hasSourceExpression,
           InnerMatcher.matches(*SubExpression, Finder, Builder));
 }
 
+/// \brief Matches casts that has a given cast kind.
+///
+/// Example: matches the implicit cast around \c 0
+/// (matcher = castExpr(hasCastKind(CK_NullToPointer)))
+/// \code
+///   int *p = 0;
+/// \endcode
+AST_MATCHER_P(CastExpr, hasCastKind, CastKind, Kind) {
+  return Node.getCastKind() == Kind;
+}
+
 /// \brief Matches casts whose destination type matches a given matcher.
 ///
 /// (Note: Clang's AST refers to other conversions as "casts" too, and calls
@@ -4228,18 +4242,26 @@ AST_TYPELOC_TRAVERSE_MATCHER(hasElementType, getElement,
 ///   matches "int a[2]"
 AST_TYPE_MATCHER(ConstantArrayType, constantArrayType);
 
-/// \brief Matches \c ConstantArrayType nodes that have the specified size.
+/// \brief Matches nodes that have the specified size.
 ///
 /// Given
 /// \code
 ///   int a[42];
 ///   int b[2 * 21];
 ///   int c[41], d[43];
+///   char *s = "abcd";
+///   wchar_t *ws = L"abcd";
+///   char *w = "a";
 /// \endcode
 /// constantArrayType(hasSize(42))
 ///   matches "int a[42]" and "int b[2 * 21]"
-AST_MATCHER_P(ConstantArrayType, hasSize, unsigned, N) {
-  return Node.getSize() == N;
+/// stringLiteral(hasSize(4))
+///   matches "abcd", L"abcd"
+AST_POLYMORPHIC_MATCHER_P(hasSize,
+                          AST_POLYMORPHIC_SUPPORTED_TYPES(ConstantArrayType,
+                                                          StringLiteral),
+                          unsigned, N) {
+  return internal::HasSizeMatcher<NodeType>::hasSize(Node, N);
 }
 
 /// \brief Matches C++ arrays whose size is a value-dependent expression.

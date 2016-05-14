@@ -552,6 +552,8 @@ static void AsanInitInternal() {
 
   InitializeSuppressions();
 
+  Symbolizer::LateInitialize();
+
   VReport(1, "AddressSanitizer Init done\n");
 }
 

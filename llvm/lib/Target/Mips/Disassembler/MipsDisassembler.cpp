@@ -194,6 +194,11 @@ static DecodeStatus DecodeBranchTarget(MCInst &Inst,
                                        uint64_t Address,
                                        const void *Decoder);
 
+static DecodeStatus DecodeBranchTarget1SImm16(MCInst &Inst,
+                                              unsigned Offset,
+                                              uint64_t Address,
+                                              const void *Decoder);
+
 static DecodeStatus DecodeJumpTarget(MCInst &Inst,
                                      unsigned Insn,
                                      uint64_t Address,
@@ -1552,7 +1557,8 @@ static DecodeStatus DecodeMemMMImm12(MCInst &Inst,
     // fallthrough
   default:
     Inst.addOperand(MCOperand::createReg(Reg));
-    if (Inst.getOpcode() == Mips::LWP_MM || Inst.getOpcode() == Mips::SWP_MM)
+    if (Inst.getOpcode() == Mips::LWP_MM || Inst.getOpcode() == Mips::SWP_MM ||
+        Inst.getOpcode() == Mips::LWP_MMR6 || Inst.getOpcode() == Mips::SWP_MMR6)
       Inst.addOperand(MCOperand::createReg(Reg+1));
 
     Inst.addOperand(MCOperand::createReg(Base));
@@ -1822,6 +1828,15 @@ static DecodeStatus DecodeBranchTarget(MCInst &Inst,
                                        uint64_t Address,
                                        const void *Decoder) {
   int32_t BranchOffset = (SignExtend32<16>(Offset) * 4) + 4;
+  Inst.addOperand(MCOperand::createImm(BranchOffset));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeBranchTarget1SImm16(MCInst &Inst,
+                                              unsigned Offset,
+                                              uint64_t Address,
+                                              const void *Decoder) {
+  int32_t BranchOffset = (SignExtend32<16>(Offset) * 2);
   Inst.addOperand(MCOperand::createImm(BranchOffset));
   return MCDisassembler::Success;
 }

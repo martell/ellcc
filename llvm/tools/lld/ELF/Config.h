@@ -88,6 +88,8 @@ struct Configuration {
   bool Verbose;
   bool VersionScript = false;
   bool WarnCommon;
+  bool ZCombreloc;
+  bool ZDefs;
   bool ZExecStack;
   bool ZNodelete;
   bool ZNow;

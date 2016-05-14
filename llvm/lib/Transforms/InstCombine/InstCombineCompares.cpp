@@ -2093,8 +2093,28 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
     break;
   }
 
-  case Instruction::SDiv:
   case Instruction::UDiv:
+    if (ConstantInt *DivLHS = dyn_cast<ConstantInt>(LHSI->getOperand(0))) {
+      Value *X = LHSI->getOperand(1);
+      APInt C1 = RHS->getValue();
+      APInt C2 = DivLHS->getValue();
+      assert(C2 != 0 && "udiv 0, X should have been simplified already.");
+      // (icmp ugt (udiv C2, X), C1) -> (icmp ule X, C2/(C1+1))
+      if (ICI.getPredicate() == ICmpInst::ICMP_UGT) {
+        assert(!C1.isMaxValue() &&
+               "icmp ugt X, UINT_MAX should have been simplified already.");
+        return new ICmpInst(ICmpInst::ICMP_ULE, X,
+                            ConstantInt::get(X->getType(), C2.udiv(C1 + 1)));
+      }
+      // (icmp ult (udiv C2, X), C1) -> (icmp ugt X, C2/C1)
+      if (ICI.getPredicate() == ICmpInst::ICMP_ULT) {
+        assert(C1 != 0 && "icmp ult X, 0 should have been simplified already.");
+        return new ICmpInst(ICmpInst::ICMP_UGT, X,
+                            ConstantInt::get(X->getType(), C2.udiv(C1)));
+      }
+    }
+  // fall-through
+  case Instruction::SDiv:
     // Fold: icmp pred ([us]div X, C1), C2 -> range test
     // Fold this div into the comparison, producing a range check.
     // Determine, based on the divide type, what the range is being
@@ -3105,11 +3125,65 @@ static ICmpInst *canonicalizeCmpWithConstant(ICmpInst &I,
       assert(!Op1C->isMinValue(true));  // A >=s MIN -> TRUE
       return new ICmpInst(ICmpInst::ICMP_SGT, Op0, Builder.getInt(Op1Val - 1));
     default:
-      break;
+      return nullptr;
     }
   }
 
-  // TODO: Handle vectors.
+  // The usual vector types are ConstantDataVector. Exotic vector types are
+  // ConstantVector. Zeros are special. They all derive from Constant.
+  if (isa<ConstantDataVector>(Op1) || isa<ConstantVector>(Op1) ||
+      isa<ConstantAggregateZero>(Op1)) {
+    Constant *Op1C = cast<Constant>(Op1);
+    Type *Op1Type = Op1->getType();
+    unsigned NumElts = Op1Type->getVectorNumElements();
+
+    // Set the new comparison predicate and splat a vector of 1 or -1 to
+    // increment or decrement the vector constants. But first, check that no
+    // elements of the constant vector would overflow/underflow when we
+    // increment/decrement the constants.
+    //
+    // TODO? If the edge cases for vectors were guaranteed to be handled as they
+    // are for scalar, we could remove the min/max checks here. However, to do
+    // that, we would have to use insertelement/shufflevector to replace edge
+    // values.
+    
+    CmpInst::Predicate NewPred;
+    Constant *OneOrNegOne = nullptr;
+    switch (I.getPredicate()) {
+    case ICmpInst::ICMP_ULE:
+      for (unsigned i = 0; i != NumElts; ++i)
+        if (cast<ConstantInt>(Op1C->getAggregateElement(i))->isMaxValue(false))
+          return nullptr;
+      NewPred = ICmpInst::ICMP_ULT;
+      OneOrNegOne = ConstantInt::get(Op1Type, 1);
+      break;
+    case ICmpInst::ICMP_SLE:
+      for (unsigned i = 0; i != NumElts; ++i)
+        if (cast<ConstantInt>(Op1C->getAggregateElement(i))->isMaxValue(true))
+          return nullptr;
+      NewPred = ICmpInst::ICMP_SLT;
+      OneOrNegOne = ConstantInt::get(Op1Type, 1);
+      break;
+    case ICmpInst::ICMP_UGE:
+      for (unsigned i = 0; i != NumElts; ++i)
+        if (cast<ConstantInt>(Op1C->getAggregateElement(i))->isMinValue(false))
+          return nullptr;
+      NewPred = ICmpInst::ICMP_UGT;
+      OneOrNegOne = ConstantInt::get(Op1Type, -1);
+      break;
+    case ICmpInst::ICMP_SGE:
+      for (unsigned i = 0; i != NumElts; ++i)
+        if (cast<ConstantInt>(Op1C->getAggregateElement(i))->isMinValue(true))
+          return nullptr;
+      NewPred = ICmpInst::ICMP_SGT;
+      OneOrNegOne = ConstantInt::get(Op1Type, -1);
+      break;
+    default:
+      return nullptr;
+    }
+
+    return new ICmpInst(NewPred, Op0, ConstantExpr::getAdd(Op1C, OneOrNegOne));
+  }
 
   return nullptr;
 }
@@ -3583,12 +3657,22 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
   // See if we are doing a comparison between a constant and an instruction that
   // can be folded into the comparison.
   if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
+    Value *A = nullptr, *B = nullptr;
     // Since the RHS is a ConstantInt (CI), if the left hand side is an
     // instruction, see if that instruction also has constants so that the
     // instruction can be folded into the icmp
     if (Instruction *LHSI = dyn_cast<Instruction>(Op0))
       if (Instruction *Res = visitICmpInstWithInstAndIntCst(I, LHSI, CI))
         return Res;
+
+    // (icmp eq/ne (udiv A, B), 0) -> (icmp ugt/ule i32 B, A)
+    if (I.isEquality() && CI->isZero() &&
+        match(Op0, m_UDiv(m_Value(A), m_Value(B)))) {
+      ICmpInst::Predicate Pred = I.getPredicate() == ICmpInst::ICMP_EQ
+                                     ? ICmpInst::ICMP_UGT
+                                     : ICmpInst::ICMP_ULE;
+      return new ICmpInst(Pred, B, A);
+    }
   }
 
   // Handle icmp with constant (but not simple integer constant) RHS

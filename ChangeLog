@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r269489.
 * Update to QEMU 2.6.0.
 * Update the nghttp2 library to version 1.10.0.
 * Update to LLVM r268856.

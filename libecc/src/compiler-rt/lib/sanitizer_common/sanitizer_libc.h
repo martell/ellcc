@@ -69,6 +69,7 @@ const fd_t kStderrFd = (fd_t)2;
 
 // OS
 void NORETURN internal__exit(int exitcode);
+unsigned int internal_sleep(unsigned int seconds);
 
 uptr internal_getpid();
 uptr internal_getppid();
