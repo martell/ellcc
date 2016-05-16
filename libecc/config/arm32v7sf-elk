@@ -26,7 +26,7 @@ assembler:
 linker:
   exe: $E/ecc-ld$X
   options:
-   - -Telk.ld
+    - -Telk.ld
     - -m armelf_linux_eabi
     - --build-id
     - '--hash-style=gnu'
@@ -54,13 +54,14 @@ linker:
   library_paths:
     - -L$R/lib/arm32v7sf-elk
     - -L$R/lib/elk
-    - -L$R/lib/arm32-linux
+    - -L$R/lib/arm32v7sf-linux
   cxx_libraries:
     - -lc++
     - -lm
   profile_libraries:
     - -lprofile-rt
   c_libraries:
+    - -lelk
     - -(
     - -lc
     - -lcompiler-rt
