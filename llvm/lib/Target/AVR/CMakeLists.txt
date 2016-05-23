@@ -7,14 +7,15 @@ tablegen(LLVM AVRGenSubtargetInfo.inc -gen-subtarget)
 add_public_tablegen_target(AVRCommonTableGen)
 
 add_llvm_target(AVRCodeGen
-    AVRTargetMachine.cpp
-    AVRTargetObjectFile.cpp
-    AVRSubtarget.cpp
-    AVRInstrInfo.cpp
-    AVRRegisterInfo.cpp
-  )
+  AVRInstrInfo.cpp
+  AVRRegisterInfo.cpp
+  AVRSubtarget.cpp
+  AVRTargetMachine.cpp
+  AVRTargetObjectFile.cpp
+)
 
 add_dependencies(LLVMAVRCodeGen intrinsics_gen)
 
+add_subdirectory(MCTargetDesc)
 add_subdirectory(TargetInfo)
 

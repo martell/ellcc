@@ -45,6 +45,13 @@ static std::string computeDataLayout(bool BigEndian=true) {
   return Ret;
 }
 
+static Reloc::Model getEffectiveRelocModel(CodeModel::Model CM,
+                                           Optional<Reloc::Model> RM) {
+  if (!RM.hasValue() || CM == CodeModel::JITDefault)
+    return Reloc::Static;
+  return *RM;
+}
+
 // DataLayout --> Big-endian, 32-bit pointer/ABI/alignment
 // The stack is always 8 byte aligned
 // On function prologue, the stack is created by decrementing
@@ -54,9 +61,10 @@ static std::string computeDataLayout(bool BigEndian=true) {
 MBlazeTargetMachine::
 MBlazeTargetMachine(const Target &T, const Triple &TT,
                     StringRef CPU, StringRef FS, const TargetOptions &Options,
-                    Reloc::Model RM, CodeModel::Model CM,
+                    Optional<Reloc::Model> RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)
-  : LLVMTargetMachine(T, computeDataLayout(), TT, CPU, FS, Options, RM, CM, OL),
+  : LLVMTargetMachine(T, computeDataLayout(), TT, CPU, FS, Options,
+                      getEffectiveRelocModel(CM, RM), CM, OL),
     TLOF(make_unique<MBlazeTargetObjectFile>()), Subtarget(nullptr),
     DefaultSubtarget(TT, CPU, FS, /* isL:ittle */ false, *this) {
   Subtarget = &DefaultSubtarget;

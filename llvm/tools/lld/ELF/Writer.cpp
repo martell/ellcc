@@ -163,16 +163,16 @@ template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
     BuildId.reset(new BuildIdMd5<ELFT>);
   else if (Config->BuildId == BuildIdKind::Sha1)
     BuildId.reset(new BuildIdSha1<ELFT>);
+  else if (Config->BuildId == BuildIdKind::Hexstring)
+    BuildId.reset(new BuildIdHexstring<ELFT>);
 
   if (Config->GnuHash)
     GnuHashTab.reset(new GnuHashTableSection<ELFT>);
   if (Config->SysvHash)
     HashTab.reset(new HashTableSection<ELFT>);
-  if (Target->UseLazyBinding) {
-    StringRef S = Config->Rela ? ".rela.plt" : ".rel.plt";
-    GotPlt.reset(new GotPltSection<ELFT>);
-    RelaPlt.reset(new RelocationSection<ELFT>(S, false /*Sort*/));
-  }
+  StringRef S = Config->Rela ? ".rela.plt" : ".rel.plt";
+  GotPlt.reset(new GotPltSection<ELFT>);
+  RelaPlt.reset(new RelocationSection<ELFT>(S, false /*Sort*/));
   if (!Config->StripAll) {
     StrTab.reset(new StringTableSection<ELFT>(".strtab", false));
     SymTabSec.reset(new SymbolTableSection<ELFT>(*Symtab, *StrTab));
@@ -336,9 +336,8 @@ static unsigned handleTlsRelocation(uint32_t Type, SymbolBody &Body,
     // Global-Dynamic relocs can be relaxed to Initial-Exec or Local-Exec
     // depending on the symbol being locally defined or not.
     if (Body.isPreemptible()) {
-      Expr =
-          Expr == R_TLSGD_PC ? R_RELAX_TLS_GD_TO_IE_PC : R_RELAX_TLS_GD_TO_IE;
-      C.Relocations.push_back({Expr, Type, Offset, Addend, &Body});
+      C.Relocations.push_back(
+          {R_RELAX_TLS_GD_TO_IE, Type, Offset, Addend, &Body});
       if (!Body.isInGot()) {
         Out<ELFT>::Got->addEntry(Body);
         Out<ELFT>::RelaDyn->addReloc({Target->TlsGotRel, Out<ELFT>::Got,
@@ -455,9 +454,10 @@ template <class ELFT>
 static bool isStaticLinkTimeConstant(RelExpr E, uint32_t Type,
                                      const SymbolBody &Body) {
   // These expressions always compute a constant
-  if (E == R_SIZE || E == R_GOT_FROM_END || E == R_GOT_OFF || E == R_MIPS_GOT ||
-      E == R_MIPS_GOT_LOCAL || E == R_GOT_PAGE_PC || E == R_GOT_PC ||
-      E == R_PLT_PC || E == R_TLSGD_PC || E == R_TLSGD || E == R_PPC_PLT_OPD)
+  if (E == R_SIZE || E == R_GOT_FROM_END || E == R_GOT_OFF ||
+      E == R_MIPS_GOT_LOCAL || E == R_MIPS_GOT_LOCAL_PAGE ||
+      E == R_GOT_PAGE_PC || E == R_GOT_PC || E == R_PLT_PC || E == R_TLSGD_PC ||
+      E == R_TLSGD || E == R_PPC_PLT_OPD)
     return true;
 
   // These never do, except if the entire file is position dependent or if
@@ -727,23 +727,15 @@ void Writer<ELFT>::scanRelocs(InputSectionBase<ELFT> &C, ArrayRef<RelTy> Rels) {
       Out<ELFT>::Plt->addEntry(Body);
 
       uint32_t Rel;
-      if (Body.isGnuIFunc())
-        Rel = Preemptible ? Target->PltRel : Target->IRelativeRel;
+      if (Body.isGnuIFunc() && !Preemptible)
+        Rel = Target->IRelativeRel;
       else
-        Rel = Target->UseLazyBinding ? Target->PltRel : Target->GotRel;
+        Rel = Target->PltRel;
 
-      if (Target->UseLazyBinding) {
-        Out<ELFT>::GotPlt->addEntry(Body);
-        Out<ELFT>::RelaPlt->addReloc({Rel, Out<ELFT>::GotPlt,
-                                      Body.getGotPltOffset<ELFT>(),
-                                      !Preemptible, &Body, 0});
-      } else {
-        if (Body.isInGot())
-          continue;
-        Out<ELFT>::Got->addEntry(Body);
-        AddDyn({Rel, Out<ELFT>::Got, Body.getGotOffset<ELFT>(), !Preemptible,
-                &Body, 0});
-      }
+      Out<ELFT>::GotPlt->addEntry(Body);
+      Out<ELFT>::RelaPlt->addReloc({Rel, Out<ELFT>::GotPlt,
+                                    Body.getGotPltOffset<ELFT>(), !Preemptible,
+                                    &Body, 0});
       continue;
     }
 

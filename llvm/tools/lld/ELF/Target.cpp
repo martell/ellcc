@@ -150,9 +150,6 @@ public:
   void relocateOne(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
   void relaxTlsGdToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
   void relaxTlsIeToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
-
-private:
-  static const uint64_t TcbSize = 16;
 };
 
 class AMDGPUTargetInfo final : public TargetInfo {
@@ -264,7 +261,6 @@ X86TargetInfo::X86TargetInfo() {
   TlsGotRel = R_386_TLS_TPOFF;
   TlsModuleIndexRel = R_386_TLS_DTPMOD32;
   TlsOffsetRel = R_386_TLS_DTPOFF32;
-  UseLazyBinding = true;
   PltEntrySize = 16;
   PltZeroSize = 16;
   TlsGdToLeSkip = 2;
@@ -364,8 +360,7 @@ void X86TargetInfo::writePlt(uint8_t *Buf, uint64_t GotEntryAddr,
 
   // jmp *foo@GOT(%ebx) or jmp *foo_in_GOT
   Buf[1] = Config->Pic ? 0xa3 : 0x25;
-  uint32_t Got = UseLazyBinding ? Out<ELF32LE>::GotPlt->getVA()
-                                : Out<ELF32LE>::Got->getVA();
+  uint32_t Got = Out<ELF32LE>::GotPlt->getVA();
   write32le(Buf + 2, Config->Shared ? GotEntryAddr - Got : GotEntryAddr);
   write32le(Buf + 7, RelOff);
   write32le(Buf + 12, -Index * PltEntrySize - PltZeroSize - 16);
@@ -405,7 +400,7 @@ void X86TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
       0x81, 0xe8, 0x00, 0x00, 0x00, 0x00  // subl 0(%ebx), %eax
   };
   memcpy(Loc - 3, Inst, sizeof(Inst));
-  relocateOne(Loc + 5, R_386_32, Out<ELF32LE>::TlsPhdr->p_memsz - Val);
+  relocateOne(Loc + 5, R_386_32, Val);
 }
 
 void X86TargetInfo::relaxTlsGdToIe(uint8_t *Loc, uint32_t Type,
@@ -421,8 +416,7 @@ void X86TargetInfo::relaxTlsGdToIe(uint8_t *Loc, uint32_t Type,
       0x03, 0x83, 0x00, 0x00, 0x00, 0x00  // addl 0(%ebx), %eax
   };
   memcpy(Loc - 3, Inst, sizeof(Inst));
-  relocateOne(Loc + 5, R_386_32, Val - Out<ELF32LE>::Got->getVA() -
-                                     Out<ELF32LE>::Got->getNumEntries() * 4);
+  relocateOne(Loc + 5, R_386_32, Val);
 }
 
 // In some conditions, relocations can be optimized to avoid using GOT.
@@ -462,13 +456,13 @@ void X86TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
     else
       *Op = 0x80 | Reg | (Reg << 3);
   }
-  relocateOne(Loc, R_386_TLS_LE, Val - Out<ELF32LE>::TlsPhdr->p_memsz);
+  relocateOne(Loc, R_386_TLS_LE, Val);
 }
 
 void X86TargetInfo::relaxTlsLdToLe(uint8_t *Loc, uint32_t Type,
                                    uint64_t Val) const {
   if (Type == R_386_TLS_LDO_32) {
-    relocateOne(Loc, R_386_TLS_LE, Val - Out<ELF32LE>::TlsPhdr->p_memsz);
+    relocateOne(Loc, R_386_TLS_LE, Val);
     return;
   }
 
@@ -496,7 +490,6 @@ X86_64TargetInfo::X86_64TargetInfo() {
   TlsGotRel = R_X86_64_TPOFF64;
   TlsModuleIndexRel = R_X86_64_DTPMOD64;
   TlsOffsetRel = R_X86_64_DTPOFF64;
-  UseLazyBinding = true;
   PltEntrySize = 16;
   PltZeroSize = 16;
   TlsGdToLeSkip = 2;
@@ -608,8 +601,9 @@ void X86_64TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
       0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00              // lea x@tpoff,%rax
   };
   memcpy(Loc - 4, Inst, sizeof(Inst));
-  relocateOne(Loc + 8, R_X86_64_TPOFF32,
-              Val + 4 - Out<ELF64LE>::TlsPhdr->p_memsz);
+  // The original code used a pc relative relocation and so we have to
+  // compensate for the -4 in had in the addend.
+  relocateOne(Loc + 8, R_X86_64_TPOFF32, Val + 4);
 }
 
 void X86_64TargetInfo::relaxTlsGdToIe(uint8_t *Loc, uint32_t Type,
@@ -628,6 +622,8 @@ void X86_64TargetInfo::relaxTlsGdToIe(uint8_t *Loc, uint32_t Type,
       0x48, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00              // addq x@tpoff,%rax
   };
   memcpy(Loc - 4, Inst, sizeof(Inst));
+  // Both code sequences are PC relatives, but since we are moving the constant
+  // forward by 8 bytes we have to subtract the value by 8.
   relocateOne(Loc + 8, R_X86_64_PC32, Val - 8);
 }
 
@@ -661,7 +657,9 @@ void X86_64TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
   if (*Prefix == 0x4c)
     *Prefix = (IsMov || RspAdd) ? 0x49 : 0x4d;
   *RegSlot = (IsMov || RspAdd) ? (0xc0 | Reg) : (0x80 | Reg | (Reg << 3));
-  relocateOne(Loc, R_X86_64_TPOFF32, Val + 4 - Out<ELF64LE>::TlsPhdr->p_memsz);
+  // The original code used a pc relative relocation and so we have to
+  // compensate for the -4 in had in the addend.
+  relocateOne(Loc, R_X86_64_TPOFF32, Val + 4);
 }
 
 void X86_64TargetInfo::relaxTlsLdToLe(uint8_t *Loc, uint32_t Type,
@@ -676,11 +674,11 @@ void X86_64TargetInfo::relaxTlsLdToLe(uint8_t *Loc, uint32_t Type,
   //   mov %fs:0,%rax
   //   leaq bar@tpoff(%rax), %rcx
   if (Type == R_X86_64_DTPOFF64) {
-    write64le(Loc, Val - Out<ELF64LE>::TlsPhdr->p_memsz);
+    write64le(Loc, Val);
     return;
   }
   if (Type == R_X86_64_DTPOFF32) {
-    relocateOne(Loc, R_X86_64_TPOFF32, Val - Out<ELF64LE>::TlsPhdr->p_memsz);
+    relocateOne(Loc, R_X86_64_TPOFF32, Val);
     return;
   }
 
@@ -721,6 +719,7 @@ void X86_64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
   case R_X86_64_TLSLD:
   case R_X86_64_DTPOFF32:
   case R_X86_64_SIZE32:
+    checkInt<32>(Val, Type);
     write32le(Loc, Val);
     break;
   default:
@@ -761,7 +760,7 @@ RelExpr PPCTargetInfo::getRelExpr(uint32_t Type, const SymbolBody &S) const {
 }
 
 PPC64TargetInfo::PPC64TargetInfo() {
-  GotRel = R_PPC64_GLOB_DAT;
+  PltRel = GotRel = R_PPC64_GLOB_DAT;
   RelativeRel = R_PPC64_RELATIVE;
   PltEntrySize = 32;
 
@@ -937,9 +936,12 @@ AArch64TargetInfo::AArch64TargetInfo() {
   TlsGotRel = R_AARCH64_TLS_TPREL64;
   TlsModuleIndexRel = R_AARCH64_TLS_DTPMOD64;
   TlsOffsetRel = R_AARCH64_TLS_DTPREL64;
-  UseLazyBinding = true;
   PltEntrySize = 16;
   PltZeroSize = 32;
+
+  // It doesn't seem to be documented anywhere, but tls on aarch64 uses variant
+  // 1 of the tls structures and the tcb size is 16.
+  TcbSize = 16;
 }
 
 RelExpr AArch64TargetInfo::getRelExpr(uint32_t Type,
@@ -947,6 +949,11 @@ RelExpr AArch64TargetInfo::getRelExpr(uint32_t Type,
   switch (Type) {
   default:
     return R_ABS;
+
+  case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+  case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+    return R_TLS;
+
   case R_AARCH64_CALL26:
   case R_AARCH64_CONDBR19:
   case R_AARCH64_JUMP26:
@@ -1142,17 +1149,13 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
     checkInt<16>(Val, Type);
     or32le(Loc, (Val & 0xFFFC) << 3);
     break;
-  case R_AARCH64_TLSLE_ADD_TPREL_HI12: {
-    uint64_t V = llvm::alignTo(TcbSize, Out<ELF64LE>::TlsPhdr->p_align) + Val;
-    checkInt<24>(V, Type);
-    updateAArch64Add(Loc, (V & 0xFFF000) >> 12);
+  case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+    checkInt<24>(Val, Type);
+    updateAArch64Add(Loc, (Val & 0xFFF000) >> 12);
     break;
-  }
-  case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: {
-    uint64_t V = llvm::alignTo(TcbSize, Out<ELF64LE>::TlsPhdr->p_align) + Val;
-    updateAArch64Add(Loc, V & 0xFFF);
+  case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+    updateAArch64Add(Loc, Val & 0xFFF);
     break;
-  }
   default:
     fatal("unrecognized reloc " + Twine(Type));
   }
@@ -1170,9 +1173,7 @@ void AArch64TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
   //   movk    x0, #0x10
   //   nop
   //   nop
-  uint64_t TPOff = llvm::alignTo(TcbSize, Out<ELF64LE>::TlsPhdr->p_align);
-  uint64_t X = Val + TPOff;
-  checkUInt<32>(X, Type);
+  checkUInt<32>(Val, Type);
 
   uint32_t NewInst;
   switch (Type) {
@@ -1183,11 +1184,11 @@ void AArch64TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
     break;
   case R_AARCH64_TLSDESC_ADR_PAGE21:
     // movz
-    NewInst = 0xd2a00000 | (((X >> 16) & 0xffff) << 5);
+    NewInst = 0xd2a00000 | (((Val >> 16) & 0xffff) << 5);
     break;
   case R_AARCH64_TLSDESC_LD64_LO12_NC:
     // movk
-    NewInst = 0xf2800000 | ((X & 0xffff) << 5);
+    NewInst = 0xf2800000 | ((Val & 0xffff) << 5);
     break;
   default:
     llvm_unreachable("unsupported Relocation for TLS GD to LE relax");
@@ -1197,20 +1198,18 @@ void AArch64TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
 
 void AArch64TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
                                        uint64_t Val) const {
-  uint64_t TPOff = llvm::alignTo(TcbSize, Out<ELF64LE>::TlsPhdr->p_align);
-  uint64_t X = Val + TPOff;
-  checkUInt<32>(X, Type);
+  checkUInt<32>(Val, Type);
 
   uint32_t Inst = read32le(Loc);
   uint32_t NewInst;
   if (Type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21) {
     // Generate movz.
     unsigned RegNo = (Inst & 0x1f);
-    NewInst = (0xd2a00000 | RegNo) | (((X >> 16) & 0xffff) << 5);
+    NewInst = (0xd2a00000 | RegNo) | (((Val >> 16) & 0xffff) << 5);
   } else if (Type == R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC) {
     // Generate movk
     unsigned RegNo = (Inst & 0x1f);
-    NewInst = (0xf2800000 | RegNo) | ((X & 0xffff) << 5);
+    NewInst = (0xf2800000 | RegNo) | ((Val & 0xffff) << 5);
   } else {
     llvm_unreachable("invalid Relocation for TLS IE to LE Relax");
   }
@@ -1236,7 +1235,6 @@ template <class ELFT> MipsTargetInfo<ELFT>::MipsTargetInfo() {
   PltEntrySize = 16;
   PltZeroSize = 32;
   ThunkSize = 16;
-  UseLazyBinding = true;
   CopyRel = R_MIPS_COPY;
   PltRel = R_MIPS_JUMP_SLOT;
   if (ELFT::Is64Bits)
@@ -1281,15 +1279,15 @@ RelExpr MipsTargetInfo<ELFT>::getRelExpr(uint32_t Type,
     return R_PC;
   case R_MIPS_GOT16:
     if (S.isLocal())
-      return R_MIPS_GOT_LOCAL;
+      return R_MIPS_GOT_LOCAL_PAGE;
   // fallthrough
   case R_MIPS_CALL16:
   case R_MIPS_GOT_DISP:
     if (!S.isPreemptible())
-      return R_MIPS_GOT;
+      return R_MIPS_GOT_LOCAL;
     return R_GOT_OFF;
   case R_MIPS_GOT_PAGE:
-    return R_MIPS_GOT_LOCAL;
+    return R_MIPS_GOT_LOCAL_PAGE;
   }
 }
 

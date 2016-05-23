@@ -25,11 +25,13 @@
 #include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/Line.h"
 #include "llvm/DebugInfo/CodeView/RecordSerialization.h"
+#include "llvm/DebugInfo/CodeView/MemoryTypeTableBuilder.h"
 #include "llvm/DebugInfo/CodeView/SymbolRecord.h"
 #include "llvm/DebugInfo/CodeView/TypeDumper.h"
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/DebugInfo/CodeView/TypeStream.h"
+#include "llvm/DebugInfo/CodeView/TypeStreamMerger.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/COFF.h"
@@ -71,6 +73,8 @@ public:
   void printCOFFDirectives() override;
   void printCOFFBaseReloc() override;
   void printCodeViewDebugInfo() override;
+  void
+  mergeCodeViewTypes(llvm::codeview::MemoryTypeTableBuilder &CVTypes) override;
   void printStackMap() const override;
 private:
   void printSymbol(const SymbolRef &Sym);
@@ -421,19 +425,19 @@ WeakExternalCharacteristics[] = {
   { "Alias"    , COFF::IMAGE_WEAK_EXTERN_SEARCH_ALIAS     }
 };
 
-static const EnumEntry<CompileSym3::Flags> CompileSym3Flags[] = {
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, EC),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, NoDbgInfo),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, LTCG),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, NoDataAlign),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, ManagedPresent),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, SecurityChecks),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, HotPatch),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, CVTCIL),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, MSILModule),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, Sdl),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, PGO),
-    LLVM_READOBJ_ENUM_ENT(CompileSym3, Exp),
+static const EnumEntry<uint32_t> CompileSym3FlagNames[] = {
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, EC),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, NoDbgInfo),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, LTCG),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, NoDataAlign),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, ManagedPresent),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, SecurityChecks),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, HotPatch),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, CVTCIL),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, MSILModule),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, Sdl),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, PGO),
+    LLVM_READOBJ_ENUM_CLASS_ENT(CompileSym3Flags, Exp),
 };
 
 static const EnumEntry<codeview::SourceLanguage> SourceLanguages[] = {
@@ -534,15 +538,15 @@ static const EnumEntry<unsigned> CPUTypeNames[] = {
   LLVM_READOBJ_ENUM_CLASS_ENT(CPUType, D3D11_Shader),
 };
 
-static const EnumEntry<uint8_t> ProcSymFlags[] = {
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, HasFP),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, HasIRET),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, HasFRET),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, IsNoReturn),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, IsUnreachable),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, HasCustomCallingConv),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, IsNoInline),
-    LLVM_READOBJ_ENUM_ENT(ProcFlags, HasOptimizedDebugInfo),
+static const EnumEntry<uint8_t> ProcSymFlagNames[] = {
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, HasFP),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, HasIRET),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, HasFRET),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, IsNoReturn),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, IsUnreachable),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, HasCustomCallingConv),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, IsNoInline),
+    LLVM_READOBJ_ENUM_CLASS_ENT(ProcSymFlags, HasOptimizedDebugInfo),
 };
 
 static const EnumEntry<uint32_t> FrameProcSymFlags[] = {
@@ -578,24 +582,24 @@ static const EnumEntry<uint32_t> FrameDataFlags[] = {
 };
 
 static const EnumEntry<uint16_t> LocalFlags[] = {
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsParameter),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsAddressTaken),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsCompilerGenerated),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsAggregate),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsAggregated),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsAliased),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsAlias),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsReturnValue),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsOptimizedOut),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsEnregisteredGlobal),
-    LLVM_READOBJ_ENUM_ENT(LocalSym, IsEnregisteredStatic),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsParameter),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsAddressTaken),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsCompilerGenerated),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsAggregate),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsAggregated),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsAliased),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsAlias),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsReturnValue),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsOptimizedOut),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsEnregisteredGlobal),
+    LLVM_READOBJ_ENUM_CLASS_ENT(LocalSymFlags, IsEnregisteredStatic),
 };
 
-static const EnumEntry<uint16_t> FrameCookieKinds[] = {
-    LLVM_READOBJ_ENUM_ENT(FrameCookieSym, Copy),
-    LLVM_READOBJ_ENUM_ENT(FrameCookieSym, XorStackPointer),
-    LLVM_READOBJ_ENUM_ENT(FrameCookieSym, XorFramePointer),
-    LLVM_READOBJ_ENUM_ENT(FrameCookieSym, XorR13),
+static const EnumEntry<uint32_t> FrameCookieKinds[] = {
+    LLVM_READOBJ_ENUM_CLASS_ENT(FrameCookieKind, Copy),
+    LLVM_READOBJ_ENUM_CLASS_ENT(FrameCookieKind, XorStackPointer),
+    LLVM_READOBJ_ENUM_CLASS_ENT(FrameCookieKind, XorFramePointer),
+    LLVM_READOBJ_ENUM_CLASS_ENT(FrameCookieKind, XorR13),
 };
 
 static const EnumEntry<uint8_t> FileChecksumKindNames[] = {
@@ -990,7 +994,7 @@ void COFFDumper::printCodeViewSymbolSection(StringRef SectionName,
 void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
                                                 const SectionRef &Section,
                                                 StringRef SectionContents) {
-  if (Subsection.size() < sizeof(SymRecord))
+  if (Subsection.size() < sizeof(RecordPrefix))
     return error(object_error::parse_failed);
 
   const coff_section *Sec = Obj->getCOFFSection(Section);
@@ -1000,15 +1004,15 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
 
   bool InFunctionScope = false;
   while (!Data.empty()) {
-    const SymRecord *Rec;
+    const RecordPrefix *Rec;
     error(consumeObject(Data, Rec));
 
-    StringRef SymData = Data.substr(0, Rec->RecordLength - 2);
+    StringRef SymData = Data.substr(0, Rec->RecordLen - 2);
     StringRef OrigSymData = SymData;
 
-    Data = Data.drop_front(Rec->RecordLength - 2);
+    Data = Data.drop_front(Rec->RecordLen - 2);
 
-    SymbolRecordKind Kind = Rec->getKind();
+    SymbolKind Kind = static_cast<SymbolKind>(uint16_t(Rec->RecordKind));
     switch (Kind) {
     case S_LPROC32:
     case S_GPROC32:
@@ -1035,7 +1039,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
       printRelocatedField("CodeOffset", Sec, SectionContents, &Proc->CodeOffset,
                           &LinkageName);
       W.printHex("Segment", Proc->Segment);
-      W.printFlags("Flags", Proc->Flags, makeArrayRef(ProcSymFlags));
+      W.printFlags("Flags", Proc->Flags, makeArrayRef(ProcSymFlagNames));
       W.printString("DisplayName", DisplayName);
       W.printString("LinkageName", LinkageName);
       break;
@@ -1082,7 +1086,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
                           &Label->CodeOffset, &LinkageName);
       W.printHex("Segment", Label->Segment);
       W.printHex("Flags", Label->Flags);
-      W.printFlags("Flags", Label->Flags, makeArrayRef(ProcSymFlags));
+      W.printFlags("Flags", Label->Flags, makeArrayRef(ProcSymFlagNames));
       W.printString("DisplayName", DisplayName);
       W.printString("LinkageName", LinkageName);
       break;
@@ -1141,44 +1145,44 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
 
       ListScope BinaryAnnotations(W, "BinaryAnnotations");
       while (!SymData.empty()) {
-        uint32_t OpCode = GetCompressedAnnotation();
+        auto OpCode =
+            static_cast<BinaryAnnotationsOpCode>(GetCompressedAnnotation());
         switch (OpCode) {
-        default:
-        case Invalid:
+        case BinaryAnnotationsOpCode::Invalid:
           return error(object_error::parse_failed);
-        case CodeOffset:
+        case BinaryAnnotationsOpCode::CodeOffset:
           W.printHex("CodeOffset", GetCompressedAnnotation());
           break;
-        case ChangeCodeOffsetBase:
+        case BinaryAnnotationsOpCode::ChangeCodeOffsetBase:
           W.printNumber("ChangeCodeOffsetBase", GetCompressedAnnotation());
           break;
-        case ChangeCodeOffset:
+        case BinaryAnnotationsOpCode::ChangeCodeOffset:
           W.printHex("ChangeCodeOffset", GetCompressedAnnotation());
           break;
-        case ChangeCodeLength:
+        case BinaryAnnotationsOpCode::ChangeCodeLength:
           W.printHex("ChangeCodeLength", GetCompressedAnnotation());
           break;
-        case ChangeFile:
+        case BinaryAnnotationsOpCode::ChangeFile:
           printFileNameForOffset("ChangeFile", GetCompressedAnnotation());
           break;
-        case ChangeLineOffset:
+        case BinaryAnnotationsOpCode::ChangeLineOffset:
           W.printNumber("ChangeLineOffset",
                         DecodeSignedOperand(GetCompressedAnnotation()));
           break;
-        case ChangeLineEndDelta:
+        case BinaryAnnotationsOpCode::ChangeLineEndDelta:
           W.printNumber("ChangeLineEndDelta", GetCompressedAnnotation());
           break;
-        case ChangeRangeKind:
+        case BinaryAnnotationsOpCode::ChangeRangeKind:
           W.printNumber("ChangeRangeKind", GetCompressedAnnotation());
           break;
-        case ChangeColumnStart:
+        case BinaryAnnotationsOpCode::ChangeColumnStart:
           W.printNumber("ChangeColumnStart", GetCompressedAnnotation());
           break;
-        case ChangeColumnEndDelta:
+        case BinaryAnnotationsOpCode::ChangeColumnEndDelta:
           W.printNumber("ChangeColumnEndDelta",
                         DecodeSignedOperand(GetCompressedAnnotation()));
           break;
-        case ChangeCodeOffsetAndLineOffset: {
+        case BinaryAnnotationsOpCode::ChangeCodeOffsetAndLineOffset: {
           uint32_t Annotation = GetCompressedAnnotation();
           int32_t LineOffset = DecodeSignedOperand(Annotation >> 4);
           uint32_t CodeOffset = Annotation & 0xf;
@@ -1187,7 +1191,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
                         << "}\n";
           break;
         }
-        case ChangeCodeLengthAndCodeOffset: {
+        case BinaryAnnotationsOpCode::ChangeCodeLengthAndCodeOffset: {
           uint32_t Length = GetCompressedAnnotation();
           uint32_t CodeOffset = GetCompressedAnnotation();
           W.startLine() << "ChangeCodeLengthAndCodeOffset: {CodeOffset: "
@@ -1195,7 +1199,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
                         << "}\n";
           break;
         }
-        case ChangeColumnEnd:
+        case BinaryAnnotationsOpCode::ChangeColumnEnd:
           W.printNumber("ChangeColumnEnd", GetCompressedAnnotation());
           break;
         }
@@ -1412,7 +1416,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
       W.printEnum("Language", CompFlags->getLanguage(),
                   makeArrayRef(SourceLanguages));
       W.printFlags("Flags", CompFlags->flags & ~0xff,
-                   makeArrayRef(CompileSym3Flags));
+                   makeArrayRef(CompileSym3FlagNames));
       W.printEnum("Machine", unsigned(CompFlags->Machine),
                   makeArrayRef(CPUTypeNames));
       std::string FrontendVersion;
@@ -1512,7 +1516,7 @@ void COFFDumper::printCodeViewSymbolsSubsection(StringRef Subsection,
     default: {
       DictScope S(W, "UnknownSym");
       W.printHex("Kind", unsigned(Kind));
-      W.printHex("Size", Rec->RecordLength);
+      W.printHex("Size", Rec->RecordLen);
       break;
     }
     }
@@ -1619,6 +1623,25 @@ StringRef COFFDumper::getFileNameForFileOffset(uint32_t FileOffset) {
 
 void COFFDumper::printFileNameForOffset(StringRef Label, uint32_t FileOffset) {
   W.printHex(Label, getFileNameForFileOffset(FileOffset), FileOffset);
+}
+
+void COFFDumper::mergeCodeViewTypes(MemoryTypeTableBuilder &CVTypes) {
+  for (const SectionRef &S : Obj->sections()) {
+    StringRef SectionName;
+    error(S.getName(SectionName));
+    if (SectionName == ".debug$T") {
+      StringRef Data;
+      error(S.getContents(Data));
+      unsigned Magic = *reinterpret_cast<const ulittle32_t *>(Data.data());
+      if (Magic != 4)
+        error(object_error::parse_failed);
+      Data = Data.drop_front(4);
+      ArrayRef<uint8_t> Bytes(reinterpret_cast<const uint8_t *>(Data.data()),
+                              Data.size());
+      if (!mergeTypeStreams(CVTypes, Bytes))
+        return error(object_error::parse_failed);
+    }
+  }
 }
 
 void COFFDumper::printCodeViewTypeSection(StringRef SectionName,
@@ -2075,4 +2098,24 @@ void COFFDumper::printStackMap() const {
   else
     prettyPrintStackMap(llvm::outs(),
                         StackMapV1Parser<support::big>(StackMapContentsArray));
+}
+
+void llvm::dumpCodeViewMergedTypes(
+    ScopedPrinter &Writer, llvm::codeview::MemoryTypeTableBuilder &CVTypes) {
+  // Flatten it first, then run our dumper on it.
+  ListScope S(Writer, "MergedTypeStream");
+  SmallString<0> Buf;
+  CVTypes.ForEachRecord([&](TypeIndex TI, MemoryTypeTableBuilder::Record *R) {
+    // The record data doesn't include the 16 bit size.
+    Buf.push_back(R->size() & 0xff);
+    Buf.push_back((R->size() >> 8) & 0xff);
+    Buf.append(R->data(), R->data() + R->size());
+  });
+  CVTypeDumper CVTD(Writer, opts::CodeViewSubsectionBytes);
+  ArrayRef<uint8_t> BinaryData(reinterpret_cast<const uint8_t *>(Buf.data()),
+                               Buf.size());
+  if (!CVTD.dump(BinaryData)) {
+    Writer.flush();
+    error(object_error::parse_failed);
+  }
 }

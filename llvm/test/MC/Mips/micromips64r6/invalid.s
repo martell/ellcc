@@ -204,6 +204,22 @@
   swe $5, 8($34)               # CHECK: :[[@LINE]]:11: error: expected memory with 9-bit signed offset
   swe $5, 512($4)              # CHECK: :[[@LINE]]:11: error: expected memory with 9-bit signed offset
   swe $5, -513($4)             # CHECK: :[[@LINE]]:11: error: expected memory with 9-bit signed offset
+  lh $33, 8($4)                # CHECK: :[[@LINE]]:{{[0-9]+}}: error: invalid operand for instruction
+  lhe $34, 8($2)               # CHECK: :[[@LINE]]:{{[0-9]+}}: error: invalid operand for instruction
+  lhu $35, 8($2)               # CHECK: :[[@LINE]]:{{[0-9]+}}: error: invalid operand for instruction
+  lhue $36, 8($2)              # CHECK: :[[@LINE]]:{{[0-9]+}}: error: invalid operand for instruction
+  lh $2, 8($34)                # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lhe $4, 8($33)               # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
+  lhu $4, 8($35)               # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lhue $4, 8($37)              # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
+  lh $2, -65536($4)            # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lh $2, 65536($4)             # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lhe $4, -512($2)             # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
+  lhe $4, 512($2)              # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
+  lhu $4, -65536($2)           # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lhu $4, 65536($2)            # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 16-bit signed offset
+  lhue $4, -512($2)            # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
+  lhue $4, 512($2)             # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected memory with 9-bit signed offset
   lwm32 $5, $6, 8($4)          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: $16 or $31 expected
   lwm32 $16, $19, 8($4)        # CHECK: :[[@LINE]]:{{[0-9]+}}: error: consecutive register numbers expected
   lwm32 $16-$25, 8($4)         # CHECK: :[[@LINE]]:{{[0-9]+}}: error: invalid register operand
@@ -236,3 +252,25 @@
   dsra $4, $5, -1              # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected 6-bit unsigned immediate
   dsra32 $4, $5, 32            # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected 5-bit unsigned immediate
   dsra32 $4, $5, -1            # CHECK: :[[@LINE]]:{{[0-9]+}}: error: expected 5-bit unsigned immediate
+                               # bposge32 is microMIPS DSP instruction
+  bposge32 342                 # CHECK: :[[@LINE]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+  bc1eqzc $f32, 4              # CHECK: :[[@LINE]]:11: error: invalid operand for instruction
+  bc1eqzc $f31, -65535         # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc1eqzc $f31, -65537         # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc1eqzc $f31, 65535          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc1eqzc $f31, 65536          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc1nezc $f32, 4              # CHECK: :[[@LINE]]:11: error: invalid operand for instruction
+  bc1nezc $f31, -65535         # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc1nezc $f31, -65537         # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc1nezc $f31, 65535          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc1nezc $f31, 65536          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc2eqzc $32, 4               # CHECK: :[[@LINE]]:11: error: invalid operand for instruction
+  bc2eqzc $31, -65535          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc2eqzc $31, -65537          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc2eqzc $31, 65535           # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc2eqzc $31, 65536           # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc2nezc $32, 4               # CHECK: :[[@LINE]]:11: error: invalid operand for instruction
+  bc2nezc $31, -65535          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc2nezc $31, -65537          # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range
+  bc2nezc $31, 65535           # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch to misaligned address
+  bc2nezc $31, 65536           # CHECK: :[[@LINE]]:{{[0-9]+}}: error: branch target out of range

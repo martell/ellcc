@@ -159,3 +159,35 @@ define <2 x i1> @ule_max(<2 x i3> %x) {
   ret <2 x i1> %cmp
 }
 
+; If we can't determine if a constant element is min/max (eg, it's a ConstantExpr), do nothing.
+
+define <2 x i1> @PR27756_1(<2 x i8> %a) {
+; CHECK-LABEL: @PR27756_1(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp sle <2 x i8> %a, <i8 bitcast (<2 x i4> <i4 1, i4 2> to i8), i8 0>
+; CHECK-NEXT:    ret <2 x i1> [[CMP]]
+;
+  %cmp = icmp sle <2 x i8> %a, <i8 bitcast (<2 x i4> <i4 1, i4 2> to i8), i8 0>
+  ret <2 x i1> %cmp
+}
+
+; Undef elements don't prevent the transform of the comparison.
+
+define <2 x i1> @PR27756_2(<2 x i8> %a) {
+; CHECK-LABEL: @PR27756_2(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp slt <2 x i8> %a, <i8 undef, i8 1>
+; CHECK-NEXT:    ret <2 x i1> [[CMP]]
+;
+  %cmp = icmp sle <2 x i8> %a, <i8 undef, i8 0>
+  ret <2 x i1> %cmp
+}
+
+@someglobal = global i32 0
+
+define <2 x i1> @PR27786(<2 x i8> %a) {
+; CHECK-LABEL: @PR27786(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp sle <2 x i8> %a, bitcast (i16 ptrtoint (i32* @someglobal to i16) to <2 x i8>)
+; CHECK-NEXT:    ret <2 x i1> [[CMP]]
+;
+  %cmp = icmp sle <2 x i8> %a, bitcast (i16 ptrtoint (i32* @someglobal to i16) to <2 x i8>)
+  ret <2 x i1> %cmp
+}

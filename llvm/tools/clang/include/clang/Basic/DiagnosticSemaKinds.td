@@ -5371,7 +5371,11 @@ def ext_typecheck_indirection_through_void_pointer : ExtWarn<
   "ISO C++ does not allow indirection on operand of type %0">,
   InGroup<DiagGroup<"void-ptr-dereference">>;
 def warn_indirection_through_null : Warning<
-  "indirection of non-volatile null pointer will be deleted, not trap">, InGroup<NullDereference>;
+  "indirection of non-volatile null pointer will be deleted, not trap">,
+  InGroup<NullDereference>;
+def warn_binding_null_to_reference : Warning<
+  "binding dereferenced null pointer to reference has undefined behavior">,
+  InGroup<NullDereference>;
 def note_indirection_through_null : Note<
   "consider using __builtin_trap() or qualifying pointer with 'volatile'">;
 def warn_pointer_indirection_from_incompatible_type : Warning<
@@ -6635,7 +6639,7 @@ def warn_function_def_in_objc_container : Warning<
 def warn_cast_calling_conv : Warning<
   "cast between incompatible calling conventions '%0' and '%1'; "
   "calls through this pointer may abort at runtime">,
-  InGroup<DiagGroup<"cast-calling-convention">>, DefaultIgnore;
+  InGroup<DiagGroup<"cast-calling-convention">>;
 def note_change_calling_conv_fixit : Note<
   "consider defining %0 with the '%1' calling convention">;
 def warn_bad_function_cast : Warning<
@@ -7817,6 +7821,8 @@ def err_sampler_argument_required : Error<
   "sampler_t variable required - got %0">;
 def err_wrong_sampler_addressspace: Error<
   "sampler type cannot be used with the __local and __global address space qualifiers">;
+def error_opencl_cast_non_zero_to_event_t : Error<
+  "cannot cast non-zero value '%0' to 'event_t'">;
 def err_opencl_global_invalid_addr_space : Error<
   "%select{program scope|static local|extern}0 variable must reside in %1 address space">;
 def err_missing_actual_pipe_type : Error<
@@ -7850,6 +7856,8 @@ def err_opencl_type_can_only_be_used_as_function_parameter : Error <
 def warn_opencl_attr_deprecated_ignored : Warning <
   "%0 attribute is deprecated and ignored in OpenCL version %1">,
   InGroup<IgnoredAttributes>;
+def err_opencl_builtin_requires_version : Error<
+  "%0 requires OpenCL version %1%select{| or above}2">;
 
 // OpenCL v2.0 s6.13.6 -- Builtin Pipe Functions
 def err_opencl_builtin_pipe_first_arg : Error<
@@ -7881,6 +7889,11 @@ def err_opencl_invalid_block_declaration : Error<
 def err_opencl_extern_block_declaration : Error<
   "invalid block variable declaration - using 'extern' storage class is disallowed">;
 
+// OpenCL v2.0 s6.13.9 - Address space qualifier functions. 
+def err_opencl_builtin_to_addr_arg_num : Error<
+  "invalid number of arguments to function: %0">;
+def err_opencl_builtin_to_addr_invalid_arg : Error<
+  "invalid argument %0 to function: %1, expecting a generic pointer argument">;
 } // end of sema category
 
 let CategoryName = "OpenMP Issue" in {

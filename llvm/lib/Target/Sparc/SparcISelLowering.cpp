@@ -18,6 +18,7 @@
 #include "SparcRegisterInfo.h"
 #include "SparcTargetMachine.h"
 #include "SparcTargetObjectFile.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -1027,6 +1028,27 @@ SparcTargetLowering::LowerCall_32(TargetLowering::CallLoweringInfo &CLI,
   return Chain;
 }
 
+// FIXME? Maybe this could be a TableGen attribute on some registers and
+// this table could be generated automatically from RegInfo.
+unsigned SparcTargetLowering::getRegisterByName(const char* RegName, EVT VT,
+                                               SelectionDAG &DAG) const {
+  unsigned Reg = StringSwitch<unsigned>(RegName)
+    .Case("i0", SP::I0).Case("i1", SP::I1).Case("i2", SP::I2).Case("i3", SP::I3)
+    .Case("i4", SP::I4).Case("i5", SP::I5).Case("i6", SP::I6).Case("i7", SP::I7)
+    .Case("o0", SP::O0).Case("o1", SP::O1).Case("o2", SP::O2).Case("o3", SP::O3)
+    .Case("o4", SP::O4).Case("o5", SP::O5).Case("o6", SP::O6).Case("o7", SP::O7)
+    .Case("l0", SP::L0).Case("l1", SP::L1).Case("l2", SP::L2).Case("l3", SP::L3)
+    .Case("l4", SP::L4).Case("l5", SP::L5).Case("l6", SP::L6).Case("l7", SP::L7)
+    .Case("g0", SP::G0).Case("g1", SP::G1).Case("g2", SP::G2).Case("g3", SP::G3)
+    .Case("g4", SP::G4).Case("g5", SP::G5).Case("g6", SP::G6).Case("g7", SP::G7)
+    .Default(0);
+
+  if (Reg)
+    return Reg;
+
+  report_fatal_error("Invalid register name global variable");
+}
+
 // This functions returns true if CalleeName is a ABI function that returns
 // a long double (fp128).
 static bool isFP128ABICall(const char *CalleeName)
@@ -1463,9 +1485,11 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
 
   // Set up the register classes.
   addRegisterClass(MVT::i32, &SP::IntRegsRegClass);
-  addRegisterClass(MVT::f32, &SP::FPRegsRegClass);
-  addRegisterClass(MVT::f64, &SP::DFPRegsRegClass);
-  addRegisterClass(MVT::f128, &SP::QFPRegsRegClass);
+  if (!Subtarget->useSoftFloat()) {
+    addRegisterClass(MVT::f32, &SP::FPRegsRegClass);
+    addRegisterClass(MVT::f64, &SP::DFPRegsRegClass);
+    addRegisterClass(MVT::f128, &SP::QFPRegsRegClass);
+  }
   if (Subtarget->is64Bit()) {
     addRegisterClass(MVT::i64, &SP::I64RegsRegClass);
   } else {
@@ -1612,18 +1636,19 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
   }
 
   // ATOMICs.
-  // Atomics are only supported on Sparcv9. (32bit atomics are also
-  // supported by the Leon sparcv8 variant, but we don't support that
-  // yet.)
+  // Atomics are supported on SparcV9. 32-bit atomics are also
+  // supported by some Leon SparcV8 variants. Otherwise, atomics
+  // are unsupported.
   if (Subtarget->isV9())
     setMaxAtomicSizeInBitsSupported(64);
+  else if (false && Subtarget->hasLeonCasa())
+   // Test made to fail pending completion of AtomicExpandPass,
+   // as this will cause a regression until that work is completed.
+    setMaxAtomicSizeInBitsSupported(32);
   else
     setMaxAtomicSizeInBitsSupported(0);
 
   setOperationAction(ISD::ATOMIC_SWAP, MVT::i32, Legal);
-  setOperationAction(ISD::ATOMIC_CMP_SWAP, MVT::i32,
-                     (Subtarget->isV9() ? Legal: Expand));
-
 
   setOperationAction(ISD::ATOMIC_FENCE, MVT::Other, Legal);
 
@@ -1759,7 +1784,7 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::FP_ROUND,  MVT::f32, Custom);
 
     // Setup Runtime library names.
-    if (Subtarget->is64Bit()) {
+    if (Subtarget->is64Bit() && !Subtarget->useSoftFloat()) {
       setLibcallName(RTLIB::ADD_F128,  "_Qp_add");
       setLibcallName(RTLIB::SUB_F128,  "_Qp_sub");
       setLibcallName(RTLIB::MUL_F128,  "_Qp_mul");
@@ -1777,7 +1802,7 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
       setLibcallName(RTLIB::FPEXT_F64_F128, "_Qp_dtoq");
       setLibcallName(RTLIB::FPROUND_F128_F32, "_Qp_qtos");
       setLibcallName(RTLIB::FPROUND_F128_F64, "_Qp_qtod");
-    } else {
+    } else if (!Subtarget->useSoftFloat()) {
       setLibcallName(RTLIB::ADD_F128,  "_Q_add");
       setLibcallName(RTLIB::SUB_F128,  "_Q_sub");
       setLibcallName(RTLIB::MUL_F128,  "_Q_mul");
@@ -1803,6 +1828,10 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
   setMinFunctionAlignment(2);
 
   computeRegisterProperties(Subtarget->getRegisterInfo());
+}
+
+bool SparcTargetLowering::useSoftFloat() const {
+  return Subtarget->useSoftFloat();
 }
 
 const char *SparcTargetLowering::getTargetNodeName(unsigned Opcode) const {

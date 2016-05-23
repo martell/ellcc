@@ -84,8 +84,8 @@ namespace llvm {
       LC_REQ_DYLD    = 0x80000000u
     };
 
-#define HANDLE_LOAD_COMMAND(LoadCommandName, LoadCommandValue) \
-    LoadCommandName = LoadCommandValue,
+#define HANDLE_LOAD_COMMAND(LCName, LCValue, LCStruct) \
+    LCName = LCValue,
 
     enum LoadCommandType : uint32_t {
       #include "llvm/Support/MachO.def"
@@ -1235,6 +1235,58 @@ namespace llvm {
       sys::swapByteOrder(C);
     }
 
+    inline void swapStruct(prebind_cksum_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.cksum);
+    }
+
+    inline void swapStruct(twolevel_hints_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.offset);
+      sys::swapByteOrder(C.nhints);
+    }
+
+    inline void swapStruct(prebound_dylib_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.name);
+      sys::swapByteOrder(C.nmodules);
+      sys::swapByteOrder(C.linked_modules);
+    }
+
+    inline void swapStruct(fvmfile_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.name);
+      sys::swapByteOrder(C.header_addr);
+    }
+
+    inline void swapStruct(symseg_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.offset);
+      sys::swapByteOrder(C.size);
+    }
+
+    inline void swapStruct(ident_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+    }
+
+    inline void swapStruct(fvmlib &C) {
+      sys::swapByteOrder(C.name);
+      sys::swapByteOrder(C.minor_version);
+      sys::swapByteOrder(C.header_addr);
+    }
+
+    inline void swapStruct(fvmlib_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      swapStruct(C.fvmlib);
+    }
+
     // Get/Set functions from <mach-o/nlist.h>
 
     static inline uint16_t GET_LIBRARY_ORDINAL(uint16_t n_desc) {
@@ -1624,6 +1676,13 @@ namespace llvm {
       sizeof(x86_float_state_t) / sizeof(uint32_t);
     const uint32_t x86_EXCEPTION_STATE_COUNT =
       sizeof(x86_exception_state_t) / sizeof(uint32_t);
+
+    // Define a union of all load command structs
+    #define LOAD_COMMAND_STRUCT(LCStruct) LCStruct LCStruct##_data;
+
+    union macho_load_command {
+      #include "llvm/Support/MachO.def"
+    };
 
   } // end namespace MachO
 } // end namespace llvm

@@ -182,6 +182,10 @@ a:
         dinsu $4, $2, 32, 5      # CHECK: dinsu $4, $2, 32, 5     # encoding: [0x58,0x82,0x20,0x34]
         dinsm $4, $2, 3, 5       # CHECK: dinsm $4, $2, 3, 5      # encoding: [0x58,0x82,0x38,0xc4]
         dins $4, $2, 3, 5        # CHECK: dins $4, $2, 3, 5       # encoding: [0x58,0x82,0x38,0xcc]
+        lh $2, 8($4)             # CHECK: lh $2, 8($4)            # encoding: [0x3c,0x44,0x00,0x08]
+        lhe $4, 8($2)            # CHECK: lhe $4, 8($2)           # encoding: [0x60,0x82,0x6a,0x08]
+        lhu $4, 8($2)            # CHECK: lhu $4, 8($2)           # encoding: [0x34,0x82,0x00,0x08]
+        lhue $4, 8($2)           # CHECK: lhue $4, 8($2)          # encoding: [0x60,0x82,0x62,0x08]
         mtc0 $5, $9              # CHECK: mtc0 $5, $9, 0          # encoding: [0x00,0xa9,0x02,0xfc]
         mtc0 $1, $2, 7           # CHECK: mtc0 $1, $2, 7          # encoding: [0x00,0x22,0x3a,0xfc]
         mtc1 $3, $f4             # CHECK: mtc1 $3, $f4            # encoding: [0x54,0x64,0x28,0x3b]
@@ -269,5 +273,9 @@ a:
         dsra $4, $5, 5           # CHECK: dsra $4, $5, 5          # encoding: [0x58,0x85,0x28,0x80]
         dsra32 $4, $5, 5         # CHECK: dsra32 $4, $5, 5        # encoding: [0x58,0x85,0x28,0x84]
         dsrav $4, $5, $6         # CHECK: dsrav $4, $5, $6        # encoding: [0x58,0xa6,0x20,0x90]
+        bc1eqzc $f31, 4          # CHECK: bc1eqzc $f31, 4         # encoding: [0x41,0x1f,0x00,0x02]
+        bc1nezc $f31, 4          # CHECK: bc1nezc $f31, 4         # encoding: [0x41,0x3f,0x00,0x02]
+        bc2eqzc $31, 8           # CHECK: bc2eqzc $31, 8          # encoding: [0x41,0x5f,0x00,0x04]
+        bc2nezc $31, 8           # CHECK: bc2nezc $31, 8          # encoding: [0x41,0x7f,0x00,0x04]
 
 1:

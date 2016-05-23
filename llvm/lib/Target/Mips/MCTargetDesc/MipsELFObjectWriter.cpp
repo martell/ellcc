@@ -247,6 +247,8 @@ unsigned MipsELFObjectWriter::getRelocType(MCContext &Ctx,
       return ELF::R_MICROMIPS_PC19_S2;
     case Mips::fixup_MICROMIPS_PC18_S3:
       return ELF::R_MICROMIPS_PC18_S3;
+    case Mips::fixup_MICROMIPS_PC21_S1:
+      return ELF::R_MICROMIPS_PC21_S1;
     case Mips::fixup_MIPS_PC19_S2:
       return ELF::R_MIPS_PC19_S2;
     case Mips::fixup_MIPS_PC18_S3:
@@ -502,23 +504,19 @@ bool MipsELFObjectWriter::needsRelocateWithSymbol(const MCSymbol &Sym,
   // are not supported yet but can be added as required.
   case ELF::R_MIPS_GOT16:
   case ELF::R_MIPS16_GOT16:
+  case ELF::R_MICROMIPS_GOT16:
   case ELF::R_MIPS_HI16:
   case ELF::R_MIPS16_HI16:
+  case ELF::R_MICROMIPS_HI16:
   case ELF::R_MIPS_LO16:
   case ELF::R_MIPS16_LO16:
+  case ELF::R_MICROMIPS_LO16:
     // FIXME: It should be safe to return false for the STO_MIPS_MICROMIPS but
     //        we neglect to handle the adjustment to the LSB of the addend that
     //        it causes in applyFixup() and similar.
     if (cast<MCSymbolELF>(Sym).getOther() & ELF::STO_MIPS_MICROMIPS)
       return true;
     return false;
-
-  // FIXME: These three belong in the previous group but applyFixup() and
-  //        similar do not get the addend correct at the moment.
-  case ELF::R_MICROMIPS_GOT16:
-  case ELF::R_MICROMIPS_HI16:
-  case ELF::R_MICROMIPS_LO16:
-    return true;
 
   case ELF::R_MIPS_16:
   case ELF::R_MIPS_32:
@@ -612,7 +610,7 @@ bool MipsELFObjectWriter::needsRelocateWithSymbol(const MCSymbol &Sym,
   case ELF::R_MICROMIPS_TLS_TPREL_LO16:
   case ELF::R_MICROMIPS_GPREL7_S2:
   case ELF::R_MICROMIPS_PC23_S2:
-  case ELF::R_MICROMIPS_PC21_S2:
+  case ELF::R_MICROMIPS_PC21_S1:
   case ELF::R_MICROMIPS_PC26_S1:
   case ELF::R_MICROMIPS_PC18_S3:
   case ELF::R_MICROMIPS_PC19_S2:

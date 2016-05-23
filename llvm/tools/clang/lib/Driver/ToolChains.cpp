@@ -1751,6 +1751,10 @@ void Generic_GCC::CudaInstallationDetector::init(
       } else if (GpuArch == "compute_35") {
         CudaLibDeviceMap["sm_35"] = FilePath;
         CudaLibDeviceMap["sm_37"] = FilePath;
+      } else if (GpuArch == "compute_50") {
+        CudaLibDeviceMap["sm_50"] = FilePath;
+        CudaLibDeviceMap["sm_52"] = FilePath;
+        CudaLibDeviceMap["sm_53"] = FilePath;
       }
     }
 
@@ -1924,16 +1928,12 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
             .Maybe(Nan2008)
             .FilterOut(".*sof/nan2008")
             .FilterOut(NonExistent)
-            .setIncludeDirsCallback([](StringRef InstallDir,
-                                       StringRef TripleStr, const Multilib &M) {
-              std::vector<std::string> Dirs;
-              Dirs.push_back((InstallDir + "/include").str());
-              std::string SysRootInc =
-                  InstallDir.str() + "/../../../../sysroot";
+            .setIncludeDirsCallback([](const Multilib &M) {
+              std::vector<std::string> Dirs({"/include"});
               if (StringRef(M.includeSuffix()).startswith("/uclibc"))
-                Dirs.push_back(SysRootInc + "/uclibc/usr/include");
+                Dirs.push_back("/../../../../sysroot/uclibc/usr/include");
               else
-                Dirs.push_back(SysRootInc + "/usr/include");
+                Dirs.push_back("/../../../../sysroot/usr/include");
               return Dirs;
             });
   }
@@ -1955,12 +1955,9 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
     MuslMipsMultilibs = MultilibSet().Either(MArchMipsR2, MArchMipselR2);
 
     // Specify the callback that computes the include directories.
-    MuslMipsMultilibs.setIncludeDirsCallback([](
-        StringRef InstallDir, StringRef TripleStr, const Multilib &M) {
-      std::vector<std::string> Dirs;
-      Dirs.push_back(
-          (InstallDir + "/../sysroot" + M.osSuffix() + "/usr/include").str());
-      return Dirs;
+    MuslMipsMultilibs.setIncludeDirsCallback([](const Multilib &M) {
+      return std::vector<std::string>(
+          {"/../sysroot" + M.osSuffix() + "/usr/include"});
     });
   }
 
@@ -2007,16 +2004,13 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
             .FilterOut("/mips16.*/64")
             .FilterOut("/micromips.*/64")
             .FilterOut(NonExistent)
-            .setIncludeDirsCallback([](StringRef InstallDir,
-                                       StringRef TripleStr, const Multilib &M) {
-              std::vector<std::string> Dirs;
-              Dirs.push_back((InstallDir + "/include").str());
-              std::string SysRootInc =
-                  InstallDir.str() + "/../../../../" + TripleStr.str();
+            .setIncludeDirsCallback([](const Multilib &M) {
+              std::vector<std::string> Dirs({"/include"});
               if (StringRef(M.includeSuffix()).startswith("/uclibc"))
-                Dirs.push_back(SysRootInc + "/libc/uclibc/usr/include");
+                Dirs.push_back(
+                    "/../../../../mips-linux-gnu/libc/uclibc/usr/include");
               else
-                Dirs.push_back(SysRootInc + "/libc/usr/include");
+                Dirs.push_back("/../../../../mips-linux-gnu/libc/usr/include");
               return Dirs;
             });
   }
@@ -2060,13 +2054,9 @@ static bool findMIPSMultilibs(const Driver &D, const llvm::Triple &TargetTriple,
             .Maybe(MAbi64)
             .Maybe(LittleEndian)
             .FilterOut(NonExistent)
-            .setIncludeDirsCallback([](StringRef InstallDir,
-                                       StringRef TripleStr, const Multilib &M) {
-              std::vector<std::string> Dirs;
-              Dirs.push_back((InstallDir + "/include").str());
-              Dirs.push_back(
-                  (InstallDir + "/../../../../sysroot/usr/include").str());
-              return Dirs;
+            .setIncludeDirsCallback([](const Multilib &M) {
+              return std::vector<std::string>(
+                  {"/include", "/../../../../sysroot/usr/include"});
             });
   }
 
@@ -2445,6 +2435,8 @@ bool Generic_GCC::IsIntegratedAssemblerDefault() const {
   case llvm::Triple::ppc64:
   case llvm::Triple::ppc64le:
   case llvm::Triple::systemz:
+  case llvm::Triple::mips:
+  case llvm::Triple::mipsel:
     return true;
   default:
     return false;
@@ -2539,10 +2531,9 @@ void MipsLLVMToolChain::AddClangSystemIncludeArgs(
 
   const auto &Callback = Multilibs.includeDirsCallback();
   if (Callback) {
-    const auto IncludePaths =
-        Callback(D.getInstalledDir(), getTripleString(), SelectedMultilib);
-    for (const auto &Path : IncludePaths)
-      addExternCSystemIncludeIfExists(DriverArgs, CC1Args, Path);
+    for (const auto &Path : Callback(SelectedMultilib))
+      addExternCSystemIncludeIfExists(DriverArgs, CC1Args,
+                                      D.getInstalledDir() + Path);
   }
 }
 
@@ -2587,11 +2578,10 @@ void MipsLLVMToolChain::AddClangCXXStdlibIncludeArgs(
 
   const auto &Callback = Multilibs.includeDirsCallback();
   if (Callback) {
-    const auto IncludePaths = Callback(getDriver().getInstalledDir(),
-                                       getTripleString(), SelectedMultilib);
-    for (const auto &Path : IncludePaths) {
-      if (llvm::sys::fs::exists(Path + "/c++/v1")) {
-        addSystemInclude(DriverArgs, CC1Args, Path + "/c++/v1");
+    for (std::string Path : Callback(SelectedMultilib)) {
+      Path = getDriver().getInstalledDir() + Path + "/c++/v1";
+      if (llvm::sys::fs::exists(Path)) {
+        addSystemInclude(DriverArgs, CC1Args, Path);
         break;
       }
     }
@@ -3977,11 +3967,9 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   if (GCCInstallation.isValid()) {
     const auto &Callback = Multilibs.includeDirsCallback();
     if (Callback) {
-      const auto IncludePaths = Callback(GCCInstallation.getInstallPath(),
-                                         GCCInstallation.getTriple().str(),
-                                         GCCInstallation.getMultilib());
-      for (const auto &Path : IncludePaths)
-        addExternCSystemIncludeIfExists(DriverArgs, CC1Args, Path);
+      for (const auto &Path : Callback(GCCInstallation.getMultilib()))
+        addExternCSystemIncludeIfExists(
+            DriverArgs, CC1Args, GCCInstallation.getInstallPath() + Path);
     }
   }
 
@@ -4137,11 +4125,11 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
   if (GetCXXStdlibType(DriverArgs) == ToolChain::CST_Libcxx) {
     const std::string LibCXXIncludePathCandidates[] = {
         DetectLibcxxIncludePath(getDriver().Dir + "/../include/c++"),
-
-        // We also check the system as for a long time this is the only place
-        // Clang looked.
-        // FIXME: We should really remove this. It doesn't make any sense.
-        DetectLibcxxIncludePath(getDriver().SysRoot + "/usr/include/c++")};
+        // If this is a development, non-installed, clang, libcxx will
+        // not be found at ../include/c++ but it likely to be found at
+        // one of the following two locations:
+        DetectLibcxxIncludePath(getDriver().SysRoot + "/usr/local/include/c++"),
+        DetectLibcxxIncludePath(getDriver().SysRoot + "/usr/include/c++") };
     for (const auto &IncludePath : LibCXXIncludePathCandidates) {
       if (IncludePath.empty() || !getVFS().exists(IncludePath))
         continue;
@@ -4672,12 +4660,12 @@ PS4CPU::PS4CPU(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   if (Args.hasArg(options::OPT_static))
     D.Diag(diag::err_drv_unsupported_opt_for_target) << "-static" << "PS4";
 
-  // Determine where to find the PS4 libraries. We use SCE_PS4_SDK_DIR
+  // Determine where to find the PS4 libraries. We use SCE_ORBIS_SDK_DIR
   // if it exists; otherwise use the driver's installation path, which
   // should be <SDK_DIR>/host_tools/bin.
 
   SmallString<512> PS4SDKDir;
-  if (const char *EnvValue = getenv("SCE_PS4_SDK_DIR")) {
+  if (const char *EnvValue = getenv("SCE_ORBIS_SDK_DIR")) {
     if (!llvm::sys::fs::exists(EnvValue))
       getDriver().Diag(clang::diag::warn_drv_ps4_sdk_dir) << EnvValue;
     PS4SDKDir = EnvValue;

@@ -88,6 +88,33 @@ INSTR_PROF_DATA(const uint16_t, Int16ArrayTy, NumValueSites[IPVK_Last+1], \
 #undef INSTR_PROF_DATA
 /* INSTR_PROF_DATA end. */
 
+
+/* This is an internal data structure used by value profiler. It
+ * is defined here to allow serialization code sharing by LLVM
+ * to be used in unit test.
+ *
+ * typedef struct ValueProfNode {
+ *   // InstrProfValueData VData;
+ *   uint64_t Value;
+ *   uint64_t Count;
+ *   struct ValueProfNode *Next;
+ * } ValueProfNode;
+ */
+/* INSTR_PROF_VALUE_NODE start. */
+#ifndef INSTR_PROF_VALUE_NODE
+#define INSTR_PROF_VALUE_NODE(Type, LLVMType, Name, Initializer)
+#else
+#define INSTR_PROF_DATA_DEFINED
+#endif
+INSTR_PROF_VALUE_NODE(uint64_t, llvm::Type::getInt64Ty(Ctx), Value, \
+                      ConstantInt::get(llvm::Type::GetInt64Ty(Ctx), 0))
+INSTR_PROF_VALUE_NODE(uint64_t, llvm::Type::getInt64Ty(Ctx), Count, \
+                      ConstantInt::get(llvm::Type::GetInt64Ty(Ctx), 0))
+INSTR_PROF_VALUE_NODE(PtrToNodeT, llvm::Type::getInt8PtrTy(Ctx), Next, \
+                      ConstantInt::get(llvm::Type::GetInt8PtrTy(Ctx), 0))
+#undef INSTR_PROF_VALUE_NODE
+/* INSTR_PROF_VALUE_NODE end. */
+
 /* INSTR_PROF_RAW_HEADER  start */
 /* Definition of member fields of the raw profile header data structure. */
 #ifndef INSTR_PROF_RAW_HEADER
@@ -295,16 +322,15 @@ typedef struct ValueProfData {
   static std::unique_ptr<ValueProfData>
   serializeFrom(const InstrProfRecord &Record);
   /*!
-   * Check the integrity of the record. Return the error code when
-   * an error is detected, otherwise return instrprof_error::success.
+   * Check the integrity of the record.
    */
-  instrprof_error checkIntegrity();
+  Error checkIntegrity();
   /*!
    * Return a pointer to \c ValueProfileData instance ready to be read.
    * All data in the instance are properly byte swapped. The input
    * data is assumed to be in little endian order.
    */
-  static ErrorOr<std::unique_ptr<ValueProfData>>
+  static Expected<std::unique_ptr<ValueProfData>>
   getValueProfData(const unsigned char *SrcBuffer,
                    const unsigned char *const SrcBufferEnd,
                    support::endianness SrcDataEndianness);
@@ -361,32 +387,11 @@ typedef struct ValueProfRecordClosure {
   ValueProfData *(*AllocValueProfData)(size_t TotalSizeInBytes);
 } ValueProfRecordClosure;
 
-/*
- * A wrapper struct that represents value profile runtime data.
- * Like InstrProfRecord class which is used by profiling host tools,
- * ValueProfRuntimeRecord also implements the abstract intefaces defined in
- * ValueProfRecordClosure so that the runtime data can be serialized using
- * shared C implementation. In this structure, NumValueSites and Nodes
- * members are the primary fields while other fields hold the derived
- * information for fast implementation of closure interfaces.
- */
-typedef struct ValueProfRuntimeRecord {
-  /* Number of sites for each value profile kind.  */
-  const uint16_t *NumValueSites;
-  /* An array of linked-list headers. The size of of the array is the
-   * total number of value profile sites : sum(NumValueSites[*])). Each
-   * linked-list stores the values profiled for a value profile site. */
-  ValueProfNode **Nodes;
-
-  /* Total number of value profile kinds which have at least one
-   *  value profile sites. */
-  uint32_t NumValueKinds;
-  ValueProfNode **NodesKind[IPVK_Last + 1];
-} ValueProfRuntimeRecord;
 
 ValueProfRecord *getFirstValueProfRecord(ValueProfData *VPD);
 ValueProfRecord *getValueProfRecordNext(ValueProfRecord *VPR);
 InstrProfValueData *getValueProfRecordValueData(ValueProfRecord *VPR);
+uint32_t getValueProfRecordHeaderSize(uint32_t NumValueSites);
 
 #undef INSTR_PROF_VALUE_PROF_DATA
 #endif  /* INSTR_PROF_VALUE_PROF_DATA */
@@ -480,9 +485,6 @@ uint32_t getValueProfDataSize(ValueProfRecordClosure *Closure) {
   uint32_t Kind;
   uint32_t TotalSize = sizeof(ValueProfData);
   const void *Record = Closure->Record;
-  uint32_t NumValueKinds = Closure->GetNumValueKinds(Record);
-  if (NumValueKinds == 0)
-    return TotalSize;
 
   for (Kind = IPVK_First; Kind <= IPVK_Last; Kind++) {
     uint32_t NumValueSites = Closure->GetNumValueSites(Record, Kind);
@@ -525,7 +527,7 @@ void serializeValueProfRecordFrom(ValueProfRecord *This,
 ValueProfData *serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
                                           ValueProfData *DstData) {
   uint32_t Kind;
-  uint32_t TotalSize = 
+  uint32_t TotalSize =
       DstData ? DstData->TotalSize : getValueProfDataSize(Closure);
 
   ValueProfData *VPD =
@@ -633,15 +635,6 @@ typedef struct InstrProfValueData {
   /* Number of times the value appears in the training run. */
   uint64_t Count;
 } InstrProfValueData;
-
-/* This is an internal data structure used by value profiler. It
- * is defined here to allow serialization code sharing by LLVM
- * to be used in unit test.
- */
-typedef struct ValueProfNode {
-  InstrProfValueData VData;
-  struct ValueProfNode *Next;
-} ValueProfNode;
 
 #endif /* INSTR_PROF_DATA_INC */
 

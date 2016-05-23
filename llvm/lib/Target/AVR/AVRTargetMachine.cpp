@@ -26,7 +26,7 @@
 namespace llvm {
 
 /// Processes a CPU name.
-static StringRef getTargetCPU(StringRef CPU) {
+static StringRef getCPU(StringRef CPU) {
   if (CPU.empty() || CPU == "generic") {
     return "avr2";
   }
@@ -34,15 +34,19 @@ static StringRef getTargetCPU(StringRef CPU) {
   return CPU;
 }
 
+static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {
+  return RM.hasValue() ? *RM : Reloc::Static;
+}
+
 AVRTargetMachine::AVRTargetMachine(const Target &T, const Triple &TT,
                                    StringRef CPU, StringRef FS,
                                    const TargetOptions &Options,
-                                   Reloc::Model RM, CodeModel::Model CM,
+                                   Optional<Reloc::Model> RM, CodeModel::Model CM,
                                    CodeGenOpt::Level OL)
     : LLVMTargetMachine(
           T, "e-p:16:8:8-i8:8:8-i16:8:8-i32:8:8-i64:8:8-f32:8:8-f64:8:8-n8", TT,
-          getTargetCPU(CPU), FS, Options, RM, CM, OL),
-      SubTarget(TT, GetTargetCPU(CPU), FS, *this) {
+          getCPU(CPU), FS, Options, getEffectiveRelocModel(RM), CM, OL),
+      SubTarget(TT, getCPU(CPU), FS, *this) {
   this->TLOF = make_unique<AVRTargetObjectFile>();
   initAsmInfo();
 }

@@ -1086,6 +1086,24 @@ const internal::VariadicDynCastAllOfMatcher<
   Decl,
   UsingDirectiveDecl> usingDirectiveDecl;
 
+/// \brief Matches reference to a name that can be looked up during parsing
+/// but could not be resolved to a specific declaration.
+///
+/// Given
+/// \code
+///   template<typename T>
+///   T foo() { T a; return a; }
+///   template<typename T>
+///   void bar() {
+///     foo<T>();
+///   }
+/// \endcode
+/// unresolvedLookupExpr()
+///   matches \code foo<T>() \endcode
+const internal::VariadicDynCastAllOfMatcher<
+   Stmt,
+   UnresolvedLookupExpr> unresolvedLookupExpr;
+
 /// \brief Matches unresolved using value declarations.
 ///
 /// Given
@@ -3213,6 +3231,26 @@ AST_MATCHER(FunctionDecl, isDeleted) {
 ///   matches the declaration of ~B, but not ~A.
 AST_MATCHER(FunctionDecl, isDefaulted) {
   return Node.isDefaulted();
+}
+
+/// \brief Matches functions that have a dynamic exception specification.
+///
+/// Given:
+/// \code
+///   void f();
+///   void g() noexcept;
+///   void h() noexcept(true);
+///   void i() noexcept(false);
+///   void j() throw();
+///   void k() throw(int);
+///   void l() throw(...);
+/// \endcode
+/// functionDecl(hasDynamicExceptionSpec())
+///   matches the declarations of j, k, and l, but not f, g, h, or i.
+AST_MATCHER(FunctionDecl, hasDynamicExceptionSpec) {
+  if (const auto *FnTy = Node.getType()->getAs<FunctionProtoType>())
+    return FnTy->hasDynamicExceptionSpec();
+  return false;
 }
 
 /// \brief Matches functions that have a non-throwing exception specification.

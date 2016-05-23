@@ -83,8 +83,10 @@ public:
   // to support lazy loading.
   unsigned GotPltHeaderEntriesNum = 3;
 
+  // Set to 0 for variant 2
+  unsigned TcbSize = 0;
+
   uint32_t ThunkSize = 0;
-  bool UseLazyBinding = false;
 
   virtual void relaxTlsGdToIe(uint8_t *Loc, uint32_t Type, uint64_t Val) const;
   virtual void relaxTlsGdToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const;
