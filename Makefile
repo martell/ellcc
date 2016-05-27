@@ -1,5 +1,7 @@
 # Build ELLCC.
 VERSION=0.1.30
+# Debug Release RelWithDebInfo
+BUILD_TYPE=Debug
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -117,6 +119,6 @@ llvm.configure:
 	      -DCMAKE_C_FLAGS="$(CFLAGS)" \
 	      -DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
 	      -DLLVM_ENABLE_PIC=False \
-	      -DCMAKE_BUILD_TYPE:STRING=Release \
+	      -DCMAKE_BUILD_TYPE:STRING=$(BUILD_TYPE) \
 	      -DCMAKE_INSTALL_PREFIX=$(install) ; \
 	fi

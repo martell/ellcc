@@ -664,6 +664,7 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
       DEBUG(dbgs() << "alloc FI(" << i << ") at SP[" << Offset << "]\n");
       MFI->setObjectOffset(i, Offset);
       Offset += MFI->getObjectSize(i);
+      if (i == 0) break;
     }
   }
 
