@@ -3475,8 +3475,8 @@ static int inflate_header_block(nghttp2_session *session, nghttp2_frame *frame,
   DEBUGF(fprintf(stderr, "recv: decoding header block %zu bytes\n", inlen));
   for (;;) {
     inflate_flags = 0;
-    proclen = nghttp2_hd_inflate_hd2(&session->hd_inflater, &nv, &inflate_flags,
-                                     in, inlen, final);
+    proclen = nghttp2_hd_inflate_hd_nv(&session->hd_inflater, &nv,
+                                       &inflate_flags, in, inlen, final);
     if (nghttp2_is_fatal((int)proclen)) {
       return (int)proclen;
     }
@@ -6905,6 +6905,14 @@ int nghttp2_session_pack_data(nghttp2_session *session, nghttp2_bufs *bufs,
   }
 
   reschedule_stream(stream);
+
+  if (frame->hd.length == 0 && (data_flags & NGHTTP2_DATA_FLAG_EOF) &&
+      (data_flags & NGHTTP2_DATA_FLAG_NO_END_STREAM)) {
+    /* DATA payload length is 0, and DATA frame does not bear
+       END_STREAM.  In this case, there is no point to send 0 length
+       DATA frame. */
+    return NGHTTP2_ERR_CANCEL;
+  }
 
   return 0;
 }

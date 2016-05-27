@@ -28,15 +28,26 @@ namespace shrpx {
 
 namespace {
 void connect_blocker_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto connect_blocker = static_cast<ConnectBlocker *>(w->data);
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Unblock";
   }
+
+  connect_blocker->call_unblock_func();
 }
 } // namespace
 
-ConnectBlocker::ConnectBlocker(std::mt19937 &gen, struct ev_loop *loop)
-    : gen_(gen), loop_(loop), fail_count_(0) {
+ConnectBlocker::ConnectBlocker(std::mt19937 &gen, struct ev_loop *loop,
+                               std::function<void()> block_func,
+                               std::function<void()> unblock_func)
+    : gen_(gen),
+      block_func_(block_func),
+      unblock_func_(unblock_func),
+      loop_(loop),
+      fail_count_(0),
+      offline_(false) {
   ev_timer_init(&timer_, connect_blocker_cb, 0., 0.);
+  timer_.data = this;
 }
 
 ConnectBlocker::~ConnectBlocker() { ev_timer_stop(loop_, &timer_); }
@@ -64,6 +75,8 @@ void ConnectBlocker::on_failure() {
     return;
   }
 
+  call_block_func();
+
   ++fail_count_;
 
   auto base_backoff = pow(MULTIPLIER, std::min(MAX_BACKOFF_EXP, fail_count_));
@@ -81,6 +94,16 @@ void ConnectBlocker::on_failure() {
 size_t ConnectBlocker::get_fail_count() const { return fail_count_; }
 
 void ConnectBlocker::offline() {
+  if (offline_) {
+    return;
+  }
+
+  if (!ev_is_active(&timer_)) {
+    call_block_func();
+  }
+
+  offline_ = true;
+
   ev_timer_stop(loop_, &timer_);
   ev_timer_set(&timer_, std::numeric_limits<double>::max(), 0.);
   ev_timer_start(loop_, &timer_);
@@ -90,6 +113,14 @@ void ConnectBlocker::online() {
   ev_timer_stop(loop_, &timer_);
 
   fail_count_ = 0;
+
+  offline_ = false;
 }
+
+bool ConnectBlocker::in_offline() const { return offline_; }
+
+void ConnectBlocker::call_block_func() { block_func_(); }
+
+void ConnectBlocker::call_unblock_func() { unblock_func_(); }
 
 } // namespace shrpx

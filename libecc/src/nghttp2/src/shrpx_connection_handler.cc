@@ -244,7 +244,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
   auto &memcachedconf = get_config()->tls.session_cache.memcached;
 
   for (size_t i = 0; i < num; ++i) {
-    auto loop = ev_loop_new(0);
+    auto loop = ev_loop_new(get_config()->ev_loop_flags);
 
     SSL_CTX *session_cache_ssl_ctx = nullptr;
     if (memcachedconf.tls) {
@@ -464,7 +464,6 @@ int ConnectionHandler::start_ocsp_update(const char *cert_file) {
       const_cast<char *>(
           get_config()->tls.ocsp.fetch_ocsp_response_file.c_str()),
       const_cast<char *>(cert_file), nullptr};
-  char *const envp[] = {nullptr};
 
 #ifdef O_CLOEXEC
   if (pipe2(pfd, O_CLOEXEC) == -1) {
@@ -515,7 +514,7 @@ int ConnectionHandler::start_ocsp_update(const char *cert_file) {
     dup2(pfd[1], 1);
     close(pfd[0]);
 
-    rv = execve(argv[0], argv, envp);
+    rv = execv(argv[0], argv);
     if (rv == -1) {
       auto error = errno;
       LOG(ERROR) << "Could not execute ocsp query command: " << argv[0]

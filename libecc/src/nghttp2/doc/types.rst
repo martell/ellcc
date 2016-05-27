@@ -34,7 +34,7 @@ Types (structs, unions and typedefs)
 .. type:: nghttp2_vec
 
     
-    The object representing single contagious buffer.
+    The object representing single contiguous buffer.
 
     .. member::   uint8_t *base
 

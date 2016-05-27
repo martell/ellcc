@@ -895,7 +895,8 @@ Http2Upstream::Http2Upstream(ClientHandler *handler)
   }
 
   // We wait for SETTINGS ACK at least 10 seconds.
-  ev_timer_init(&settings_timer_, settings_timeout_cb, 10., 0.);
+  ev_timer_init(&settings_timer_, settings_timeout_cb,
+                http2conf.upstream.timeout.settings, 0.);
 
   settings_timer_.data = this;
 
@@ -930,7 +931,7 @@ int Http2Upstream::on_read() {
     rv = nghttp2_session_mem_recv(session_, rb->pos, rb->rleft());
     if (rv < 0) {
       if (rv != NGHTTP2_ERR_BAD_CLIENT_MAGIC) {
-        ULOG(ERROR, this) << "nghttp2_session_recv() returned error: "
+        ULOG(ERROR, this) << "nghttp2_session_mem_recv() returned error: "
                           << nghttp2_strerror(rv);
       }
       return -1;
@@ -1520,7 +1521,8 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
   nghttp2_data_provider *data_prdptr;
 
-  if (downstream->expect_response_body()) {
+  if (downstream->expect_response_body() ||
+      downstream->expect_response_trailer()) {
     data_prdptr = &data_prd;
   } else {
     data_prdptr = nullptr;

@@ -644,6 +644,7 @@ int parse_upstream_params(UpstreamParams &out, const StringRef &src_params) {
 } // namespace
 
 struct DownstreamParams {
+  StringRef sni;
   size_t fall;
   size_t rise;
   shrpx_proto proto;
@@ -709,6 +710,8 @@ int parse_downstream_params(DownstreamParams &out,
       out.tls = true;
     } else if (util::strieq_l("no-tls", param)) {
       out.tls = false;
+    } else if (util::istarts_with_l(param, "sni=")) {
+      out.sni = StringRef{first + str_size("sni="), end};
     } else if (!param.empty()) {
       LOG(ERROR) << "backend: " << param << ": unknown keyword";
       return -1;
@@ -750,6 +753,9 @@ int parse_mapping(DownstreamAddrConfig addr, const StringRef &src_pattern,
 
   addr.fall = params.fall;
   addr.rise = params.rise;
+  addr.proto = params.proto;
+  addr.tls = params.tls;
+  addr.sni = ImmutableString{std::begin(params.sni), std::end(params.sni)};
 
   for (const auto &raw_pattern : mapping) {
     auto done = false;
@@ -768,21 +774,6 @@ int parse_mapping(DownstreamAddrConfig addr, const StringRef &src_pattern,
     }
     for (auto &g : addr_groups) {
       if (g.pattern == pattern) {
-        if (g.proto != params.proto) {
-          LOG(ERROR) << "backend: protocol mismatch.  We saw protocol "
-                     << strproto(g.proto) << " for pattern " << g.pattern
-                     << ", but another protocol " << strproto(params.proto);
-          return -1;
-        }
-
-        if (g.tls != params.tls) {
-          LOG(ERROR) << "backend: TLS mismatch.  We saw TLS was "
-                     << (g.tls ? "enabled" : "disabled") << " for pattern "
-                     << g.pattern << ", but we now got TLS was "
-                     << (params.tls ? "enabled" : "disabled");
-          return -1;
-        }
-
         g.addrs.push_back(addr);
         done = true;
         break;
@@ -793,8 +784,6 @@ int parse_mapping(DownstreamAddrConfig addr, const StringRef &src_pattern,
     }
     DownstreamAddrGroupConfig g(StringRef{pattern});
     g.addrs.push_back(addr);
-    g.proto = params.proto;
-    g.tls = params.tls;
 
     if (pattern[0] == '*') {
       // wildcard pattern
@@ -933,6 +922,7 @@ enum {
   SHRPX_OPTID_BACKEND_HTTP2_CONNECTION_WINDOW_BITS,
   SHRPX_OPTID_BACKEND_HTTP2_CONNECTIONS_PER_WORKER,
   SHRPX_OPTID_BACKEND_HTTP2_MAX_CONCURRENT_STREAMS,
+  SHRPX_OPTID_BACKEND_HTTP2_SETTINGS_TIMEOUT,
   SHRPX_OPTID_BACKEND_HTTP2_WINDOW_BITS,
   SHRPX_OPTID_BACKEND_IPV4,
   SHRPX_OPTID_BACKEND_IPV6,
@@ -969,6 +959,7 @@ enum {
   SHRPX_OPTID_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER,
   SHRPX_OPTID_FRONTEND_HTTP2_MAX_CONCURRENT_STREAMS,
   SHRPX_OPTID_FRONTEND_HTTP2_READ_TIMEOUT,
+  SHRPX_OPTID_FRONTEND_HTTP2_SETTINGS_TIMEOUT,
   SHRPX_OPTID_FRONTEND_HTTP2_WINDOW_BITS,
   SHRPX_OPTID_FRONTEND_NO_TLS,
   SHRPX_OPTID_FRONTEND_READ_TIMEOUT,
@@ -989,6 +980,7 @@ enum {
   SHRPX_OPTID_MRUBY_FILE,
   SHRPX_OPTID_NO_HOST_REWRITE,
   SHRPX_OPTID_NO_HTTP2_CIPHER_BLACK_LIST,
+  SHRPX_OPTID_NO_KQUEUE,
   SHRPX_OPTID_NO_LOCATION_REWRITE,
   SHRPX_OPTID_NO_OCSP,
   SHRPX_OPTID_NO_SERVER_PUSH,
@@ -1157,6 +1149,9 @@ int option_lookup_token(const char *name, size_t namelen) {
   case 9:
     switch (name[8]) {
     case 'e':
+      if (util::strieq_l("no-kqueu", name, 8)) {
+        return SHRPX_OPTID_NO_KQUEUE;
+      }
       if (util::strieq_l("read-rat", name, 8)) {
         return SHRPX_OPTID_READ_RATE;
       }
@@ -1620,6 +1615,11 @@ int option_lookup_token(const char *name, size_t namelen) {
         return SHRPX_OPTID_STRIP_INCOMING_X_FORWARDED_FOR;
       }
       break;
+    case 't':
+      if (util::strieq_l("backend-http2-settings-timeou", name, 29)) {
+        return SHRPX_OPTID_BACKEND_HTTP2_SETTINGS_TIMEOUT;
+      }
+      break;
     }
     break;
   case 31:
@@ -1627,6 +1627,11 @@ int option_lookup_token(const char *name, size_t namelen) {
     case 's':
       if (util::strieq_l("tls-session-cache-memcached-tl", name, 30)) {
         return SHRPX_OPTID_TLS_SESSION_CACHE_MEMCACHED_TLS;
+      }
+      break;
+    case 't':
+      if (util::strieq_l("frontend-http2-settings-timeou", name, 30)) {
+        return SHRPX_OPTID_FRONTEND_HTTP2_SETTINGS_TIMEOUT;
       }
       break;
     }
@@ -2050,6 +2055,9 @@ int parse_config(const StringRef &opt, const StringRef &optarg,
                         "default.  See also " << SHRPX_OPT_BACKEND_TLS;
     return 0;
   case SHRPX_OPTID_BACKEND_TLS_SNI_FIELD:
+    LOG(WARN) << opt << ": deprecated.  Use sni keyword in --backend option.  "
+                        "For now, all sni values of all backends are "
+                        "overridden by the given value " << optarg;
     mod_config()->tls.backend_sni_name = optarg.str();
 
     return 0;
@@ -2705,6 +2713,21 @@ int parse_config(const StringRef &opt, const StringRef &optarg,
                       opt, optarg);
   case SHRPX_OPTID_ERROR_PAGE:
     return parse_error_page(mod_config()->http.error_pages, opt, optarg);
+  case SHRPX_OPTID_NO_KQUEUE:
+    if ((ev_supported_backends() & EVBACKEND_KQUEUE) == 0) {
+      LOG(WARN) << opt << ": kqueue is not supported on this platform";
+      return 0;
+    }
+
+    mod_config()->ev_loop_flags = ev_recommended_backends() & ~EVBACKEND_KQUEUE;
+
+    return 0;
+  case SHRPX_OPTID_FRONTEND_HTTP2_SETTINGS_TIMEOUT:
+    return parse_duration(&mod_config()->http2.upstream.timeout.settings, opt,
+                          optarg);
+  case SHRPX_OPTID_BACKEND_HTTP2_SETTINGS_TIMEOUT:
+    return parse_duration(&mod_config()->http2.downstream.timeout.settings, opt,
+                          optarg);
   case SHRPX_OPTID_CONF:
     LOG(WARN) << "conf: ignored";
 

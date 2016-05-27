@@ -1,18 +1,14 @@
 
-nghttp2_hd_inflate_hd
-=====================
+nghttp2_hd_inflate_hd2
+======================
 
 Synopsis
 --------
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: ssize_t nghttp2_hd_inflate_hd(nghttp2_hd_inflater *inflater, nghttp2_nv *nv_out, int *inflate_flags, uint8_t *in, size_t inlen, int in_final)
+.. function:: ssize_t nghttp2_hd_inflate_hd2(nghttp2_hd_inflater *inflater, nghttp2_nv *nv_out, int *inflate_flags, const uint8_t *in, size_t inlen, int in_final)
 
-    
-    .. warning::
-    
-      Deprecated.  Use `nghttp2_hd_inflate_hd2()` instead.
     
     Inflates name/value block stored in *in* with length *inlen*.  This
     function performs decompression.  For each successful emission of
@@ -57,8 +53,8 @@ Synopsis
                 nghttp2_nv nv;
                 int inflate_flags = 0;
     
-                rv = nghttp2_hd_inflate_hd(hd_inflater, &nv, &inflate_flags,
-                                           in, inlen, final);
+                rv = nghttp2_hd_inflate_hd2(hd_inflater, &nv, &inflate_flags,
+                                            in, inlen, final);
     
                 if(rv < 0) {
                     fprintf(stderr, "inflate failed with error code %zd", rv);

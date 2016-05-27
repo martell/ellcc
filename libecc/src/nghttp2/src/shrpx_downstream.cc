@@ -740,7 +740,15 @@ bool Downstream::get_expect_final_response() const {
 }
 
 bool Downstream::expect_response_body() const {
-  return http2::expect_response_body(req_.method, resp_.http_status);
+  return !resp_.headers_only &&
+         http2::expect_response_body(req_.method, resp_.http_status);
+}
+
+bool Downstream::expect_response_trailer() const {
+  // In HTTP/2, if final response HEADERS does not bear END_STREAM it
+  // is possible trailer fields might come, regardless of request
+  // method or status code.
+  return !resp_.headers_only && resp_.http_major == 2;
 }
 
 namespace {
@@ -897,9 +905,12 @@ BlockedLink *Downstream::detach_blocked_link() {
 }
 
 bool Downstream::can_detach_downstream_connection() const {
+  // We should check request and response buffer.  If request buffer
+  // is not empty, then we might leave downstream connection in weird
+  // state, especially for HTTP/1.1
   return dconn_ && response_state_ == Downstream::MSG_COMPLETE &&
          request_state_ == Downstream::MSG_COMPLETE && !upgraded_ &&
-         !resp_.connection_close;
+         !resp_.connection_close && request_buf_.rleft() == 0;
 }
 
 DefaultMemchunks Downstream::pop_response_buf() {

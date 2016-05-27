@@ -67,8 +67,7 @@ namespace {
 bool match_shared_downstream_addr(
     const std::shared_ptr<SharedDownstreamAddr> &lhs,
     const std::shared_ptr<SharedDownstreamAddr> &rhs) {
-  if (lhs->addrs.size() != rhs->addrs.size() || lhs->proto != rhs->proto ||
-      lhs->tls != rhs->tls) {
+  if (lhs->addrs.size() != rhs->addrs.size()) {
     return false;
   }
 
@@ -83,6 +82,7 @@ bool match_shared_downstream_addr(
 
       auto &b = rhs->addrs[i];
       if (a.host == b.host && a.port == b.port && a.host_unix == b.host_unix &&
+          a.proto == b.proto && a.tls == b.tls && a.sni == b.sni &&
           a.fall == b.fall && a.rise == b.rise) {
         break;
       }
@@ -115,7 +115,8 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       cert_tree_(cert_tree),
       ticket_keys_(ticket_keys),
       downstream_addr_groups_(get_config()->conn.downstream.addr_groups.size()),
-      connect_blocker_(make_unique<ConnectBlocker>(randgen_, loop_)),
+      connect_blocker_(
+          make_unique<ConnectBlocker>(randgen_, loop_, []() {}, []() {})),
       graceful_shutdown_(false) {
   ev_async_init(&w_, eventcb);
   w_.data = this;
@@ -147,8 +148,11 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
     // does not value initialize SharedDownstreamAddr above.
     shared_addr->next = 0;
     shared_addr->addrs.resize(src.addrs.size());
-    shared_addr->proto = src.proto;
-    shared_addr->tls = src.tls;
+    shared_addr->http1_pri = {};
+    shared_addr->http2_pri = {};
+
+    size_t num_http1 = 0;
+    size_t num_http2 = 0;
 
     for (size_t j = 0; j < src.addrs.size(); ++j) {
       auto &src_addr = src.addrs[j];
@@ -159,13 +163,48 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       dst_addr.hostport = src_addr.hostport;
       dst_addr.port = src_addr.port;
       dst_addr.host_unix = src_addr.host_unix;
+      dst_addr.proto = src_addr.proto;
+      dst_addr.tls = src_addr.tls;
+      dst_addr.sni = src_addr.sni;
       dst_addr.fall = src_addr.fall;
       dst_addr.rise = src_addr.rise;
 
-      dst_addr.connect_blocker = make_unique<ConnectBlocker>(randgen_, loop_);
-      dst_addr.live_check = make_unique<LiveCheck>(
-          loop_, shared_addr->tls ? cl_ssl_ctx_ : nullptr, this, &dst,
-          &dst_addr, randgen_);
+      dst_addr.connect_blocker =
+          make_unique<ConnectBlocker>(randgen_, loop_,
+                                      [shared_addr, &dst_addr]() {
+                                        switch (dst_addr.proto) {
+                                        case PROTO_HTTP1:
+                                          --shared_addr->http1_pri.weight;
+                                          break;
+                                        case PROTO_HTTP2:
+                                          --shared_addr->http2_pri.weight;
+                                          break;
+                                        default:
+                                          assert(0);
+                                        }
+                                      },
+                                      [shared_addr, &dst_addr]() {
+                                        switch (dst_addr.proto) {
+                                        case PROTO_HTTP1:
+                                          ++shared_addr->http1_pri.weight;
+                                          break;
+                                        case PROTO_HTTP2:
+                                          ++shared_addr->http2_pri.weight;
+                                          break;
+                                        default:
+                                          assert(0);
+                                        }
+                                      });
+
+      dst_addr.live_check =
+          make_unique<LiveCheck>(loop_, cl_ssl_ctx_, this, &dst_addr, randgen_);
+
+      if (dst_addr.proto == PROTO_HTTP2) {
+        ++num_http2;
+      } else {
+        assert(dst_addr.proto == PROTO_HTTP1);
+        ++num_http1;
+      }
     }
 
     // share the connection if patterns have the same set of backend
@@ -178,6 +217,14 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
                            });
 
     if (it == end) {
+      if (LOG_ENABLED(INFO)) {
+        LOG(INFO) << "number of http/1.1 backend: " << num_http1
+                  << ", number of h2 backend: " << num_http2;
+      }
+
+      shared_addr->http1_pri.weight = num_http1;
+      shared_addr->http2_pri.weight = num_http2;
+
       dst.shared_addr = shared_addr;
     } else {
       if (LOG_ENABLED(INFO)) {
@@ -476,6 +523,10 @@ size_t match_downstream_addr_group(
 
 void downstream_failure(DownstreamAddr *addr) {
   const auto &connect_blocker = addr->connect_blocker;
+
+  if (connect_blocker->in_offline()) {
+    return;
+  }
 
   connect_blocker->on_failure();
 

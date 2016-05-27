@@ -20,13 +20,13 @@ A reverse proxy for HTTP/2, HTTP/1 and SPDY.
 
     
     Set  path  to  server's private  key.   Required  unless
-    "no-tls" keyword is used in :option:`--frontend` option.
+    "no-tls" parameter is used in :option:`--frontend` option.
 
 .. describe:: <CERT>
 
     Set  path  to  server's  certificate.   Required  unless
-    "no-tls" keyword is used  in :option:`--frontend` option.  To make
-    OCSP stapling work, this must be an absolute path.
+    "no-tls"  parameter is  used in  :option:`--frontend` option.   To
+    make OCSP stapling work, this must be an absolute path.
 
 
 OPTIONS
@@ -103,26 +103,29 @@ Connections
 
     Several parameters <PARAM> are accepted after <PATTERN>.
     The  parameters are  delimited  by  ";".  The  available
-    parameters are: "proto=<PROTO>",  "tls", "fall=<N>", and
-    "rise=<N>".   The  parameter  consists of  keyword,  and
-    optionally followed by "="  and value.  For example, the
-    parameter "proto=h2" consists of the keyword "proto" and
-    value "h2".  The parameter "tls" consists of the keyword
-    "tls"  without value.   Each parameter  is described  as
-    follows.
+    parameters       are:      "proto=<PROTO>",       "tls",
+    "sni=<SNI_HOST>",   "fall=<N>",  and   "rise=<N>".   The
+    parameter consists  of keyword, and  optionally followed
+    by "=" and value.  For example, the parameter "proto=h2"
+    consists  of the  keyword "proto"  and value  "h2".  The
+    parameter "tls"  consists of  the keyword  "tls" without
+    value.  Each parameter is described as follows.
 
     The backend application protocol  can be specified using
-    optional   "proto"  keyword,   and   in   the  form   of
-    "proto=<PROTO>".  All that share the same <PATTERN> must
-    have the  same <PROTO>  value if  it is  given.  <PROTO>
-    should  be one  of  the following  list without  quotes:
-    "h2",  "http/1.1".   The  default value  of  <PROTO>  is
-    "http/1.1".   Note that  usually "h2"  refers to  HTTP/2
-    over TLS.  But  in this option, it may  mean HTTP/2 over
-    cleartext TCP unless "tls" keyword is used (see below).
+    optional  "proto"   parameter,  and   in  the   form  of
+    "proto=<PROTO>".  <PROTO> should be one of the following
+    list  without  quotes:  "h2", "http/1.1".   The  default
+    value of <PROTO> is  "http/1.1".  Note that usually "h2"
+    refers to HTTP/2  over TLS.  But in this  option, it may
+    mean HTTP/2  over cleartext TCP unless  "tls" keyword is
+    used (see below).
 
-    TLS can be enabled by specifying optional "tls" keyword.
-    TLS is not enabled by default.
+    TLS  can   be  enabled  by  specifying   optional  "tls"
+    parameter.  TLS is not enabled by default.
+
+    With "sni=<SNI_HOST>" parameter, it can override the TLS
+    SNI  field  value  with  given  <SNI_HOST>.   This  will
+    default to the backend <HOST> name
 
     The  feature  to detect  whether  backend  is online  or
     offline can be enabled  using optional "fall" and "rise"
@@ -158,7 +161,7 @@ Connections
     multiple addresses.
 
     Optionally, TLS  can be disabled by  specifying "no-tls"
-    keyword.  TLS is enabled by default.
+    parameter.  TLS is enabled by default.
 
 
     Default: ``*,3000``
@@ -328,6 +331,13 @@ Performance
 
     Default: ``0``
 
+.. option:: --no-kqueue
+
+    Don't use  kqueue.  This  option is only  applicable for
+    the platforms  which have kqueue.  For  other platforms,
+    this option will be simply ignored.
+
+
 Timeout
 ~~~~~~~
 
@@ -390,6 +400,20 @@ Timeout
 
     Default: ``30s``
 
+.. option:: --frontend-http2-setting-timeout=<DURATION>
+
+    Specify  timeout before  SETTINGS ACK  is received  from
+    client.
+
+    Default: ``10s``
+
+.. option:: --backend-http2-settings-timeout=<DURATION>
+
+    Specify  timeout before  SETTINGS ACK  is received  from
+    backend server.
+
+    Default: ``10s``
+
 
 SSL/TLS
 ~~~~~~~
@@ -425,11 +449,6 @@ SSL/TLS
     indicated  by  client  using TLS  SNI  extension.   This
     option  can  be  used  multiple  times.   To  make  OCSP
     stapling work, <CERTPATH> must be absolute path.
-
-.. option:: --backend-tls-sni-field=<HOST>
-
-    Explicitly  set the  content of  the TLS  SNI extension.
-    This will default to the backend HOST name.
 
 .. option:: --dh-param-file=<PATH>
 
@@ -519,7 +538,7 @@ SSL/TLS
     "TLS SESSION  TICKET RESUMPTION" section in  manual page
     to know the data format in memcached entry.  Optionally,
     memcached  connection  can  be  encrypted  with  TLS  by
-    specifying "tls" keyword.
+    specifying "tls" parameter.
 
 .. option:: --tls-ticket-key-memcached-address-family=(auto|IPv4|IPv6)
 
@@ -594,7 +613,7 @@ SSL/TLS
     cache.   This  enables   shared  session  cache  between
     multiple   nghttpx  instances.    Optionally,  memcached
     connection can be encrypted with TLS by specifying "tls"
-    keyword.
+    parameter.
 
 .. option:: --tls-session-cache-memcached-address-family=(auto|IPv4|IPv6)
 
@@ -725,8 +744,8 @@ Mode
 
     
     Accept HTTP/2, SPDY and HTTP/1.1 over SSL/TLS.  "no-tls"
-    keyword is used in  :option:`--frontend` option, accept HTTP/2 and
-    HTTP/1.1  over  cleartext  TCP.  The  incoming  HTTP/1.1
+    parameter is  used in  :option:`--frontend` option,  accept HTTP/2
+    and HTTP/1.1 over cleartext  TCP.  The incoming HTTP/1.1
     connection  can  be  upgraded  to  HTTP/2  through  HTTP
     Upgrade.
 
@@ -1306,7 +1325,24 @@ respectively.
 
     .. rb:attr_reader:: remote_addr
 
-        Return IP address of a remote client.
+        Return IP address of a remote client.  If connection is made
+        via UNIX domain socket, this returns the string "localhost".
+
+    .. rb:attr_reader:: server_addr
+
+        Return address of server that accepted the connection.  This
+	is a string which specified in :option:`--frontend` option,
+	excluding port number, and not a resolved IP address.  For
+	UNIX domain socket, this is a path to UNIX domain socket.
+
+    .. rb:attr_reader:: server_port
+
+        Return port number of the server frontend which accepted the
+        connection from client.
+
+    .. rb:attr_reader:: tls_used
+
+        Return true if TLS is used on the connection.
 
 .. rb:class:: Request
 
@@ -1342,7 +1378,13 @@ respectively.
 
         Request path, including query component (i.e., /index.html).
         On assignment, copy of given value is assigned.  The path does
-        not include authority component of URI.
+        not include authority component of URI.  This may include
+        query component.  nghttpx makes certain normalization for
+        path.  It decodes percent-encoding for unreserved characters
+        (see https://tools.ietf.org/html/rfc3986#section-2.3), and
+        resolves ".." and ".".  But it may leave characters which
+        should be percent-encoded as is. So be careful when comparing
+        path against desired string.
 
     .. rb:attr_reader:: headers
 

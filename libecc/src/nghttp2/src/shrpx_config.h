@@ -275,6 +275,11 @@ constexpr auto SHRPX_OPT_BACKEND_TLS = StringRef::from_lit("backend-tls");
 constexpr auto SHRPX_OPT_BACKEND_CONNECTIONS_PER_HOST =
     StringRef::from_lit("backend-connections-per-host");
 constexpr auto SHRPX_OPT_ERROR_PAGE = StringRef::from_lit("error-page");
+constexpr auto SHRPX_OPT_NO_KQUEUE = StringRef::from_lit("no-kqueue");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_SETTINGS_TIMEOUT =
+    StringRef::from_lit("frontend-http2-settings-timeout");
+constexpr auto SHRPX_OPT_BACKEND_HTTP2_SETTINGS_TIMEOUT =
+    StringRef::from_lit("backend-http2-settings-timeout");
 
 constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 
@@ -319,14 +324,6 @@ struct UpstreamAddr {
   int fd;
 };
 
-struct TLSSessionCache {
-  // ASN1 representation of SSL_SESSION object.  See
-  // i2d_SSL_SESSION(3SSL).
-  std::vector<uint8_t> session_data;
-  // The last time stamp when this cache entry is created or updated.
-  ev_tstamp last_updated;
-};
-
 struct DownstreamAddrConfig {
   Address addr;
   // backend address.  If |host_unix| is true, this is UNIX domain
@@ -335,25 +332,25 @@ struct DownstreamAddrConfig {
   // <HOST>:<PORT>.  This does not treat 80 and 443 specially.  If
   // |host_unix| is true, this is "localhost".
   ImmutableString hostport;
+  // hostname sent as SNI field
+  ImmutableString sni;
   size_t fall;
   size_t rise;
+  // Application protocol used in this group
+  shrpx_proto proto;
   // backend port.  0 if |host_unix| is true.
   uint16_t port;
   // true if |host| contains UNIX domain socket path.
   bool host_unix;
+  bool tls;
 };
 
 struct DownstreamAddrGroupConfig {
   DownstreamAddrGroupConfig(const StringRef &pattern)
-      : pattern(pattern.c_str(), pattern.size()),
-        proto(PROTO_HTTP1),
-        tls(false) {}
+      : pattern(pattern.c_str(), pattern.size()) {}
 
   ImmutableString pattern;
   std::vector<DownstreamAddrConfig> addrs;
-  // Application protocol used in this group
-  shrpx_proto proto;
-  bool tls;
 };
 
 struct TicketKey {
@@ -468,6 +465,7 @@ struct TLSConfig {
   std::vector<std::string> npn_list;
   // list of supported SSL/TLS protocol strings.
   std::vector<std::string> tls_proto_list;
+  BIO_METHOD *bio_method;
   // Bit mask to disable SSL/TLS protocol versions.  This will be
   // passed to SSL_CTX_set_options().
   long int tls_proto_mask;
@@ -536,6 +534,9 @@ struct Http2Config {
       } dump;
       bool frame_debug;
     } debug;
+    struct {
+      ev_tstamp settings;
+    } timeout;
     nghttp2_option *option;
     nghttp2_session_callbacks *callbacks;
     size_t window_bits;
@@ -543,6 +544,9 @@ struct Http2Config {
     size_t max_concurrent_streams;
   } upstream;
   struct {
+    struct {
+      ev_tstamp settings;
+    } timeout;
     nghttp2_option *option;
     nghttp2_session_callbacks *callbacks;
     size_t window_bits;
@@ -658,6 +662,8 @@ struct Config {
   bool verbose;
   bool daemon;
   bool http2_proxy;
+  // flags passed to ev_default_loop() and ev_loop_new()
+  int ev_loop_flags;
 };
 
 const Config *get_config();

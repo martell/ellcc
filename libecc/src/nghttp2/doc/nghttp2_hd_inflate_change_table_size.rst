@@ -19,7 +19,7 @@ Synopsis
     This function must not be called while header block is being
     inflated.  In other words, this function must be called after
     initialization of *inflater*, but before calling
-    `nghttp2_hd_inflate_hd()`, or after
+    `nghttp2_hd_inflate_hd2()`, or after
     `nghttp2_hd_inflate_end_headers()`.  Otherwise,
     `NGHTTP2_ERR_INVALID_STATE` was returned.
     

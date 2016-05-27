@@ -628,14 +628,13 @@ int HttpsUpstream::on_write() {
   // We need to postpone detachment until all data are sent so that
   // we can notify nghttp2 library all data consumed.
   if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
-    if (resp.connection_close ||
-        downstream->get_request_state() != Downstream::MSG_COMPLETE) {
+    if (downstream->can_detach_downstream_connection()) {
+      // Keep-alive
+      downstream->detach_downstream_connection();
+    } else {
       // Connection close
       downstream->pop_downstream_connection();
       // dconn was deleted
-    } else {
-      // Keep-alive
-      downstream->detach_downstream_connection();
     }
     // We need this if response ends before request.
     if (downstream->get_request_state() == Downstream::MSG_COMPLETE) {
@@ -807,7 +806,16 @@ int HttpsUpstream::send_reply(Downstream *downstream, const uint8_t *body,
   auto &balloc = downstream->get_block_allocator();
 
   auto connection_close = false;
-  if (req.http_major <= 0 || (req.http_major == 1 && req.http_minor == 0)) {
+
+  auto worker = handler_->get_worker();
+
+  if (worker->get_graceful_shutdown()) {
+    resp.fs.add_header_token(StringRef::from_lit("connection"),
+                             StringRef::from_lit("close"), false,
+                             http2::HD_CONNECTION);
+    connection_close = true;
+  } else if (req.http_major <= 0 ||
+             (req.http_major == 1 && req.http_minor == 0)) {
     connection_close = true;
   } else {
     auto c = resp.fs.header(http2::HD_CONNECTION);

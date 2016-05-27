@@ -195,6 +195,10 @@ public:
   // server initiated concurrency limit.
   bool max_concurrency_reached(size_t extra = 0) const;
 
+  DefaultMemchunks *get_request_buf();
+
+  void on_timeout();
+
   enum {
     // Disconnected
     DISCONNECTED,

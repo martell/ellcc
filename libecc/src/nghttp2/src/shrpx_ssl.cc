@@ -61,6 +61,7 @@
 #include "util.h"
 #include "ssl.h"
 #include "template.h"
+#include "ssl_compat.h"
 
 using namespace nghttp2;
 
@@ -243,8 +244,13 @@ int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
 } // namespace
 
 namespace {
-SSL_SESSION *tls_session_get_cb(SSL *ssl, unsigned char *id, int idlen,
-                                int *copy) {
+SSL_SESSION *tls_session_get_cb(SSL *ssl,
+#if OPENSSL_101_API
+                                const unsigned char *id,
+#else  // !OPENSSL_101_API
+                                unsigned char *id,
+#endif // !OPENSSL_101_API
+                                int idlen, int *copy) {
   auto conn = static_cast<Connection *>(SSL_get_app_data(ssl));
   auto handler = static_cast<ClientHandler *>(conn->data);
   auto worker = handler->get_worker();
@@ -925,6 +931,7 @@ int verify_numeric_hostname(X509 *cert, const StringRef &hostname,
   if (altnames) {
     auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
     size_t n = sk_GENERAL_NAME_num(altnames);
+    auto ip_found = false;
     for (size_t i = 0; i < n; ++i) {
       auto altname = sk_GENERAL_NAME_value(altnames, i);
       if (altname->type != GEN_IPADD) {
@@ -937,9 +944,14 @@ int verify_numeric_hostname(X509 *cert, const StringRef &hostname,
       }
       size_t ip_addrlen = altname->d.iPAddress->length;
 
+      ip_found = true;
       if (addr->len == ip_addrlen && memcmp(saddr, ip_addr, ip_addrlen) == 0) {
         return 0;
       }
+    }
+
+    if (ip_found) {
+      return -1;
     }
   }
 
@@ -970,6 +982,7 @@ int verify_hostname(X509 *cert, const StringRef &hostname,
   auto altnames = static_cast<GENERAL_NAMES *>(
       X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
   if (altnames) {
+    auto dns_found = false;
     auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
     size_t n = sk_GENERAL_NAME_num(altnames);
     for (size_t i = 0; i < n; ++i) {
@@ -999,10 +1012,18 @@ int verify_hostname(X509 *cert, const StringRef &hostname,
         }
       }
 
+      dns_found = true;
+
       if (tls_hostname_match(StringRef{name, static_cast<size_t>(len)},
                              hostname)) {
         return 0;
       }
+    }
+
+    // RFC 6125, section 6.4.4. says that client MUST not seek a match
+    // for CN if a dns dNSName is found.
+    if (dns_found) {
+      return -1;
     }
   }
 
@@ -1049,10 +1070,8 @@ int check_cert(SSL *ssl, const Address *addr, const StringRef &host) {
 }
 
 int check_cert(SSL *ssl, const DownstreamAddr *addr) {
-  auto &backend_sni_name = get_config()->tls.backend_sni_name;
-
-  auto hostname = !backend_sni_name.empty() ? StringRef(backend_sni_name)
-                                            : StringRef(addr->host);
+  auto hostname =
+      addr->sni.empty() ? StringRef{addr->host} : StringRef{addr->sni};
   return check_cert(ssl, &addr->addr, hostname);
 }
 
@@ -1237,6 +1256,7 @@ int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
   if (altnames) {
     auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
     size_t n = sk_GENERAL_NAME_num(altnames);
+    auto dns_found = false;
     for (size_t i = 0; i < n; ++i) {
       auto altname = sk_GENERAL_NAME_value(altnames, i);
       if (altname->type != GEN_DNS) {
@@ -1264,7 +1284,13 @@ int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
         }
       }
 
+      dns_found = true;
       lt->add_cert(ssl_ctx, StringRef{name, static_cast<size_t>(len)});
+    }
+
+    // Don't bother CN if we have dNSName.
+    if (dns_found) {
+      return 0;
     }
   }
 
@@ -1368,7 +1394,11 @@ bool downstream_tls_enabled() {
   const auto &groups = get_config()->conn.downstream.addr_groups;
 
   return std::any_of(std::begin(groups), std::end(groups),
-                     [](const DownstreamAddrGroupConfig &g) { return g.tls; });
+                     [](const DownstreamAddrGroupConfig &g) {
+                       return std::any_of(
+                           std::begin(g.addrs), std::end(g.addrs),
+                           [](const DownstreamAddrConfig &a) { return a.tls; });
+                     });
 }
 
 SSL_CTX *setup_downstream_client_ssl_context(
@@ -1423,13 +1453,11 @@ std::vector<uint8_t> serialize_ssl_session(SSL_SESSION *session) {
 }
 } // namespace
 
-void try_cache_tls_session(DownstreamAddr *addr, SSL_SESSION *session,
-                           ev_tstamp t) {
-  auto &cache = addr->tls_session_cache;
-
+void try_cache_tls_session(TLSSessionCache &cache, const Address &addr,
+                           SSL_SESSION *session, ev_tstamp t) {
   if (cache.last_updated + 1_min > t) {
     if (LOG_ENABLED(INFO)) {
-      LOG(INFO) << "Cache for addr=" << util::to_numeric_addr(&addr->addr)
+      LOG(INFO) << "Cache for addr=" << util::to_numeric_addr(&addr)
                 << " is still host.  Not updating.";
     }
     return;
@@ -1437,7 +1465,7 @@ void try_cache_tls_session(DownstreamAddr *addr, SSL_SESSION *session,
 
   if (LOG_ENABLED(INFO)) {
     LOG(INFO) << "Update cache entry for SSL_SESSION=" << session
-              << ", addr=" << util::to_numeric_addr(&addr->addr)
+              << ", addr=" << util::to_numeric_addr(&addr)
               << ", timestamp=" << std::fixed << std::setprecision(6) << t;
   }
 
@@ -1445,9 +1473,7 @@ void try_cache_tls_session(DownstreamAddr *addr, SSL_SESSION *session,
   cache.last_updated = t;
 }
 
-SSL_SESSION *reuse_tls_session(const DownstreamAddr *addr) {
-  auto &cache = addr->tls_session_cache;
-
+SSL_SESSION *reuse_tls_session(const TLSSessionCache &cache) {
   if (cache.session_data.empty()) {
     return nullptr;
   }

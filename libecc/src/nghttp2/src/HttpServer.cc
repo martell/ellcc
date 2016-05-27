@@ -1121,8 +1121,12 @@ void prepare_status_response(Stream *stream, Http2Handler *hd, int status) {
   data_prd.read_callback = file_read_callback;
 
   HeaderRefs headers;
+  headers.reserve(2);
   headers.emplace_back(StringRef::from_lit("content-type"),
                        StringRef::from_lit("text/html; charset=UTF-8"));
+  headers.emplace_back(
+      StringRef::from_lit("content-length"),
+      util::make_string_ref_uint(stream->balloc, file_ent->length));
   hd->submit_response(StringRef{status_page->status}, stream->stream_id,
                       headers, &data_prd);
 }
@@ -1793,6 +1797,16 @@ void run_worker(Worker *worker) {
 }
 } // namespace
 
+namespace {
+int get_ev_loop_flags() {
+  if (ev_supported_backends() & ~ev_recommended_backends() & EVBACKEND_KQUEUE) {
+    return ev_recommended_backends() | EVBACKEND_KQUEUE;
+  }
+
+  return 0;
+}
+} // namespace
+
 class AcceptHandler {
 public:
   AcceptHandler(HttpServer *sv, Sessions *sessions, const Config *config)
@@ -1805,7 +1819,7 @@ public:
         std::cerr << "spawning thread #" << i << std::endl;
       }
       auto worker = make_unique<Worker>();
-      auto loop = ev_loop_new(0);
+      auto loop = ev_loop_new(get_ev_loop_flags());
       worker->sessions =
           make_unique<Sessions>(sv, loop, config_, sessions_->get_ssl_ctx());
       ev_async_init(&worker->w, worker_acceptcb);
