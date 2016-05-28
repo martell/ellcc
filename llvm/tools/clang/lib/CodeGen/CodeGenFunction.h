@@ -2380,6 +2380,7 @@ public:
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
   void EmitOMPTargetEnterDataDirective(const OMPTargetEnterDataDirective &S);
   void EmitOMPTargetExitDataDirective(const OMPTargetExitDataDirective &S);
+  void EmitOMPTargetUpdateDirective(const OMPTargetUpdateDirective &S);
   void EmitOMPTargetParallelDirective(const OMPTargetParallelDirective &S);
   void
   EmitOMPTargetParallelForDirective(const OMPTargetParallelForDirective &S);
@@ -2496,7 +2497,6 @@ public:
   void EmitAtomicInit(Expr *E, LValue lvalue);
 
   bool LValueIsSuitableForInlineAtomic(LValue Src);
-  bool typeIsSuitableForInlineAtomic(QualType Ty, bool IsVolatile) const;
 
   RValue EmitAtomicLoad(LValue LV, SourceLocation SL,
                         AggValueSlot Slot = AggValueSlot::ignored());

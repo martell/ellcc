@@ -1875,13 +1875,13 @@ _mm256_extract_epi32(__m256i __a, const int __imm)
 /// \param __imm
 ///    An immediate integer operand with bits [3:0] determining which vector
 ///    element is extracted and returned.
-/// \returns A 32-bit integer containing the extracted 16 bits of extended
+/// \returns A 32-bit integer containing the extracted 16 bits of zero extended
 ///    packed data.
 static __inline int __DEFAULT_FN_ATTRS
 _mm256_extract_epi16(__m256i __a, const int __imm)
 {
   __v16hi __b = (__v16hi)__a;
-  return __b[__imm & 15];
+  return (unsigned short)__b[__imm & 15];
 }
 
 /// \brief Takes a [32 x i8] vector and returns the vector element value
@@ -1897,13 +1897,13 @@ _mm256_extract_epi16(__m256i __a, const int __imm)
 /// \param __imm
 ///    An immediate integer operand with bits [4:0] determining which vector
 ///    element is extracted and returned.
-/// \returns A 32-bit integer containing the extracted 8 bits of extended packed
-///    data.
+/// \returns A 32-bit integer containing the extracted 8 bits of zero extended
+///    packed data.
 static __inline int __DEFAULT_FN_ATTRS
 _mm256_extract_epi8(__m256i __a, const int __imm)
 {
   __v32qi __b = (__v32qi)__a;
-  return __b[__imm & 31];
+  return (unsigned char)__b[__imm & 31];
 }
 
 #ifdef __x86_64__
@@ -2050,7 +2050,7 @@ _mm256_insert_epi64(__m256i __a, long long __b, int const __imm)
 static __inline __m256d __DEFAULT_FN_ATTRS
 _mm256_cvtepi32_pd(__m128i __a)
 {
-  return (__m256d)__builtin_ia32_cvtdq2pd256((__v4si) __a);
+  return (__m256d)__builtin_convertvector((__v4si)__a, __v4df);
 }
 
 /// \brief Converts a vector of [8 x i32] into a vector of [8 x float].
@@ -2102,7 +2102,7 @@ _mm256_cvtps_epi32(__m256 __a)
 static __inline __m256d __DEFAULT_FN_ATTRS
 _mm256_cvtps_pd(__m128 __a)
 {
-  return (__m256d)__builtin_ia32_cvtps2pd256((__v4sf) __a);
+  return (__m256d)__builtin_convertvector((__v4sf)__a, __v4df);
 }
 
 static __inline __m128i __DEFAULT_FN_ATTRS

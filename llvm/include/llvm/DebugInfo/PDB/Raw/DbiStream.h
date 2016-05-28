@@ -10,8 +10,9 @@
 #ifndef LLVM_DEBUGINFO_PDB_RAW_PDBDBISTREAM_H
 #define LLVM_DEBUGINFO_PDB_RAW_PDBDBISTREAM_H
 
+#include "llvm/DebugInfo/CodeView/StreamArray.h"
+#include "llvm/DebugInfo/CodeView/StreamRef.h"
 #include "llvm/DebugInfo/PDB/PDBTypes.h"
-#include "llvm/DebugInfo/PDB/Raw/ByteStream.h"
 #include "llvm/DebugInfo/PDB/Raw/MappedBlockStream.h"
 #include "llvm/DebugInfo/PDB/Raw/ModInfo.h"
 #include "llvm/DebugInfo/PDB/Raw/NameHashTable.h"
@@ -34,6 +35,7 @@ public:
   PdbRaw_DbiVer getDbiVersion() const;
   uint32_t getAge() const;
   uint16_t getPublicSymbolStreamIndex() const;
+  uint16_t getGlobalSymbolStreamIndex() const;
 
   bool isIncrementallyLinked() const;
   bool hasCTypes() const;
@@ -50,6 +52,8 @@ public:
 
   ArrayRef<ModuleInfoEx> modules() const;
 
+  uint32_t getDebugStreamIndex(DbgHeaderType Type) const;
+
 private:
   Error initializeFileInfo();
 
@@ -59,15 +63,16 @@ private:
   std::vector<ModuleInfoEx> ModuleInfos;
   NameHashTable ECNames;
 
-  ByteStream ModInfoSubstream;
-  ByteStream SecContrSubstream;
-  ByteStream SecMapSubstream;
-  ByteStream FileInfoSubstream;
-  ByteStream TypeServerMapSubstream;
-  ByteStream ECSubstream;
-  ByteStream DbgHeader;
+  codeview::StreamRef ModInfoSubstream;
+  codeview::StreamRef SecContrSubstream;
+  codeview::StreamRef SecMapSubstream;
+  codeview::StreamRef FileInfoSubstream;
+  codeview::StreamRef TypeServerMapSubstream;
+  codeview::StreamRef ECSubstream;
 
-  std::unique_ptr<HeaderInfo> Header;
+  codeview::FixedStreamArray<support::ulittle16_t> DbgStreams;
+
+  const HeaderInfo *Header;
 };
 }
 }

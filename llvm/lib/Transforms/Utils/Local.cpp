@@ -490,7 +490,8 @@ bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB,
   // Iterate over the original function, only adding insts to the worklist
   // if they actually need to be revisited. This avoids having to pre-init
   // the worklist with the entire function's worth of instructions.
-  for (BasicBlock::iterator BI = BB->begin(), E = std::prev(BB->end()); BI != E;) {
+  for (BasicBlock::iterator BI = BB->begin(), E = std::prev(BB->end());
+       BI != E;) {
     assert(!BI->isTerminator());
     Instruction *I = &*BI;
     ++BI;
@@ -1772,7 +1773,23 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
         // If the AndMask is zero for this bit, clear the bit.
         if ((AndMask & Bit) == 0)
           Result->Provenance[i] = BitPart::Unset;
+      return Result;
+    }
 
+    // If this is a zext instruction zero extend the result.
+    if (I->getOpcode() == Instruction::ZExt) {
+      auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
+                                  MatchBitReversals, BPS);
+      if (!Res)
+        return Result;
+
+      Result = BitPart(Res->Provider, BitWidth);
+      auto NarrowBitWidth =
+          cast<IntegerType>(cast<ZExtInst>(I)->getSrcTy())->getBitWidth();
+      for (unsigned i = 0; i < NarrowBitWidth; ++i)
+        Result->Provenance[i] = Res->Provenance[i];
+      for (unsigned i = NarrowBitWidth; i < BitWidth; ++i)
+        Result->Provenance[i] = BitPart::Unset;
       return Result;
     }
   }
@@ -1803,7 +1820,7 @@ static bool bitTransformIsCorrectForBitReverse(unsigned From, unsigned To,
 
 /// Given an OR instruction, check to see if this is a bitreverse
 /// idiom. If so, insert the new intrinsic and return true.
-bool llvm::recognizeBitReverseOrBSwapIdiom(
+bool llvm::recognizeBSwapOrBitReverseIdiom(
     Instruction *I, bool MatchBSwaps, bool MatchBitReversals,
     SmallVectorImpl<Instruction *> &InsertedInsts) {
   if (Operator::getOpcode(I) != Instruction::Or)
@@ -1815,6 +1832,15 @@ bool llvm::recognizeBitReverseOrBSwapIdiom(
     return false;   // Can't do vectors or integers > 128 bits.
   unsigned BW = ITy->getBitWidth();
 
+  unsigned DemandedBW = BW;
+  IntegerType *DemandedTy = ITy;
+  if (I->hasOneUse()) {
+    if (TruncInst *Trunc = dyn_cast<TruncInst>(I->user_back())) {
+      DemandedTy = cast<IntegerType>(Trunc->getType());
+      DemandedBW = DemandedTy->getBitWidth();
+    }
+  }
+
   // Try to find all the pieces corresponding to the bswap.
   std::map<Value *, Optional<BitPart>> BPS;
   auto Res = collectBitParts(I, MatchBSwaps, MatchBitReversals, BPS);
@@ -1824,11 +1850,12 @@ bool llvm::recognizeBitReverseOrBSwapIdiom(
 
   // Now, is the bit permutation correct for a bswap or a bitreverse? We can
   // only byteswap values with an even number of bytes.
-  bool OKForBSwap = BW % 16 == 0, OKForBitReverse = true;
-  for (unsigned i = 0; i < BW; ++i) {
-    OKForBSwap &= bitTransformIsCorrectForBSwap(BitProvenance[i], i, BW);
+  bool OKForBSwap = DemandedBW % 16 == 0, OKForBitReverse = true;
+  for (unsigned i = 0; i < DemandedBW; ++i) {
+    OKForBSwap &=
+        bitTransformIsCorrectForBSwap(BitProvenance[i], i, DemandedBW);
     OKForBitReverse &=
-        bitTransformIsCorrectForBitReverse(BitProvenance[i], i, BW);
+        bitTransformIsCorrectForBitReverse(BitProvenance[i], i, DemandedBW);
   }
 
   Intrinsic::ID Intrin;
@@ -1838,6 +1865,24 @@ bool llvm::recognizeBitReverseOrBSwapIdiom(
     Intrin = Intrinsic::bitreverse;
   else
     return false;
+
+  if (ITy != DemandedTy) {
+    Function *F = Intrinsic::getDeclaration(I->getModule(), Intrin, DemandedTy);
+    Value *Provider = Res->Provider;
+    IntegerType *ProviderTy = cast<IntegerType>(Provider->getType());
+    // We may need to truncate the provider.
+    if (DemandedTy != ProviderTy) {
+      auto *Trunc = CastInst::Create(Instruction::Trunc, Provider, DemandedTy,
+                                     "trunc", I);
+      InsertedInsts.push_back(Trunc);
+      Provider = Trunc;
+    }
+    auto *CI = CallInst::Create(F, Provider, "rev", I);
+    InsertedInsts.push_back(CI);
+    auto *ExtInst = CastInst::Create(Instruction::ZExt, CI, ITy, "zext", I);
+    InsertedInsts.push_back(ExtInst);
+    return true;
+  }
 
   Function *F = Intrinsic::getDeclaration(I->getModule(), Intrin, ITy);
   InsertedInsts.push_back(CallInst::Create(F, Res->Provider, "rev", I));

@@ -917,8 +917,53 @@ int X86TTIImpl::getCmpSelInstrCost(unsigned Opcode, Type *ValTy, Type *CondTy) {
   return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy);
 }
 
+int X86TTIImpl::getIntrinsicInstrCost(Intrinsic::ID IID, Type *RetTy,
+                                      ArrayRef<Type *> Tys, FastMathFlags FMF) {
+  static const CostTblEntry XOPCostTbl[] = {
+    { ISD::BITREVERSE, MVT::v4i64,   4 },
+    { ISD::BITREVERSE, MVT::v8i32,   4 },
+    { ISD::BITREVERSE, MVT::v16i16,  4 },
+    { ISD::BITREVERSE, MVT::v32i8,   4 },
+    { ISD::BITREVERSE, MVT::v2i64,   1 },
+    { ISD::BITREVERSE, MVT::v4i32,   1 },
+    { ISD::BITREVERSE, MVT::v8i16,   1 },
+    { ISD::BITREVERSE, MVT::v16i8,   1 },
+    { ISD::BITREVERSE, MVT::i64,     3 },
+    { ISD::BITREVERSE, MVT::i32,     3 },
+    { ISD::BITREVERSE, MVT::i16,     3 },
+    { ISD::BITREVERSE, MVT::i8,      3 }
+  };
+
+  unsigned ISD = ISD::DELETED_NODE;
+  switch (IID) {
+  default:
+    break;
+  case Intrinsic::bitreverse:
+    ISD = ISD::BITREVERSE;
+    break;
+  }
+
+  // Legalize the type.
+  std::pair<int, MVT> LT = TLI->getTypeLegalizationCost(DL, RetTy);
+  MVT MTy = LT.second;
+
+  // Attempt to lookup cost.
+  if (ST->hasXOP())
+    if (const auto *Entry = CostTableLookup(XOPCostTbl, ISD, MTy))
+      return LT.first * Entry->Cost;
+
+  return BaseT::getIntrinsicInstrCost(IID, RetTy, Tys, FMF);
+}
+
+int X86TTIImpl::getIntrinsicInstrCost(Intrinsic::ID IID, Type *RetTy,
+                                      ArrayRef<Value *> Args, FastMathFlags FMF) {
+  return BaseT::getIntrinsicInstrCost(IID, RetTy, Args, FMF);
+}
+
 int X86TTIImpl::getVectorInstrCost(unsigned Opcode, Type *Val, unsigned Index) {
   assert(Val->isVectorTy() && "This must be a vector type");
+
+  Type *ScalarType = Val->getScalarType();
 
   if (Index != -1U) {
     // Legalize the type.
@@ -933,11 +978,17 @@ int X86TTIImpl::getVectorInstrCost(unsigned Opcode, Type *Val, unsigned Index) {
     Index = Index % Width;
 
     // Floating point scalars are already located in index #0.
-    if (Val->getScalarType()->isFloatingPointTy() && Index == 0)
+    if (ScalarType->isFloatingPointTy() && Index == 0)
       return 0;
   }
 
-  return BaseT::getVectorInstrCost(Opcode, Val, Index);
+  // Add to the base cost if we know that the extracted element of a vector is
+  // destined to be moved to and used in the integer register file.
+  int RegisterFileMoveCost = 0;
+  if (Opcode == Instruction::ExtractElement && ScalarType->isPointerTy())
+    RegisterFileMoveCost = 1;
+
+  return BaseT::getVectorInstrCost(Opcode, Val, Index) + RegisterFileMoveCost;
 }
 
 int X86TTIImpl::getScalarizationOverhead(Type *Ty, bool Insert, bool Extract) {
@@ -1320,7 +1371,7 @@ int X86TTIImpl::getGSVectorCost(unsigned Opcode, Type *SrcVTy, Value *Ptr,
     GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr);
     if (IndexSize < 64 || !GEP)
       return IndexSize;
- 
+
     unsigned NumOfVarIndices = 0;
     Value *Ptrs = GEP->getPointerOperand();
     if (Ptrs->getType()->isVectorTy() && !getSplatValue(Ptrs))

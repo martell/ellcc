@@ -13,11 +13,14 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/DebugInfo/CodeView/CVRecord.h"
 #include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/RecordSerialization.h"
+#include "llvm/DebugInfo/CodeView/StreamArray.h"
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/Support/ErrorOr.h"
 #include <cinttypes>
+#include <utility>
 
 namespace llvm {
 namespace codeview {
@@ -705,17 +708,36 @@ private:
   TypeIndex UnderlyingType;
 };
 
+// LF_BITFIELD
 class BitFieldRecord : public TypeRecord {
 public:
   BitFieldRecord(TypeIndex Type, uint8_t BitSize, uint8_t BitOffset)
       : TypeRecord(TypeRecordKind::BitField), Type(Type), BitSize(BitSize),
         BitOffset(BitOffset) {}
 
+  /// Rewrite member type indices with IndexMap. Returns false if a type index
+  /// is not in the map.
+  bool remapTypeIndices(ArrayRef<TypeIndex> IndexMap);
+
+  static ErrorOr<BitFieldRecord> deserialize(TypeRecordKind Kind,
+                                             ArrayRef<uint8_t> &Data) {
+    const Layout *L = nullptr;
+    CV_DESERIALIZE(Data, L);
+
+    return BitFieldRecord(L->Type, L->BitSize, L->BitOffset);
+  }
+
   TypeIndex getType() const { return Type; }
   uint8_t getBitOffset() const { return BitOffset; }
   uint8_t getBitSize() const { return BitSize; }
 
 private:
+  struct Layout {
+    TypeIndex Type;
+    uint8_t BitSize;
+    uint8_t BitOffset;
+  };
+
   TypeIndex Type;
   uint8_t BitSize;
   uint8_t BitOffset;
@@ -727,7 +749,7 @@ public:
   explicit VFTableShapeRecord(ArrayRef<VFTableSlotKind> Slots)
       : TypeRecord(TypeRecordKind::VFTableShape), SlotsRef(Slots) {}
   explicit VFTableShapeRecord(std::vector<VFTableSlotKind> Slots)
-      : TypeRecord(TypeRecordKind::VFTableShape), Slots(Slots) {}
+      : TypeRecord(TypeRecordKind::VFTableShape), Slots(std::move(Slots)) {}
 
   /// Rewrite member type indices with IndexMap. Returns false if a type index
   /// is not in the map.
@@ -1237,8 +1259,8 @@ private:
 class EnumeratorRecord : public TypeRecord {
 public:
   EnumeratorRecord(MemberAccess Access, APSInt Value, StringRef Name)
-      : TypeRecord(TypeRecordKind::Enumerator), Access(Access), Value(Value),
-        Name(Name) {}
+      : TypeRecord(TypeRecordKind::Enumerator), Access(Access),
+        Value(std::move(Value)), Name(Name) {}
 
   /// Rewrite member type indices with IndexMap. Returns false if a type index
   /// is not in the map.
@@ -1378,6 +1400,9 @@ private:
   uint64_t VBPtrOffset;
   uint64_t VTableIndex;
 };
+
+typedef CVRecord<TypeLeafKind> CVType;
+typedef VarStreamArray<CVType> CVTypeArray;
 }
 }
 

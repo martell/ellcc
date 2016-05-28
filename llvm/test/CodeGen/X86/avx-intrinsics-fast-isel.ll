@@ -578,10 +578,9 @@ define <4 x double> @test_mm256_cvtepi32_pd(<2 x i64> %a0) nounwind {
 ; X64-NEXT:    vcvtdq2pd %xmm0, %ymm0
 ; X64-NEXT:    retq
   %arg0 = bitcast <2 x i64> %a0 to <4 x i32>
-  %res = call <4 x double> @llvm.x86.avx.cvtdq2.pd.256(<4 x i32> %arg0)
+  %res = sitofp <4 x i32> %arg0 to <4 x double>
   ret <4 x double> %res
 }
-declare <4 x double> @llvm.x86.avx.cvtdq2.pd.256(<4 x i32>) nounwind readnone
 
 define <8 x float> @test_mm256_cvtepi32_ps(<4 x i64> %a0) nounwind {
 ; X32-LABEL: test_mm256_cvtepi32_ps:
@@ -660,10 +659,9 @@ define <4 x double> @test_mm256_cvtps_pd(<4 x float> %a0) nounwind {
 ; X64:       # BB#0:
 ; X64-NEXT:    vcvtps2pd %xmm0, %ymm0
 ; X64-NEXT:    retq
-  %res = call <4 x double> @llvm.x86.avx.cvt.ps2.pd.256(<4 x float> %a0)
+  %res = fpext <4 x float> %a0 to <4 x double>
   ret <4 x double> %res
 }
-declare <4 x double> @llvm.x86.avx.cvt.ps2.pd.256(<4 x float>) nounwind readnone
 
 define <2 x i64> @test_mm256_cvttpd_epi32(<4 x double> %a0) nounwind {
 ; X32-LABEL: test_mm256_cvttpd_epi32:
@@ -3736,13 +3734,11 @@ define void @test_mm256_zeroall() nounwind {
 ; X32-LABEL: test_mm256_zeroall:
 ; X32:       # BB#0:
 ; X32-NEXT:    vzeroall
-; X32-NEXT:    vzeroupper
 ; X32-NEXT:    retl
 ;
 ; X64-LABEL: test_mm256_zeroall:
 ; X64:       # BB#0:
 ; X64-NEXT:    vzeroall
-; X64-NEXT:    vzeroupper
 ; X64-NEXT:    retq
   call void @llvm.x86.avx.vzeroall()
   ret void
@@ -3753,12 +3749,10 @@ define void @test_mm256_zeroupper() nounwind {
 ; X32-LABEL: test_mm256_zeroupper:
 ; X32:       # BB#0:
 ; X32-NEXT:    vzeroupper
-; X32-NEXT:    vzeroupper
 ; X32-NEXT:    retl
 ;
 ; X64-LABEL: test_mm256_zeroupper:
 ; X64:       # BB#0:
-; X64-NEXT:    vzeroupper
 ; X64-NEXT:    vzeroupper
 ; X64-NEXT:    retq
   call void @llvm.x86.avx.vzeroupper()

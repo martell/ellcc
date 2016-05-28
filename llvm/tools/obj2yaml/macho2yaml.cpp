@@ -12,6 +12,7 @@
 #include "llvm/Object/MachOUniversal.h"
 #include "llvm/ObjectYAML/MachOYAML.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LEB128.h"
 
 #include <string.h> // for memcpy
 
@@ -25,6 +26,12 @@ class MachODumper {
       const llvm::object::MachOObjectFile::LoadCommandInfo &LoadCmd);
 
   const object::MachOObjectFile &Obj;
+  void dumpHeader(std::unique_ptr<MachOYAML::Object> &Y);
+  void dumpLoadCommands(std::unique_ptr<MachOYAML::Object> &Y);
+  void dumpLinkEdit(std::unique_ptr<MachOYAML::Object> &Y);
+  void dumpRebaseOpcodes(std::unique_ptr<MachOYAML::Object> &Y);
+  void dumpBindOpcodes(std::vector<MachOYAML::BindOpcode> &BindOpcodes,
+                       ArrayRef<uint8_t> OpcodeBuffer, bool Lazy = false);
 
 public:
   MachODumper(const object::MachOObjectFile &O) : Obj(O) {}
@@ -144,6 +151,13 @@ const char *MachODumper::processLoadCommandData<MachO::dylinker_command>(
 
 Expected<std::unique_ptr<MachOYAML::Object>> MachODumper::dump() {
   auto Y = make_unique<MachOYAML::Object>();
+  dumpHeader(Y);
+  dumpLoadCommands(Y);
+  dumpLinkEdit(Y);
+  return std::move(Y);
+}
+
+void MachODumper::dumpHeader(std::unique_ptr<MachOYAML::Object> &Y) {
   Y->Header.magic = Obj.getHeader().magic;
   Y->Header.cputype = Obj.getHeader().cputype;
   Y->Header.cpusubtype = Obj.getHeader().cpusubtype;
@@ -152,7 +166,9 @@ Expected<std::unique_ptr<MachOYAML::Object>> MachODumper::dump() {
   Y->Header.sizeofcmds = Obj.getHeader().sizeofcmds;
   Y->Header.flags = Obj.getHeader().flags;
   Y->Header.reserved = 0;
+}
 
+void MachODumper::dumpLoadCommands(std::unique_ptr<MachOYAML::Object> &Y) {
   for (auto LoadCmd : Obj.load_commands()) {
     MachOYAML::LoadCommand LC;
     const char *EndPtr = LoadCmd.Ptr;
@@ -176,8 +192,114 @@ Expected<std::unique_ptr<MachOYAML::Object>> MachODumper::dump() {
     LC.ZeroPadBytes = RemainingBytes;
     Y->LoadCommands.push_back(std::move(LC));
   }
+}
 
-  return std::move(Y);
+void MachODumper::dumpLinkEdit(std::unique_ptr<MachOYAML::Object> &Y) {
+  dumpRebaseOpcodes(Y);
+  dumpBindOpcodes(Y->LinkEdit.BindOpcodes, Obj.getDyldInfoBindOpcodes());
+  dumpBindOpcodes(Y->LinkEdit.WeakBindOpcodes,
+                  Obj.getDyldInfoWeakBindOpcodes());
+  dumpBindOpcodes(Y->LinkEdit.LazyBindOpcodes,
+                  Obj.getDyldInfoLazyBindOpcodes(), true);
+}
+
+void MachODumper::dumpRebaseOpcodes(std::unique_ptr<MachOYAML::Object> &Y) {
+  MachOYAML::LinkEditData &LEData = Y->LinkEdit;
+
+  auto RebaseOpcodes = Obj.getDyldInfoRebaseOpcodes();
+  for (auto OpCode = RebaseOpcodes.begin(); OpCode != RebaseOpcodes.end();
+       ++OpCode) {
+    MachOYAML::RebaseOpcode RebaseOp;
+    RebaseOp.Opcode =
+        static_cast<MachO::RebaseOpcode>(*OpCode & MachO::REBASE_OPCODE_MASK);
+    RebaseOp.Imm = *OpCode & MachO::REBASE_IMMEDIATE_MASK;
+
+    unsigned Count;
+    uint64_t ULEB = 0;
+
+    switch (RebaseOp.Opcode) {
+    case MachO::REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB:
+
+      ULEB = decodeULEB128(OpCode + 1, &Count);
+      RebaseOp.ExtraData.push_back(ULEB);
+      OpCode += Count;
+    // Intentionally no break here -- This opcode has two ULEB values
+    case MachO::REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
+    case MachO::REBASE_OPCODE_ADD_ADDR_ULEB:
+    case MachO::REBASE_OPCODE_DO_REBASE_ULEB_TIMES:
+    case MachO::REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB:
+
+      ULEB = decodeULEB128(OpCode + 1, &Count);
+      RebaseOp.ExtraData.push_back(ULEB);
+      OpCode += Count;
+      break;
+    default:
+      break;
+    }
+
+    LEData.RebaseOpcodes.push_back(RebaseOp);
+
+    if (RebaseOp.Opcode == MachO::REBASE_OPCODE_DONE)
+      break;
+  }
+}
+
+void MachODumper::dumpBindOpcodes(
+    std::vector<MachOYAML::BindOpcode> &BindOpcodes,
+    ArrayRef<uint8_t> OpcodeBuffer, bool Lazy) {
+  for (auto OpCode = OpcodeBuffer.begin(); OpCode != OpcodeBuffer.end();
+       ++OpCode) {
+    MachOYAML::BindOpcode BindOp;
+    BindOp.Opcode =
+        static_cast<MachO::BindOpcode>(*OpCode & MachO::BIND_OPCODE_MASK);
+    BindOp.Imm = *OpCode & MachO::BIND_IMMEDIATE_MASK;
+
+    unsigned Count;
+    uint64_t ULEB = 0;
+    int64_t SLEB = 0;
+    const uint8_t *SymStart;
+
+    switch (BindOp.Opcode) {
+    case MachO::BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB:
+      ULEB = decodeULEB128(OpCode + 1, &Count);
+      BindOp.ULEBExtraData.push_back(ULEB);
+      OpCode += Count;
+    // Intentionally no break here -- this opcode has two ULEB values
+
+    case MachO::BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB:
+    case MachO::BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB:
+    case MachO::BIND_OPCODE_ADD_ADDR_ULEB:
+    case MachO::BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB:
+      ULEB = decodeULEB128(OpCode + 1, &Count);
+      BindOp.ULEBExtraData.push_back(ULEB);
+      OpCode += Count;
+      break;
+
+    case MachO::BIND_OPCODE_SET_ADDEND_SLEB:
+      SLEB = decodeSLEB128(OpCode + 1, &Count);
+      BindOp.SLEBExtraData.push_back(SLEB);
+      OpCode += Count;
+      break;
+
+    case MachO::BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM:
+      SymStart = ++OpCode;
+      while (*OpCode) {
+        ++OpCode;
+      }
+      BindOp.Symbol = StringRef(reinterpret_cast<const char *>(SymStart),
+                                OpCode - SymStart);
+      break;
+    default:
+      break;
+    }
+
+    BindOpcodes.push_back(BindOp);
+
+    // Lazy bindings have DONE opcodes between operations, so we need to keep
+    // processing after a DONE.
+    if (!Lazy && BindOp.Opcode == MachO::BIND_OPCODE_DONE)
+      break;
+  }
 }
 
 Error macho2yaml(raw_ostream &Out, const object::MachOObjectFile &Obj) {

@@ -1398,8 +1398,7 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
     return;
   }
   // Null and aggregate-zero are all-zeros.
-  if (isa<ConstantPointerNull>(V) ||
-      isa<ConstantAggregateZero>(V)) {
+  if (isa<ConstantPointerNull>(V) || isa<ConstantAggregateZero>(V)) {
     KnownOne.clearAllBits();
     KnownZero = APInt::getAllOnesValue(BitWidth);
     return;
@@ -1500,9 +1499,10 @@ bool isKnownToBeAPowerOfTwo(Value *V, bool OrZero, unsigned Depth,
   if (Constant *C = dyn_cast<Constant>(V)) {
     if (C->isNullValue())
       return OrZero;
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(C))
-      return CI->getValue().isPowerOf2();
-    // TODO: Handle vector constants.
+
+    const APInt *ConstIntOrConstSplatInt;
+    if (match(C, m_APInt(ConstIntOrConstSplatInt)))
+      return ConstIntOrConstSplatInt->isPowerOf2();
   }
 
   // 1 << X is clearly a power of two if the one is not shifted off the end.  If
@@ -1652,8 +1652,7 @@ static bool isGEPKnownNonNull(GEPOperator *GEP, unsigned Depth,
 /// Does the 'Range' metadata (which must be a valid MD_range operand list)
 /// ensure that the value it's attached to is never Value?  'RangeType' is
 /// is the type of the value described by the range.
-static bool rangeMetadataExcludesValue(MDNode* Ranges,
-                                       const APInt& Value) {
+static bool rangeMetadataExcludesValue(MDNode* Ranges, const APInt& Value) {
   const unsigned NumRanges = Ranges->getNumOperands() / 2;
   assert(NumRanges >= 1);
   for (unsigned i = 0; i < NumRanges; ++i) {
@@ -1673,21 +1672,34 @@ static bool rangeMetadataExcludesValue(MDNode* Ranges,
 /// defined. Supports values with integer or pointer type and vectors of
 /// integers.
 bool isKnownNonZero(Value *V, unsigned Depth, const Query &Q) {
-  if (Constant *C = dyn_cast<Constant>(V)) {
+  if (auto *C = dyn_cast<Constant>(V)) {
     if (C->isNullValue())
       return false;
     if (isa<ConstantInt>(C))
       // Must be non-zero due to null test above.
       return true;
-    // TODO: Handle vectors
+
+    // For constant vectors, check that all elements are undefined or known
+    // non-zero to determine that the whole vector is known non-zero.
+    if (auto *VecTy = dyn_cast<VectorType>(C->getType())) {
+      for (unsigned i = 0, e = VecTy->getNumElements(); i != e; ++i) {
+        Constant *Elt = C->getAggregateElement(i);
+        if (!Elt || Elt->isNullValue())
+          return false;
+        if (!isa<UndefValue>(Elt) && !isa<ConstantInt>(Elt))
+          return false;
+      }
+      return true;
+    }
+
     return false;
   }
 
-  if (Instruction* I = dyn_cast<Instruction>(V)) {
+  if (auto *I = dyn_cast<Instruction>(V)) {
     if (MDNode *Ranges = I->getMetadata(LLVMContext::MD_range)) {
       // If the possible ranges don't contain zero, then the value is
       // definitely non-zero.
-      if (IntegerType* Ty = dyn_cast<IntegerType>(V->getType())) {
+      if (auto *Ty = dyn_cast<IntegerType>(V->getType())) {
         const APInt ZeroValue(Ty->getBitWidth(), 0);
         if (rangeMetadataExcludesValue(Ranges, ZeroValue))
           return true;
@@ -2815,7 +2827,7 @@ bool llvm::getConstantStringInfo(const Value *V, StringRef &Str,
   if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer())
     return false;
 
-  // Handle the all-zeros case
+  // Handle the all-zeros case.
   if (GV->getInitializer()->isNullValue()) {
     // This is a degenerate case. The initializer is constant zero so the
     // length of the string must be zero.
@@ -2823,13 +2835,12 @@ bool llvm::getConstantStringInfo(const Value *V, StringRef &Str,
     return true;
   }
 
-  // Must be a Constant Array
-  const ConstantDataArray *Array =
-    dyn_cast<ConstantDataArray>(GV->getInitializer());
+  // This must be a ConstantDataArray.
+  const auto *Array = dyn_cast<ConstantDataArray>(GV->getInitializer());
   if (!Array || !Array->isString())
     return false;
 
-  // Get the number of elements in the array
+  // Get the number of elements in the array.
   uint64_t NumElts = Array->getType()->getArrayNumElements();
 
   // Start out with the entire array in the StringRef.
@@ -3767,8 +3778,7 @@ static Value *lookThroughCast(CmpInst *CmpI, Value *V1, Value *V2,
   return CastedTo;
 }
 
-SelectPatternResult llvm::matchSelectPattern(Value *V,
-                                             Value *&LHS, Value *&RHS,
+SelectPatternResult llvm::matchSelectPattern(Value *V, Value *&LHS, Value *&RHS,
                                              Instruction::CastOps *CastOp) {
   SelectInst *SI = dyn_cast<SelectInst>(V);
   if (!SI) return {SPF_UNKNOWN, SPNB_NA, false};

@@ -178,22 +178,6 @@ define i32 @test_x86_sse2_comineq_sd(<2 x double> %a0, <2 x double> %a1) {
 declare i32 @llvm.x86.sse2.comineq.sd(<2 x double>, <2 x double>) nounwind readnone
 
 
-define <2 x double> @test_x86_sse2_cvtdq2pd(<4 x i32> %a0) {
-; SSE-LABEL: test_x86_sse2_cvtdq2pd:
-; SSE:       ## BB#0:
-; SSE-NEXT:    cvtdq2pd %xmm0, %xmm0
-; SSE-NEXT:    retl
-;
-; KNL-LABEL: test_x86_sse2_cvtdq2pd:
-; KNL:       ## BB#0:
-; KNL-NEXT:    vcvtdq2pd %xmm0, %xmm0
-; KNL-NEXT:    retl
-  %res = call <2 x double> @llvm.x86.sse2.cvtdq2pd(<4 x i32> %a0) ; <<2 x double>> [#uses=1]
-  ret <2 x double> %res
-}
-declare <2 x double> @llvm.x86.sse2.cvtdq2pd(<4 x i32>) nounwind readnone
-
-
 define <4 x float> @test_x86_sse2_cvtdq2ps(<4 x i32> %a0) {
 ; SSE-LABEL: test_x86_sse2_cvtdq2ps:
 ; SSE:       ## BB#0:
@@ -258,22 +242,6 @@ define <4 x i32> @test_x86_sse2_cvtps2dq(<4 x float> %a0) {
 declare <4 x i32> @llvm.x86.sse2.cvtps2dq(<4 x float>) nounwind readnone
 
 
-define <2 x double> @test_x86_sse2_cvtps2pd(<4 x float> %a0) {
-; SSE-LABEL: test_x86_sse2_cvtps2pd:
-; SSE:       ## BB#0:
-; SSE-NEXT:    cvtps2pd %xmm0, %xmm0
-; SSE-NEXT:    retl
-;
-; KNL-LABEL: test_x86_sse2_cvtps2pd:
-; KNL:       ## BB#0:
-; KNL-NEXT:    vcvtps2pd %xmm0, %xmm0
-; KNL-NEXT:    retl
-  %res = call <2 x double> @llvm.x86.sse2.cvtps2pd(<4 x float> %a0) ; <<2 x double>> [#uses=1]
-  ret <2 x double> %res
-}
-declare <2 x double> @llvm.x86.sse2.cvtps2pd(<4 x float>) nounwind readnone
-
-
 define i32 @test_x86_sse2_cvtsd2si(<2 x double> %a0) {
 ; SSE-LABEL: test_x86_sse2_cvtsd2si:
 ; SSE:       ## BB#0:
@@ -306,19 +274,17 @@ define <4 x float> @test_x86_sse2_cvtsd2ss(<4 x float> %a0, <2 x double> %a1) {
 declare <4 x float> @llvm.x86.sse2.cvtsd2ss(<4 x float>, <2 x double>) nounwind readnone
 
 
-define <2 x double> @test_x86_sse2_cvtsi2sd(<2 x double> %a0) {
+define <2 x double> @test_x86_sse2_cvtsi2sd(<2 x double> %a0, i32 %a1) {
 ; SSE-LABEL: test_x86_sse2_cvtsi2sd:
 ; SSE:       ## BB#0:
-; SSE-NEXT:    movl $7, %eax
-; SSE-NEXT:    cvtsi2sdl %eax, %xmm0
+; SSE-NEXT:    cvtsi2sdl {{[0-9]+}}(%esp), %xmm0
 ; SSE-NEXT:    retl
 ;
 ; KNL-LABEL: test_x86_sse2_cvtsi2sd:
 ; KNL:       ## BB#0:
-; KNL-NEXT:    movl $7, %eax
-; KNL-NEXT:    vcvtsi2sdl %eax, %xmm0, %xmm0
+; KNL-NEXT:    vcvtsi2sdl {{[0-9]+}}(%esp), %xmm0, %xmm0
 ; KNL-NEXT:    retl
-  %res = call <2 x double> @llvm.x86.sse2.cvtsi2sd(<2 x double> %a0, i32 7) ; <<2 x double>> [#uses=1]
+  %res = call <2 x double> @llvm.x86.sse2.cvtsi2sd(<2 x double> %a0, i32 %a1) ; <<2 x double>> [#uses=1]
   ret <2 x double> %res
 }
 declare <2 x double> @llvm.x86.sse2.cvtsi2sd(<2 x double>, i32) nounwind readnone
@@ -1159,37 +1125,19 @@ define <2 x double> @test_x86_sse2_sqrt_sd(<2 x double> %a0) {
 declare <2 x double> @llvm.x86.sse2.sqrt.sd(<2 x double>) nounwind readnone
 
 
-define void @test_x86_sse2_storel_dq(i8* %a0, <4 x i32> %a1) {
-; SSE-LABEL: test_x86_sse2_storel_dq:
-; SSE:       ## BB#0:
-; SSE-NEXT:    movl {{[0-9]+}}(%esp), %eax
-; SSE-NEXT:    movlps %xmm0, (%eax)
-; SSE-NEXT:    retl
-;
-; KNL-LABEL: test_x86_sse2_storel_dq:
-; KNL:       ## BB#0:
-; KNL-NEXT:    movl {{[0-9]+}}(%esp), %eax
-; KNL-NEXT:    vmovlps %xmm0, (%eax)
-; KNL-NEXT:    retl
-  call void @llvm.x86.sse2.storel.dq(i8* %a0, <4 x i32> %a1)
-  ret void
-}
-declare void @llvm.x86.sse2.storel.dq(i8*, <4 x i32>) nounwind
-
-
 define void @test_x86_sse2_storeu_dq(i8* %a0, <16 x i8> %a1) {
   ; add operation forces the execution domain.
 ; SSE-LABEL: test_x86_sse2_storeu_dq:
 ; SSE:       ## BB#0:
 ; SSE-NEXT:    movl {{[0-9]+}}(%esp), %eax
-; SSE-NEXT:    paddb LCPI71_0, %xmm0
+; SSE-NEXT:    paddb LCPI68_0, %xmm0
 ; SSE-NEXT:    movdqu %xmm0, (%eax)
 ; SSE-NEXT:    retl
 ;
 ; KNL-LABEL: test_x86_sse2_storeu_dq:
 ; KNL:       ## BB#0:
 ; KNL-NEXT:    movl {{[0-9]+}}(%esp), %eax
-; KNL-NEXT:    vpaddb LCPI71_0, %xmm0, %xmm0
+; KNL-NEXT:    vpaddb LCPI68_0, %xmm0, %xmm0
 ; KNL-NEXT:    vmovdqu %xmm0, (%eax)
 ; KNL-NEXT:    retl
   %a2 = add <16 x i8> %a1, <i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1>

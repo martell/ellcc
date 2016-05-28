@@ -18,6 +18,7 @@
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/COFF.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
@@ -113,12 +114,32 @@ CodeViewDebug::getInlineSite(const DILocation *InlinedAt,
   if (SiteInsertion.second) {
     Site->SiteFuncId = NextFuncId++;
     Site->Inlinee = Inlinee;
-    auto InlineeInsertion =
-        SubprogramIndices.insert({Inlinee, InlinedSubprograms.size()});
-    if (InlineeInsertion.second)
-      InlinedSubprograms.push_back(Inlinee);
+    InlinedSubprograms.insert(Inlinee);
+    recordFuncIdForSubprogram(Inlinee);
   }
   return *Site;
+}
+
+TypeIndex CodeViewDebug::getGenericFunctionTypeIndex() {
+  if (VoidFnTyIdx.getIndex() != 0)
+    return VoidFnTyIdx;
+
+  ArrayRef<TypeIndex> NoArgs;
+  ArgListRecord ArgListRec(TypeRecordKind::ArgList, NoArgs);
+  TypeIndex ArgListIndex = TypeTable.writeArgList(ArgListRec);
+
+  ProcedureRecord Procedure(TypeIndex::Void(), CallingConvention::NearC,
+                            FunctionOptions::None, 0, ArgListIndex);
+  VoidFnTyIdx = TypeTable.writeProcedure(Procedure);
+  return VoidFnTyIdx;
+}
+
+void CodeViewDebug::recordFuncIdForSubprogram(const DISubprogram *SP) {
+  TypeIndex ParentScope = TypeIndex(0);
+  StringRef DisplayName = SP->getDisplayName();
+  FuncIdRecord FuncId(ParentScope, getGenericFunctionTypeIndex(), DisplayName);
+  TypeIndex TI = TypeTable.writeFuncId(FuncId);
+  TypeIndices[SP] = TI;
 }
 
 void CodeViewDebug::recordLocalVariable(LocalVariable &&Var,
@@ -197,19 +218,19 @@ void CodeViewDebug::maybeRecordLocation(DebugLoc DL,
                         /*IsStmt=*/false, DL->getFilename());
 }
 
+void CodeViewDebug::emitCodeViewMagicVersion() {
+  OS.EmitValueToAlignment(4);
+  OS.AddComment("Debug section magic");
+  OS.EmitIntValue(COFF::DEBUG_SECTION_MAGIC, 4);
+}
+
 void CodeViewDebug::endModule() {
   if (FnDebugInfo.empty())
     return;
 
   emitTypeInformation();
 
-  // FIXME: For functions that are comdat, we should emit separate .debug$S
-  // sections that are comdat associative with the main function instead of
-  // having one big .debug$S section.
   assert(Asm != nullptr);
-  OS.SwitchSection(Asm->getObjFileLowering().getCOFFDebugSymbolsSection());
-  OS.AddComment("Debug section magic");
-  OS.EmitIntValue(COFF::DEBUG_SECTION_MAGIC, 4);
 
   // The COFF .debug$S section consists of several subsections, each starting
   // with a 4-byte control code (e.g. 0xF1, 0xF2, etc) and then a 4-byte length
@@ -217,11 +238,15 @@ void CodeViewDebug::endModule() {
   // aligned.
 
   // Make a subsection for all the inlined subprograms.
-  emitInlineeFuncIdsAndLines();
+  emitInlineeLinesSubsection();
 
   // Emit per-function debug information.
   for (auto &P : FnDebugInfo)
     emitDebugInfoForFunction(P.first, P.second);
+
+  // Switch back to the generic .debug$S section after potentially processing
+  // comdat symbol sections.
+  switchToDebugSectionForSymbol(nullptr);
 
   // This subsection holds a file index to offset in string table table.
   OS.AddComment("File index to string table offset subsection");
@@ -244,52 +269,44 @@ static void emitNullTerminatedSymbolName(MCStreamer &OS, StringRef S) {
 }
 
 void CodeViewDebug::emitTypeInformation() {
-  // Do nothing if we have no debug info or no inlined subprograms.  The types
-  // we currently emit exist only to support inlined call site info.
+  // Do nothing if we have no debug info or if no non-trivial types were emitted
+  // to TypeTable during codegen.
   NamedMDNode *CU_Nodes =
       MMI->getModule()->getNamedMetadata("llvm.dbg.cu");
   if (!CU_Nodes)
     return;
-  if (InlinedSubprograms.empty())
+  if (TypeTable.empty())
     return;
 
   // Start the .debug$T section with 0x4.
   OS.SwitchSection(Asm->getObjFileLowering().getCOFFDebugTypesSection());
-  OS.AddComment("Debug section magic");
-  OS.EmitIntValue(COFF::DEBUG_SECTION_MAGIC, 4);
-
-  // This type info currently only holds function ids for use with inline call
-  // frame info. All functions are assigned a simple 'void ()' type. Emit that
-  // type here.
-  ArrayRef<TypeIndex> NoArgs;
-  ArgListRecord ArgListRec(TypeRecordKind::ArgList, NoArgs);
-  TypeIndex ArgListIndex = TypeTable.writeArgList(ArgListRec);
-
-  ProcedureRecord Procedure(TypeIndex::Void(), CallingConvention::NearC,
-                            FunctionOptions::None, 0, ArgListIndex);
-  TypeIndex VoidFnTyIdx = TypeTable.writeProcedure(Procedure);
-
-  // Emit LF_FUNC_ID records for all inlined subprograms to the type stream.
-  // Allocate one type index for each func id.
-  for (auto *SP : InlinedSubprograms) {
-    TypeIndex ParentScope = TypeIndex(0);
-    StringRef DisplayName = SP->getDisplayName();
-    FuncIdRecord FuncId(ParentScope, VoidFnTyIdx, DisplayName);
-    TypeTable.writeFuncId(FuncId);
-  }
+  emitCodeViewMagicVersion();
 
   TypeTable.ForEachRecord(
       [&](TypeIndex Index, const MemoryTypeTableBuilder::Record *R) {
+        // Each record should be 4 byte aligned. We achieve that by emitting
+        // LF_PAD padding bytes. The on-disk record size includes the padding
+        // bytes so that consumers don't have to skip past them.
+        uint64_t RecordSize = R->size() + 2;
+        uint64_t AlignedSize = alignTo(RecordSize, 4);
+        uint64_t AlignedRecordSize = AlignedSize - 2;
+        assert(AlignedRecordSize < (1 << 16) && "type record size overflow");
         OS.AddComment("Type record length");
-        OS.EmitIntValue(R->size(), 2);
+        OS.EmitIntValue(AlignedRecordSize, 2);
         OS.AddComment("Type record data");
         OS.EmitBytes(StringRef(R->data(), R->size()));
+        // Pad the record with LF_PAD bytes.
+        for (unsigned I = AlignedSize - RecordSize; I > 0; --I)
+          OS.EmitIntValue(LF_PAD0 + I, 1);
       });
 }
 
-void CodeViewDebug::emitInlineeFuncIdsAndLines() {
+void CodeViewDebug::emitInlineeLinesSubsection() {
   if (InlinedSubprograms.empty())
     return;
+
+  // Use the generic .debug$S section.
+  switchToDebugSectionForSymbol(nullptr);
 
   MCSymbol *InlineBegin = MMI->getContext().createTempSymbol(),
            *InlineEnd = MMI->getContext().createTempSymbol();
@@ -305,8 +322,10 @@ void CodeViewDebug::emitInlineeFuncIdsAndLines() {
   OS.AddComment("Inlinee lines signature");
   OS.EmitIntValue(unsigned(InlineeLinesSignature::Normal), 4);
 
-  unsigned InlineeIndex = FuncIdTypeIndexStart;
   for (const DISubprogram *SP : InlinedSubprograms) {
+    assert(TypeIndices.count(SP));
+    TypeIndex InlineeIdx = TypeIndices[SP];
+
     OS.AddBlankLine();
     unsigned FileId = maybeRecordFile(SP->getFile());
     OS.AddComment("Inlined function " + SP->getDisplayName() + " starts at " +
@@ -316,14 +335,11 @@ void CodeViewDebug::emitInlineeFuncIdsAndLines() {
     // 1.
     unsigned FileOffset = (FileId - 1) * 8;
     OS.AddComment("Type index of inlined function");
-    OS.EmitIntValue(InlineeIndex, 4);
+    OS.EmitIntValue(InlineeIdx.getIndex(), 4);
     OS.AddComment("Offset into filechecksum table");
     OS.EmitIntValue(FileOffset, 4);
     OS.AddComment("Starting line number");
     OS.EmitIntValue(SP->getLine(), 4);
-
-    // The next inlined subprogram has the next function id.
-    InlineeIndex++;
   }
 
   OS.EmitLabel(InlineEnd);
@@ -346,8 +362,8 @@ void CodeViewDebug::emitInlinedCallSite(const FunctionInfo &FI,
   MCSymbol *InlineBegin = MMI->getContext().createTempSymbol(),
            *InlineEnd = MMI->getContext().createTempSymbol();
 
-  assert(SubprogramIndices.count(Site.Inlinee));
-  unsigned InlineeIdx = FuncIdTypeIndexStart + SubprogramIndices[Site.Inlinee];
+  assert(TypeIndices.count(Site.Inlinee));
+  TypeIndex InlineeIdx = TypeIndices[Site.Inlinee];
 
   // SymbolRecord
   OS.AddComment("Record length");
@@ -361,7 +377,7 @@ void CodeViewDebug::emitInlinedCallSite(const FunctionInfo &FI,
   OS.AddComment("PtrEnd");
   OS.EmitIntValue(0, 4);
   OS.AddComment("Inlinee type index");
-  OS.EmitIntValue(InlineeIdx, 4);
+  OS.EmitIntValue(InlineeIdx.getIndex(), 4);
 
   unsigned FileId = maybeRecordFile(Site.Inlinee->getFile());
   unsigned StartLineNum = Site.Inlinee->getLine();
@@ -391,12 +407,35 @@ void CodeViewDebug::emitInlinedCallSite(const FunctionInfo &FI,
   OS.EmitIntValue(SymbolKind::S_INLINESITE_END, 2); // RecordKind
 }
 
+void CodeViewDebug::switchToDebugSectionForSymbol(const MCSymbol *GVSym) {
+  // If we have a symbol, it may be in a section that is COMDAT. If so, find the
+  // comdat key. A section may be comdat because of -ffunction-sections or
+  // because it is comdat in the IR.
+  MCSectionCOFF *GVSec =
+      GVSym ? dyn_cast<MCSectionCOFF>(&GVSym->getSection()) : nullptr;
+  const MCSymbol *KeySym = GVSec ? GVSec->getCOMDATSymbol() : nullptr;
+
+  MCSectionCOFF *DebugSec = cast<MCSectionCOFF>(
+      Asm->getObjFileLowering().getCOFFDebugSymbolsSection());
+  DebugSec = OS.getContext().getAssociativeCOFFSection(DebugSec, KeySym);
+
+  OS.SwitchSection(DebugSec);
+
+  // Emit the magic version number if this is the first time we've switched to
+  // this section.
+  if (ComdatDebugSections.insert(DebugSec).second)
+    emitCodeViewMagicVersion();
+}
+
 void CodeViewDebug::emitDebugInfoForFunction(const Function *GV,
                                              FunctionInfo &FI) {
   // For each function there is a separate subsection
   // which holds the PC to file:line table.
   const MCSymbol *Fn = Asm->getSymbol(GV);
   assert(Fn);
+
+  // Switch to the to a comdat section, if appropriate.
+  switchToDebugSectionForSymbol(Fn);
 
   StringRef FuncName;
   if (auto *SP = GV->getSubprogram())
@@ -709,25 +748,25 @@ void CodeViewDebug::emitLocalVariable(const LocalVariable &Var) {
       continue;
 
     if (DefRange.InMemory) {
-      DefRangeRegisterRelSym Sym{};
+      DefRangeRegisterRelSym Sym(DefRange.CVRegister, 0, DefRange.DataOffset, 0,
+                                 0, 0, ArrayRef<LocalVariableAddrGap>());
       ulittle16_t SymKind = ulittle16_t(S_DEFRANGE_REGISTER_REL);
-      Sym.BaseRegister = DefRange.CVRegister;
-      Sym.Flags = 0; // Unclear what matters here.
-      Sym.BasePointerOffset = DefRange.DataOffset;
       BytePrefix +=
           StringRef(reinterpret_cast<const char *>(&SymKind), sizeof(SymKind));
-      BytePrefix += StringRef(reinterpret_cast<const char *>(&Sym),
-                              sizeof(Sym) - sizeof(LocalVariableAddrRange));
+      BytePrefix +=
+          StringRef(reinterpret_cast<const char *>(&Sym.Header),
+                    sizeof(Sym.Header) - sizeof(LocalVariableAddrRange));
     } else {
       assert(DefRange.DataOffset == 0 && "unexpected offset into register");
-      DefRangeRegisterSym Sym{};
+      // Unclear what matters here.
+      DefRangeRegisterSym Sym(DefRange.CVRegister, 0, 0, 0, 0,
+                              ArrayRef<LocalVariableAddrGap>());
       ulittle16_t SymKind = ulittle16_t(S_DEFRANGE_REGISTER);
-      Sym.Register = DefRange.CVRegister;
-      Sym.MayHaveNoName = 0; // Unclear what matters here.
       BytePrefix +=
           StringRef(reinterpret_cast<const char *>(&SymKind), sizeof(SymKind));
-      BytePrefix += StringRef(reinterpret_cast<const char *>(&Sym),
-                              sizeof(Sym) - sizeof(LocalVariableAddrRange));
+      BytePrefix +=
+          StringRef(reinterpret_cast<const char *>(&Sym.Header),
+                    sizeof(Sym.Header) - sizeof(LocalVariableAddrRange));
     }
     OS.EmitCVDefRangeDirective(DefRange.Ranges, BytePrefix);
   }

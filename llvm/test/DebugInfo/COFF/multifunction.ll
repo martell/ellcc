@@ -52,6 +52,7 @@
 ; X86:      [[END_OF_F:.?Lfunc_end.*]]:
 ;
 ; X86-LABEL: .section        .debug$S,"dr"
+; X86-NEXT: .p2align 2
 ; X86-NEXT: .long   4
 ; Symbol subsection for x
 ; X86-NEXT: .long   241
@@ -157,7 +158,8 @@
 ; OBJ32:          DisplayName: x
 ; OBJ32:          LinkageName: _x
 ; OBJ32:        }
-; OBJ32:        ProcEnd
+; OBJ32:        ProcEnd {
+; OBJ32:        }
 ; OBJ32-NEXT: ]
 ; OBJ32:      Subsection [
 ; OBJ32-NEXT:   SubSectionType: Lines (0xF2)
@@ -170,7 +172,8 @@
 ; OBJ32:          DisplayName: y
 ; OBJ32:          LinkageName: _y
 ; OBJ32:        }
-; OBJ32:        ProcEnd
+; OBJ32:        ProcEnd {
+; OBJ32:        }
 ; OBJ32-NEXT: ]
 ; OBJ32:      Subsection [
 ; OBJ32-NEXT:   SubSectionType: Lines (0xF2)
@@ -183,7 +186,8 @@
 ; OBJ32:          DisplayName: f
 ; OBJ32:          LinkageName: _f
 ; OBJ32:        }
-; OBJ32:        ProcEnd
+; OBJ32:        ProcEnd {
+; OBJ32:        }
 ; OBJ32-NEXT: ]
 ; OBJ32:      Subsection [
 ; OBJ32-NEXT:   SubSectionType: Lines (0xF2)
@@ -312,6 +316,7 @@
 ; X64:      [[END_OF_F:.?Lfunc_end.*]]:
 ;
 ; X64-LABEL: .section        .debug$S,"dr"
+; X64-NEXT: .p2align 2
 ; X64-NEXT: .long   4
 ; Symbol subsection for x
 ; X64-NEXT: .long   241
@@ -419,7 +424,8 @@
 ; OBJ64:          DisplayName: x
 ; OBJ64:          LinkageName: x
 ; OBJ64:        }
-; OBJ64:        ProcEnd
+; OBJ64:        ProcEnd {
+; OBJ64:        }
 ; OBJ64-NEXT: ]
 ; OBJ64:      Subsection [
 ; OBJ64-NEXT:   SubSectionType: Lines (0xF2)
@@ -432,7 +438,8 @@
 ; OBJ64:          DisplayName: y
 ; OBJ64:          LinkageName: y
 ; OBJ64:        }
-; OBJ64:        ProcEnd
+; OBJ64:        ProcEnd {
+; OBJ64:        }
 ; OBJ64-NEXT: ]
 ; OBJ64:      Subsection [
 ; OBJ64-NEXT:   SubSectionType: Lines (0xF2)
@@ -445,7 +452,8 @@
 ; OBJ64:          DisplayName: f
 ; OBJ64:          LinkageName: f
 ; OBJ64:        }
-; OBJ64:        ProcEnd
+; OBJ64:        ProcEnd {
+; OBJ64:        }
 ; OBJ64-NEXT: ]
 ; OBJ64:      Subsection [
 ; OBJ64-NEXT:   SubSectionType: Lines (0xF2)

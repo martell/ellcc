@@ -11728,7 +11728,8 @@ fi
 NO_WERROR=
 if test "${ERROR_ON_WARNING}" = yes ; then
     GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror \
-        -Wno-unused-function -Wno-unused-const-variable -Wno-format-security"
+        -Wno-unused-function -Wno-unused-const-variable -Wno-format-security \
+        -Wno-varargs"
     NO_WERROR="-Wno-error"
 fi
 

@@ -1529,12 +1529,13 @@ public:
                                ParsedType &SuggestedType,
                                bool AllowClassTemplates = false);
 
-  /// \brief For compatibility with MSVC, we delay parsing of some default
-  /// template type arguments until instantiation time.  Emits a warning and
-  /// returns a synthesized DependentNameType that isn't really dependent on any
-  /// other template arguments.
-  ParsedType ActOnDelayedDefaultTemplateArg(const IdentifierInfo &II,
-                                            SourceLocation NameLoc);
+  /// Attempt to behave like MSVC in situations where lookup of an unqualified
+  /// type name has failed in a dependent context. In these situations, we
+  /// automatically form a DependentTypeName that will retry lookup in a related
+  /// scope during instantiation.
+  ParsedType ActOnMSVCUnknownTypeName(const IdentifierInfo &II,
+                                      SourceLocation NameLoc,
+                                      bool IsTemplateTypeArg);
 
   /// \brief Describes the result of the name lookup and resolution performed
   /// by \c ClassifyName().
@@ -8172,6 +8173,10 @@ public:
       ArrayRef<OMPClause *> Clauses, Stmt *AStmt, SourceLocation StartLoc,
       SourceLocation EndLoc,
       llvm::DenseMap<ValueDecl *, Expr *> &VarsWithImplicitDSA);
+  /// \brief Called on well-formed '\#pragma omp target update'.
+  StmtResult ActOnOpenMPTargetUpdateDirective(ArrayRef<OMPClause *> Clauses,
+                                              SourceLocation StartLoc,
+                                              SourceLocation EndLoc);
 
   /// Checks correctness of linear modifiers.
   bool CheckOpenMPLinearModifier(OpenMPLinearClauseKind LinKind,
@@ -8413,6 +8418,16 @@ public:
       OpenMPDefaultmapClauseModifier M, OpenMPDefaultmapClauseKind Kind,
       SourceLocation StartLoc, SourceLocation LParenLoc, SourceLocation MLoc,
       SourceLocation KindLoc, SourceLocation EndLoc);
+  /// \brief Called on well-formed 'to' clause.
+  OMPClause *ActOnOpenMPToClause(ArrayRef<Expr *> VarList,
+                                 SourceLocation StartLoc,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation EndLoc);
+  /// \brief Called on well-formed 'from' clause.
+  OMPClause *ActOnOpenMPFromClause(ArrayRef<Expr *> VarList,
+                                   SourceLocation StartLoc,
+                                   SourceLocation LParenLoc,
+                                   SourceLocation EndLoc);
 
   /// \brief The kind of conversion being performed.
   enum CheckedConversionKind {

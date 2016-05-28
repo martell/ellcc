@@ -29,8 +29,6 @@ using namespace llvm;
 // Out of line method to get vtable etc for class.
 void ValueMapTypeRemapper::anchor() {}
 void ValueMaterializer::anchor() {}
-void ValueMaterializer::materializeInitFor(GlobalValue *New, GlobalValue *Old) {
-}
 
 namespace {
 
@@ -363,12 +361,8 @@ Value *Mapper::mapValue(const Value *V) {
 
   // If we have a materializer and it can materialize a value, use that.
   if (auto *Materializer = getMaterializer()) {
-    if (Value *NewV =
-            Materializer->materializeDeclFor(const_cast<Value *>(V))) {
+    if (Value *NewV = Materializer->materialize(const_cast<Value *>(V))) {
       getVM()[V] = NewV;
-      if (auto *NewGV = dyn_cast<GlobalValue>(NewV))
-        Materializer->materializeInitFor(
-            NewGV, cast<GlobalValue>(const_cast<Value *>(V)));
       return NewV;
     }
   }
@@ -442,7 +436,8 @@ Value *Mapper::mapValue(const Value *V) {
   for (; OpNo != NumOperands; ++OpNo) {
     Value *Op = C->getOperand(OpNo);
     Mapped = mapValue(Op);
-    if (Mapped != C) break;
+    if (Mapped != Op)
+      break;
   }
 
   // See if the type mapper wants to remap the type as well.

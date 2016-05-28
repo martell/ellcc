@@ -250,7 +250,7 @@ __m128 test_mm_cmp_ss(__m128 A, __m128 B) {
 
 __m256d test_mm256_cvtepi32_pd(__m128i A) {
   // CHECK-LABEL: test_mm256_cvtepi32_pd
-  // CHECK: call <4 x double> @llvm.x86.avx.cvtdq2.pd.256(<4 x i32> %{{.*}})
+  // CHECK: sitofp <4 x i32> %{{.*}} to <4 x double>
   return _mm256_cvtepi32_pd(A);
 }
 
@@ -280,7 +280,7 @@ __m256i test_mm256_cvtps_epi32(__m256 A) {
 
 __m256d test_mm256_cvtps_pd(__m128 A) {
   // CHECK-LABEL: test_mm256_cvtps_pd
-  // CHECK: call <4 x double> @llvm.x86.avx.cvt.ps2.pd.256(<4 x float> %{{.*}})
+  // CHECK: fpext <4 x float> %{{.*}} to <4 x double>
   return _mm256_cvtps_pd(A);
 }
 
@@ -314,21 +314,19 @@ __m256 test_mm256_dp_ps(__m256 A, __m256 B) {
   return _mm256_dp_ps(A, B, 7);
 }
 
-// FIXME: ZEXT instead of SEXT
 int test_mm256_extract_epi8(__m256i A) {
   // CHECK-LABEL: test_mm256_extract_epi8
   // CHECK: and i32 %{{.*}}, 31
   // CHECK: extractelement <32 x i8> %{{.*}}, i32 %{{.*}}
-  // CHECK: ext i8 %{{.*}} to i32
+  // CHECK: zext i8 %{{.*}} to i32
   return _mm256_extract_epi8(A, 32);
 }
 
-// FIXME: ZEXT instead of SEXT
 int test_mm256_extract_epi16(__m256i A) {
   // CHECK-LABEL: test_mm256_extract_epi16
   // CHECK: and i32 %{{.*}}, 15
   // CHECK: extractelement <16 x i16> %{{.*}}, i32 %{{.*}}
-  // CHECK: ext i16 %{{.*}} to i32
+  // CHECK: zext i16 %{{.*}} to i32
   return _mm256_extract_epi16(A, 16);
 }
 

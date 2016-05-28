@@ -126,26 +126,6 @@ define <16 x float> @test_rsqrt_ps_512(<16 x float> %a0) {
 }
 declare <16 x float> @llvm.x86.avx512.rsqrt14.ps.512(<16 x float>, <16 x float>, i16) nounwind readnone
 
-define <4 x float> @test_rsqrt14_ss(<4 x float> %a0) {
-; CHECK-LABEL: test_rsqrt14_ss:
-; CHECK:       ## BB#0:
-; CHECK-NEXT:    vrsqrt14ss %xmm0, %xmm0, %xmm0
-; CHECK-NEXT:    retq
-  %res = call <4 x float> @llvm.x86.avx512.rsqrt14.ss(<4 x float> %a0, <4 x float> %a0, <4 x float> zeroinitializer, i8 -1) ; <<4 x float>> [#uses=1]
-  ret <4 x float> %res
-}
-declare <4 x float> @llvm.x86.avx512.rsqrt14.ss(<4 x float>, <4 x float>, <4 x float>, i8) nounwind readnone
-
-define <4 x float> @test_rcp14_ss(<4 x float> %a0) {
-; CHECK-LABEL: test_rcp14_ss:
-; CHECK:       ## BB#0:
-; CHECK-NEXT:    vrcp14ss %xmm0, %xmm0, %xmm0
-; CHECK-NEXT:    retq
-  %res = call <4 x float> @llvm.x86.avx512.rcp14.ss(<4 x float> %a0, <4 x float> %a0, <4 x float> zeroinitializer, i8 -1) ; <<4 x float>> [#uses=1]
-  ret <4 x float> %res
-}
-declare <4 x float> @llvm.x86.avx512.rcp14.ss(<4 x float>, <4 x float>, <4 x float>, i8) nounwind readnone
-
 define <8 x double> @test_sqrt_pd_512(<8 x double> %a0) {
 ; CHECK-LABEL: test_sqrt_pd_512:
 ; CHECK:       ## BB#0:
@@ -5616,39 +5596,6 @@ define <16 x i32>@test_int_x86_avx512_mask_cvtt_ps2udq_512(<16 x float> %x0, <16
   ret <16 x i32> %res2
 }
 
-
-declare <4 x float> @llvm.x86.avx512.mask.scalef.ss(<4 x float>, <4 x float>,<4 x float>, i8, i32)
-define <4 x float>@test_int_x86_avx512_mask_scalef_ss(<4 x float> %x0, <4 x float> %x1, <4 x float> %x3, i8 %x4) {
-; CHECK-LABEL: test_int_x86_avx512_mask_scalef_ss:
-; CHECK:       ## BB#0:
-; CHECK-NEXT:    andl $1, %edi
-; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vscalefss %xmm1, %xmm0, %xmm2 {%k1}
-; CHECK-NEXT:    vscalefss {rn-sae}, %xmm1, %xmm0, %xmm0
-; CHECK-NEXT:    vaddps %xmm0, %xmm2, %xmm0
-; CHECK-NEXT:    retq
-  %res = call <4 x float> @llvm.x86.avx512.mask.scalef.ss(<4 x float> %x0, <4 x float> %x1, <4 x float> %x3, i8 %x4, i32 4)
-  %res1 = call <4 x float> @llvm.x86.avx512.mask.scalef.ss(<4 x float> %x0, <4 x float> %x1, <4 x float> %x3, i8 -1, i32 8)
-  %res2 = fadd <4 x float> %res, %res1
-  ret <4 x float> %res2
-}
-
-declare <2 x double> @llvm.x86.avx512.mask.scalef.sd(<2 x double>, <2 x double>,<2 x double>, i8, i32)
-define <2 x double>@test_int_x86_avx512_mask_scalef_sd(<2 x double> %x0, <2 x double> %x1, <2 x double> %x3, i8 %x4) {
-; CHECK-LABEL: test_int_x86_avx512_mask_scalef_sd:
-; CHECK:       ## BB#0:
-; CHECK-NEXT:    andl $1, %edi
-; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vscalefsd %xmm1, %xmm0, %xmm2 {%k1}
-; CHECK-NEXT:    vscalefsd {rn-sae}, %xmm1, %xmm0, %xmm0
-; CHECK-NEXT:    vaddpd %xmm0, %xmm2, %xmm0
-; CHECK-NEXT:    retq
-  %res = call <2 x double> @llvm.x86.avx512.mask.scalef.sd(<2 x double> %x0, <2 x double> %x1, <2 x double> %x3, i8 %x4, i32 4)
-  %res1 = call <2 x double> @llvm.x86.avx512.mask.scalef.sd(<2 x double> %x0, <2 x double> %x1, <2 x double> %x3, i8 -1, i32 8)
-  %res2 = fadd <2 x double> %res, %res1
-  ret <2 x double> %res2
-}
-
 declare <4 x float> @llvm.x86.avx512.mask.getexp.ss(<4 x float>, <4 x float>, <4 x float>, i8, i32) nounwind readnone
 
 define <4 x float> @test_getexp_ss(<4 x float> %a0, <4 x float> %a1, <4 x float> %a2, i8 %mask) {
@@ -5712,8 +5659,7 @@ define i8@test_int_x86_avx512_mask_cmp_sd(<2 x double> %x0, <2 x double> %x1, i8
 ; CHECK-NEXT:    kmovw %edi, %k1
 ; CHECK-NEXT:    vcmpnltsd {sae}, %xmm1, %xmm0, %k0 {%k1}
 ; CHECK-NEXT:    kmovw %k0, %eax
-; CHECK-NEXT:    shlb $7, %al
-; CHECK-NEXT:    sarb $7, %al
+; CHECK-NEXT:    andl $1, %eax
 ; CHECK-NEXT:    retq
 
   %res4 = call i8 @llvm.x86.avx512.mask.cmp.sd(<2 x double> %x0, <2 x double> %x1, i32 5, i8 %x3, i32 8)
@@ -5734,8 +5680,7 @@ define i8@test_int_x86_avx512_mask_cmp_sd_all(<2 x double> %x0, <2 x double> %x1
 ; CHECK-NEXT:    kandw %k2, %k1, %k1
 ; CHECK-NEXT:    korw %k1, %k0, %k0
 ; CHECK-NEXT:    kmovw %k0, %eax
-; CHECK-NEXT:    shlb $7, %al
-; CHECK-NEXT:    sarb $7, %al
+; CHECK-NEXT:    andl $1, %eax
 ; CHECK-NEXT:    retq
 
   %res1 = call i8 @llvm.x86.avx512.mask.cmp.sd(<2 x double> %x0, <2 x double> %x1, i32 2, i8 -1, i32 4)
@@ -5758,8 +5703,7 @@ define i8@test_int_x86_avx512_mask_cmp_ss(<4 x float> %x0, <4 x float> %x1, i8 %
 ; CHECK-NEXT:    kmovw %edi, %k1
 ; CHECK-NEXT:    vcmpunordss %xmm1, %xmm0, %k0 {%k1}
 ; CHECK-NEXT:    kmovw %k0, %eax
-; CHECK-NEXT:    shlb $7, %al
-; CHECK-NEXT:    sarb $7, %al
+; CHECK-NEXT:    andl $1, %eax
 ; CHECK-NEXT:    retq
 
   %res2 = call i8 @llvm.x86.avx512.mask.cmp.ss(<4 x float> %x0, <4 x float> %x1, i32 3, i8 %x3, i32 4)
@@ -5772,15 +5716,16 @@ define i8@test_int_x86_avx512_mask_cmp_ss_all(<4 x float> %x0, <4 x float> %x1, 
 ; CHECK:       ## BB#0:
 ; CHECK-NEXT:    vcmpless %xmm1, %xmm0, %k1
 ; CHECK-NEXT:    vcmpunordss {sae}, %xmm1, %xmm0, %k0 {%k1}
-; CHECK-NEXT:    vcmpneqss %xmm1, %xmm0, %k1
-; CHECK-NEXT:    vcmpnltss {sae}, %xmm1, %xmm0, %k1 {%k1}
 ; CHECK-NEXT:    andl $1, %edi
-; CHECK-NEXT:    kmovw %edi, %k2
-; CHECK-NEXT:    kandw %k2, %k1, %k1
-; CHECK-NEXT:    kandw %k1, %k0, %k0
+; CHECK-NEXT:    kmovw %edi, %k1
+; CHECK-NEXT:    vcmpneqss %xmm1, %xmm0, %k2 {%k1}
+; CHECK-NEXT:    kmovw %k2, %ecx
+; CHECK-NEXT:    vcmpnltss {sae}, %xmm1, %xmm0, %k1 {%k1}
+; CHECK-NEXT:    kmovw %k1, %edx
+; CHECK-NEXT:    andl $1, %edx
 ; CHECK-NEXT:    kmovw %k0, %eax
-; CHECK-NEXT:    shlb $7, %al
-; CHECK-NEXT:    sarb $7, %al
+; CHECK-NEXT:    andb %cl, %al
+; CHECK-NEXT:    andb %dl, %al
 ; CHECK-NEXT:    retq
   %res1 = call i8 @llvm.x86.avx512.mask.cmp.ss(<4 x float> %x0, <4 x float> %x1, i32 2, i8 -1, i32 4)
   %res2 = call i8 @llvm.x86.avx512.mask.cmp.ss(<4 x float> %x0, <4 x float> %x1, i32 3, i8 -1, i32 8)
@@ -7088,9 +7033,9 @@ define <8 x double>@test_int_x86_avx512_mask_permvar_df_512(<8 x double> %x0, <8
 ; CHECK-LABEL: test_int_x86_avx512_mask_permvar_df_512:
 ; CHECK:       ## BB#0:
 ; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vpermpd %zmm1, %zmm0, %zmm2 {%k1}
-; CHECK-NEXT:    vpermpd %zmm1, %zmm0, %zmm3 {%k1} {z}
-; CHECK-NEXT:    vpermpd %zmm1, %zmm0, %zmm0
+; CHECK-NEXT:    vpermpd %zmm0, %zmm1, %zmm2 {%k1}
+; CHECK-NEXT:    vpermpd %zmm0, %zmm1, %zmm3 {%k1} {z}
+; CHECK-NEXT:    vpermpd %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    vaddpd %zmm3, %zmm2, %zmm1
 ; CHECK-NEXT:    vaddpd %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    retq
@@ -7108,9 +7053,9 @@ define <8 x i64>@test_int_x86_avx512_mask_permvar_di_512(<8 x i64> %x0, <8 x i64
 ; CHECK-LABEL: test_int_x86_avx512_mask_permvar_di_512:
 ; CHECK:       ## BB#0:
 ; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vpermq %zmm1, %zmm0, %zmm2 {%k1}
-; CHECK-NEXT:    vpermq %zmm1, %zmm0, %zmm3 {%k1} {z}
-; CHECK-NEXT:    vpermq %zmm1, %zmm0, %zmm0
+; CHECK-NEXT:    vpermq %zmm0, %zmm1, %zmm2 {%k1}
+; CHECK-NEXT:    vpermq %zmm0, %zmm1, %zmm3 {%k1} {z}
+; CHECK-NEXT:    vpermq %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    vpaddq %zmm3, %zmm2, %zmm1
 ; CHECK-NEXT:    vpaddq %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    retq
@@ -7128,9 +7073,9 @@ define <16 x float>@test_int_x86_avx512_mask_permvar_sf_512(<16 x float> %x0, <1
 ; CHECK-LABEL: test_int_x86_avx512_mask_permvar_sf_512:
 ; CHECK:       ## BB#0:
 ; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vpermps %zmm1, %zmm0, %zmm2 {%k1}
-; CHECK-NEXT:    vpermps %zmm1, %zmm0, %zmm3 {%k1} {z}
-; CHECK-NEXT:    vpermps %zmm1, %zmm0, %zmm0
+; CHECK-NEXT:    vpermps %zmm0, %zmm1, %zmm2 {%k1}
+; CHECK-NEXT:    vpermps %zmm0, %zmm1, %zmm3 {%k1} {z}
+; CHECK-NEXT:    vpermps %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    vaddps %zmm3, %zmm2, %zmm1
 ; CHECK-NEXT:    vaddps %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    retq
@@ -7148,9 +7093,9 @@ define <16 x i32>@test_int_x86_avx512_mask_permvar_si_512(<16 x i32> %x0, <16 x 
 ; CHECK-LABEL: test_int_x86_avx512_mask_permvar_si_512:
 ; CHECK:       ## BB#0:
 ; CHECK-NEXT:    kmovw %edi, %k1
-; CHECK-NEXT:    vpermd %zmm1, %zmm0, %zmm2 {%k1}
-; CHECK-NEXT:    vpermd %zmm1, %zmm0, %zmm3 {%k1} {z}
-; CHECK-NEXT:    vpermd %zmm1, %zmm0, %zmm0
+; CHECK-NEXT:    vpermd %zmm0, %zmm1, %zmm2 {%k1}
+; CHECK-NEXT:    vpermd %zmm0, %zmm1, %zmm3 {%k1} {z}
+; CHECK-NEXT:    vpermd %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    vpaddd %zmm3, %zmm2, %zmm1
 ; CHECK-NEXT:    vpaddd %zmm0, %zmm1, %zmm0
 ; CHECK-NEXT:    retq

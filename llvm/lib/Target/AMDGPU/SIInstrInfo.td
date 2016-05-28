@@ -486,7 +486,7 @@ include "VIInstrFormats.td"
 class NamedMatchClass<string CName, bit Optional = 1> : AsmOperandClass {
   let Name = "Imm"#CName;
   let PredicateMethod = "is"#CName;
-  let ParserMethod = "parse"#CName;
+  let ParserMethod = !if(Optional, "parseOptionalOperand", "parse"#CName);
   let RenderMethod = "addImmOperands";
   let IsOptional = Optional;
   let DefaultMethod = "default"#CName;
@@ -498,7 +498,7 @@ class NamedOperandBit<string Name, AsmOperandClass MatchClass> : Operand<i1> {
   let PrintMethod = "print"#Name;
   let ParserMatchClass = MatchClass;
 }
- 
+
 class NamedOperandU8<string Name, AsmOperandClass MatchClass> : Operand<i8> {
   let PrintMethod = "print"#Name;
   let ParserMatchClass = MatchClass;
@@ -552,7 +552,7 @@ def src0_sel : NamedOperandU32<"SDWASrc0Sel", sdwa_sel>;
 def src1_sel : NamedOperandU32<"SDWASrc1Sel", sdwa_sel>;
 def dst_unused : NamedOperandU32<"SDWADstUnused", NamedMatchClass<"SDWADstUnused">>;
 
-def hwreg : NamedOperandU16<"Hwreg", NamedMatchClass<"Hwreg">>;
+def hwreg : NamedOperandU16<"Hwreg", NamedMatchClass<"Hwreg", 0>>;
 
 } // End OperandType = "OPERAND_IMMEDIATE"
 
@@ -1098,6 +1098,7 @@ def InputMods : OperandWithDefaultOps <i32, (ops (i32 0))> {
 
 def InputModsMatchClass : AsmOperandClass {
   let Name = "RegOrImmWithInputMods";
+  let ParserMethod = "parseRegOrImmWithInputMods";
 }
 
 def InputModsNoDefault : Operand <i32> {
@@ -1385,14 +1386,14 @@ class VOPProfile <list<ValueType> _ArgVT> {
   field RegisterClass Src1DPP = getVregSrcForVT<Src1VT>.ret;
   field RegisterClass Src0SDWA = getVregSrcForVT<Src0VT>.ret;
   field RegisterClass Src1SDWA = getVregSrcForVT<Src1VT>.ret;
-  
+
   field bit HasDst = !if(!eq(DstVT.Value, untyped.Value), 0, 1);
   field bit HasDst32 = HasDst;
   field int NumSrcArgs = getNumSrcArgs<Src0VT, Src1VT, Src2VT>.ret;
   field bit HasModifiers = hasModifiers<Src0VT>.ret;
 
   field bit HasExt = getHasExt<NumSrcArgs, DstVT, Src0VT, Src1VT>.ret;
-  
+
   field dag Outs = !if(HasDst,(outs DstRC:$vdst),(outs));
 
   // VOP3b instructions are a special case with a second explicit
@@ -1671,10 +1672,10 @@ class SDWADisableFields <VOPProfile p> {
   bits<8> src0 = !if(!eq(p.NumSrcArgs, 0), 0, ?);
   bits<3> src0_sel = !if(!eq(p.NumSrcArgs, 0), 6, ?);
   bits<3> src0_modifiers = !if(p.HasModifiers, ?, 0);
-  bits<3> src1_sel = !if(!eq(p.NumSrcArgs, 0), 6, 
+  bits<3> src1_sel = !if(!eq(p.NumSrcArgs, 0), 6,
                          !if(!eq(p.NumSrcArgs, 1), 6,
                              ?));
-  bits<3> src1_modifiers = !if(!eq(p.NumSrcArgs, 0), 0, 
+  bits<3> src1_modifiers = !if(!eq(p.NumSrcArgs, 0), 0,
                                !if(!eq(p.NumSrcArgs, 1), 0,
                                    !if(p.HasModifiers, ?, 0)));
   bits<3> dst_sel = !if(p.HasDst, ?, 6);

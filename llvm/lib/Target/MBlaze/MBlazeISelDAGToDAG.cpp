@@ -83,7 +83,7 @@ private:
   }
 
   SDNode *getGlobalBaseReg();
-  SDNode *SelectImpl(SDNode *N) override;
+  void Select(SDNode *N) override;
 
   // Address Selection
   bool SelectAddrRegReg(SDValue N, SDValue &Base, SDValue &Index);
@@ -203,13 +203,15 @@ SDNode *MBlazeDAGToDAGISel::getGlobalBaseReg() {
 
 /// Select instructions not customized! Used for
 /// expanded, promoted and normal instructions
-SDNode *MBlazeDAGToDAGISel::SelectImpl(SDNode *Node) {
+void MBlazeDAGToDAGISel::Select(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc dl(Node);
 
   // If we have a custom node, we already have selected!
-  if (Node->isMachineOpcode())
-    return NULL;
+  if (Node->isMachineOpcode()) {
+    Node->setNodeId(-1);
+    return;
+  }
 
   ///
   // Instruction Selection not handled by the auto-generated
@@ -220,7 +222,8 @@ SDNode *MBlazeDAGToDAGISel::SelectImpl(SDNode *Node) {
 
     // Get target GOT address.
     case ISD::GLOBAL_OFFSET_TABLE:
-      return getGlobalBaseReg();
+      ReplaceNode(Node, getGlobalBaseReg());
+      return;
 
     case ISD::FrameIndex: {
         SDValue imm = CurDAG->getTargetConstant(0, dl, MVT::i32);
@@ -229,8 +232,10 @@ SDNode *MBlazeDAGToDAGISel::SelectImpl(SDNode *Node) {
         SDValue TFI = CurDAG->getTargetFrameIndex(FI, VT);
         unsigned Opc = MBlaze::ADDIK;
         if (Node->hasOneUse())
-          return CurDAG->SelectNodeTo(Node, Opc, VT, TFI, imm);
-        return CurDAG->getMachineNode(Opc, dl, VT, TFI, imm);
+          ReplaceNode(Node, CurDAG->SelectNodeTo(Node, Opc, VT, TFI, imm));
+	else
+          ReplaceNode(Node, CurDAG->getMachineNode(Opc, dl, VT, TFI, imm));
+        return;
     }
 
 
@@ -270,21 +275,14 @@ SDNode *MBlazeDAGToDAGISel::SelectImpl(SDNode *Node) {
         InFlag = SDValue(ResNode, 1);
         ReplaceUses(SDValue(Node, 0), Chain);
         ReplaceUses(SDValue(Node, 1), InFlag);
-        return ResNode;
+        ReplaceNode(Node, ResNode);
+        return;
       }
     }
   }
 
   // Select the default instruction
-  SDNode *ResNode = SelectCode(Node);
-
-  DEBUG(errs() << "=> ");
-  if (ResNode == NULL || ResNode == Node)
-    DEBUG(Node->dump(CurDAG));
-  else
-    DEBUG(ResNode->dump(CurDAG));
-  DEBUG(errs() << "\n");
-  return ResNode;
+  SelectCode(Node);
 }
 
 /// createMBlazeISelDag - This pass converts a legalized DAG into a

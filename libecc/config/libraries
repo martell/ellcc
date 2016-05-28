@@ -6,7 +6,6 @@ arm32v7sf-linux
 arm32v7eb-linux
 arm32v7ebsf-linux
 cortex-m3-linux
-microblaze-linux
 mips32r2el-linux
 mips32r2elsf-linux
 mips32r2-linux
@@ -15,7 +14,6 @@ ppc32-linux
 x86_32-linux
 x86_64-linux
 arm32v7sf-elk
-microblaze-elk
 mips32r2sf-elk
 ppc32-elk
 x86_32-elk

@@ -1274,7 +1274,7 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   if (CPUName.empty()) {
     // Deduce CPU name from ABI name.
     CPUName = llvm::StringSwitch<const char *>(ABIName)
-                  .Cases("o32", "eabi", DefMips32CPU)
+                  .Case("o32", DefMips32CPU)
                   .Cases("n32", "n64", DefMips64CPU)
                   .Default("");
   }
@@ -1477,6 +1477,19 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     CmdArgs.push_back("-mllvm");
     CmdArgs.push_back(Args.MakeArgString("-mips-ssection-threshold=" + v));
     A->claim();
+  }
+
+  if (Arg *A = Args.getLastArg(options::OPT_mcompact_branches_EQ)) {
+    StringRef Val = StringRef(A->getValue());
+    if (mips::hasCompactBranches(CPUName)) {
+      if (Val == "never" || Val == "always" || Val == "optimal") {
+        CmdArgs.push_back("-mllvm");
+        CmdArgs.push_back(Args.MakeArgString("-mips-compact-branches=" + Val));
+      } else
+        D.Diag(diag::err_drv_unsupported_option_argument)
+            << A->getOption().getName() << Val;
+    } else
+      D.Diag(diag::warn_target_unsupported_compact_branches) << CPUName;
   }
 }
 
@@ -1712,26 +1725,66 @@ static std::string getLanaiTargetCPU(const ArgList &Args) {
   return "";
 }
 
-void Clang::AddSparcTargetArgs(const ArgList &Args,
-                               ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-  std::string Triple = getToolChain().ComputeEffectiveClangTriple(Args);
-
-  bool SoftFloatABI = false;
+sparc::FloatABI sparc::getSparcFloatABI(const Driver &D,
+                                        const ArgList &Args) {
+  sparc::FloatABI ABI = sparc::FloatABI::Invalid;
   if (Arg *A =
-          Args.getLastArg(options::OPT_msoft_float, options::OPT_mhard_float)) {
+          Args.getLastArg(options::OPT_msoft_float, options::OPT_mhard_float,
+                          options::OPT_mfloat_abi_EQ)) {
     if (A->getOption().matches(options::OPT_msoft_float))
-      SoftFloatABI = true;
+      ABI = sparc::FloatABI::Soft;
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      ABI = sparc::FloatABI::Hard;
+    else {
+      ABI = llvm::StringSwitch<sparc::FloatABI>(A->getValue())
+                .Case("soft", sparc::FloatABI::Soft)
+                .Case("hard", sparc::FloatABI::Hard)
+                .Default(sparc::FloatABI::Invalid);
+      if (ABI == sparc::FloatABI::Invalid &&
+          !StringRef(A->getValue()).empty()) {
+        D.Diag(diag::err_drv_invalid_mfloat_abi) << A->getAsString(Args);
+        ABI = sparc::FloatABI::Hard;
+      }
+    }
   }
 
+  // If unspecified, choose the default based on the platform.
   // Only the hard-float ABI on Sparc is standardized, and it is the
-  // default. GCC also supports a nonstandard soft-float ABI mode, and
-  // perhaps LLVM should implement that, too. However, since llvm
-  // currently does not support Sparc soft-float, at all, display an
-  // error if it's requested.
-  if (SoftFloatABI) {
-    D.Diag(diag::err_drv_unsupported_opt_for_target) << "-msoft-float"
-                                                     << Triple;
+  // default. GCC also supports a nonstandard soft-float ABI mode, also
+  // implemented in LLVM. However as this is not standard we set the default
+  // to be hard-float.
+  if (ABI == sparc::FloatABI::Invalid) {
+    ABI = sparc::FloatABI::Hard;
+  }
+
+  return ABI;
+}
+
+static void getSparcTargetFeatures(const Driver &D, const ArgList &Args,
+                                 std::vector<const char *> &Features) {
+  sparc::FloatABI FloatABI = sparc::getSparcFloatABI(D, Args);
+  if (FloatABI == sparc::FloatABI::Soft)
+    Features.push_back("+soft-float");
+}
+
+void Clang::AddSparcTargetArgs(const ArgList &Args,
+                               ArgStringList &CmdArgs) const {
+  //const Driver &D = getToolChain().getDriver();
+  std::string Triple = getToolChain().ComputeEffectiveClangTriple(Args);
+
+  sparc::FloatABI FloatABI =
+      sparc::getSparcFloatABI(getToolChain().getDriver(), Args);
+
+  if (FloatABI == sparc::FloatABI::Soft) {
+    // Floating point operations and argument passing are soft.
+    CmdArgs.push_back("-msoft-float");
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("soft");
+  } else {
+    // Floating point operations and argument passing are hard.
+    assert(FloatABI == sparc::FloatABI::Hard && "Invalid float abi!");
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("hard");
   }
 }
 
@@ -2495,7 +2548,8 @@ static void getAMDGPUTargetFeatures(const Driver &D, const ArgList &Args,
     StringRef value = dAbi->getValue();
     if (value == "1.0") {
       Features.push_back("+amdgpu-debugger-insert-nops");
-      Features.push_back("+amdgpu-debugger-reserve-trap-regs");
+      Features.push_back("+amdgpu-debugger-reserve-regs");
+      Features.push_back("+amdgpu-debugger-emit-prologue");
     } else {
       D.Diag(diag::err_drv_clang_unsupported) << dAbi->getAsString(Args);
     }
@@ -2549,6 +2603,11 @@ static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
   case llvm::Triple::wasm32:
   case llvm::Triple::wasm64:
     getWebAssemblyTargetFeatures(Args, Features);
+    break; 
+  case llvm::Triple::sparc:
+  case llvm::Triple::sparcel:
+  case llvm::Triple::sparcv9:
+    getSparcTargetFeatures(D, Args, Features);
     break;
   case llvm::Triple::r600:
   case llvm::Triple::amdgcn:
@@ -4898,7 +4957,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Forward flags for OpenMP
   if (Args.hasFlag(options::OPT_fopenmp, options::OPT_fopenmp_EQ,
-                   options::OPT_fno_openmp, false))
+                   options::OPT_fno_openmp, false)) {
     switch (getOpenMPRuntime(getToolChain(), Args)) {
     case OMPRT_OMP:
     case OMPRT_IOMP5:
@@ -4911,6 +4970,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       if (!Args.hasFlag(options::OPT_fopenmp_use_tls,
                         options::OPT_fnoopenmp_use_tls, /*Default=*/true))
         CmdArgs.push_back("-fnoopenmp-use-tls");
+      Args.AddAllArgs(CmdArgs, options::OPT_fopenmp_version_EQ);
       break;
     default:
       // By default, if Clang doesn't know how to generate useful OpenMP code
@@ -4921,6 +4981,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       // semantic analysis, etc.
       break;
     }
+  }
 
   const SanitizerArgs &Sanitize = getToolChain().getSanitizerArgs();
   Sanitize.addArgs(getToolChain(), Args, CmdArgs, InputType);
@@ -5368,8 +5429,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_fno_inline))
     CmdArgs.push_back("-fno-inline");
 
-  if (Args.hasArg(options::OPT_fno_inline_functions))
-    CmdArgs.push_back("-fno-inline-functions");
+  if (Arg* InlineArg = Args.getLastArg(options::OPT_finline_functions,
+                                       options::OPT_fno_inline_functions))
+    InlineArg->render(Args, CmdArgs);
 
   ObjCRuntime objcRuntime = AddObjCRuntimeArgs(Args, CmdArgs, rewriteKind);
 
@@ -5608,43 +5670,27 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-fno-diagnostics-show-note-include-stack");
   }
 
-  // Color diagnostics are the default, unless the terminal doesn't support
-  // them.
-  // Support both clang's -f[no-]color-diagnostics and gcc's
-  // -f[no-]diagnostics-colors[=never|always|auto].
-  enum { Colors_On, Colors_Off, Colors_Auto } ShowColors = Colors_Auto;
-  for (const auto &Arg : Args) {
-    const Option &O = Arg->getOption();
+  // Color diagnostics are parsed by the driver directly from argv
+  // and later re-parsed to construct this job; claim any possible
+  // color diagnostic here to avoid warn_drv_unused_argument and
+  // diagnose bad OPT_fdiagnostics_color_EQ values.
+  for (Arg *A : Args) {
+    const Option &O = A->getOption();
     if (!O.matches(options::OPT_fcolor_diagnostics) &&
         !O.matches(options::OPT_fdiagnostics_color) &&
         !O.matches(options::OPT_fno_color_diagnostics) &&
         !O.matches(options::OPT_fno_diagnostics_color) &&
         !O.matches(options::OPT_fdiagnostics_color_EQ))
       continue;
-
-    Arg->claim();
-    if (O.matches(options::OPT_fcolor_diagnostics) ||
-        O.matches(options::OPT_fdiagnostics_color)) {
-      ShowColors = Colors_On;
-    } else if (O.matches(options::OPT_fno_color_diagnostics) ||
-               O.matches(options::OPT_fno_diagnostics_color)) {
-      ShowColors = Colors_Off;
-    } else {
-      assert(O.matches(options::OPT_fdiagnostics_color_EQ));
-      StringRef value(Arg->getValue());
-      if (value == "always")
-        ShowColors = Colors_On;
-      else if (value == "never")
-        ShowColors = Colors_Off;
-      else if (value == "auto")
-        ShowColors = Colors_Auto;
-      else
+    if (O.matches(options::OPT_fdiagnostics_color_EQ)) {
+      StringRef Value(A->getValue());
+      if (Value != "always" && Value != "never" && Value != "auto")
         getToolChain().getDriver().Diag(diag::err_drv_clang_unsupported)
-            << ("-fdiagnostics-color=" + value).str();
+              << ("-fdiagnostics-color=" + Value).str();
     }
+    A->claim();
   }
-  if (ShowColors == Colors_On ||
-      (ShowColors == Colors_Auto && llvm::sys::Process::StandardErrHasColors()))
+  if (D.getDiags().getDiagnosticOptions().ShowColors)
     CmdArgs.push_back("-fcolor-diagnostics");
 
   if (Args.hasArg(options::OPT_fansi_escape_codes))
@@ -6573,7 +6619,7 @@ void gcc::Common::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  const std::string customGCCName = D.getCCCGenericGCCName();
+  const std::string &customGCCName = D.getCCCGenericGCCName();
   const char *GCCName;
   if (!customGCCName.empty())
     GCCName = customGCCName.c_str();
@@ -7263,6 +7309,14 @@ mips::NanEncoding mips::getSupportedNanEncoding(StringRef &CPU) {
       .Case("mips64r5", NanLegacy | Nan2008)
       .Case("mips64r6", Nan2008)
       .Default(NanLegacy);
+}
+
+bool mips::hasCompactBranches(StringRef &CPU) {
+  // mips32r6 and mips64r6 have compact branches.
+  return llvm::StringSwitch<bool>(CPU)
+      .Case("mips32r6", true)
+      .Case("mips64r6", true)
+      .Default(false);
 }
 
 bool mips::hasMipsAbiArg(const ArgList &Args, const char *Value) {
@@ -9233,73 +9287,6 @@ static void AddLibgcc(const llvm::Triple &Triple, const Driver &D,
     CmdArgs.push_back("-ldl");
 }
 
-static std::string getLinuxDynamicLinker(const ArgList &Args,
-                                         const toolchains::Linux &ToolChain) {
-  const llvm::Triple::ArchType Arch = ToolChain.getArch();
-  const llvm::Triple &Triple = ToolChain.getTriple();
-
-  if (Triple.isAndroid()) {
-    if (Triple.isArch64Bit())
-      return "/system/bin/linker64";
-    else
-      return "/system/bin/linker";
-  } else if (Arch == llvm::Triple::x86 || Arch == llvm::Triple::sparc ||
-             Arch == llvm::Triple::sparcel)
-    return "/lib/ld-linux.so.2";
-  else if (Arch == llvm::Triple::aarch64)
-    return "/lib/ld-linux-aarch64.so.1";
-  else if (Arch == llvm::Triple::aarch64_be)
-    return "/lib/ld-linux-aarch64_be.so.1";
-  else if (Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb) {
-    if (Triple.getEnvironment() == llvm::Triple::GNUEABIHF ||
-        arm::getARMFloatABI(ToolChain, Args) == arm::FloatABI::Hard)
-      return "/lib/ld-linux-armhf.so.3";
-    else
-      return "/lib/ld-linux.so.3";
-  } else if (Arch == llvm::Triple::armeb || Arch == llvm::Triple::thumbeb) {
-    // TODO: check which dynamic linker name.
-    if (Triple.getEnvironment() == llvm::Triple::GNUEABIHF ||
-        arm::getARMFloatABI(ToolChain, Args) == arm::FloatABI::Hard)
-      return "/lib/ld-linux-armhf.so.3";
-    else
-      return "/lib/ld-linux.so.3";
-  } else if (Arch == llvm::Triple::mips || Arch == llvm::Triple::mipsel ||
-             Arch == llvm::Triple::mips64 || Arch == llvm::Triple::mips64el) {
-    std::string LibDir = "/lib" + mips::getMipsABILibSuffix(Args, Triple);
-    StringRef LibName;
-    bool IsNaN2008 = mips::isNaN2008(Args, Triple);
-    if (mips::isUCLibc(Args))
-      LibName = IsNaN2008 ? "ld-uClibc-mipsn8.so.0" : "ld-uClibc.so.0";
-    else if (!Triple.hasEnvironment() &&
-             Triple.getVendor() == llvm::Triple::VendorType::MipsTechnologies) {
-      bool LE = (Triple.getArch() == llvm::Triple::mipsel) ||
-                (Triple.getArch() == llvm::Triple::mips64el);
-      LibName = LE ? "ld-musl-mipsel.so.1" : "ld-musl-mips.so.1";
-    } else
-      LibName = IsNaN2008 ? "ld-linux-mipsn8.so.1" : "ld.so.1";
-
-    return (LibDir + "/" + LibName).str();
-  } else if (Arch == llvm::Triple::ppc)
-    return "/lib/ld.so.1";
-  else if (Arch == llvm::Triple::ppc64) {
-    if (ppc::hasPPCAbiArg(Args, "elfv2"))
-      return "/lib64/ld64.so.2";
-    return "/lib64/ld64.so.1";
-  } else if (Arch == llvm::Triple::ppc64le) {
-    if (ppc::hasPPCAbiArg(Args, "elfv1"))
-      return "/lib64/ld64.so.1";
-    return "/lib64/ld64.so.2";
-  } else if (Arch == llvm::Triple::systemz)
-    return "/lib/ld64.so.1";
-  else if (Arch == llvm::Triple::sparcv9)
-    return "/lib64/ld-linux.so.2";
-  else if (Arch == llvm::Triple::x86_64 &&
-           Triple.getEnvironment() == llvm::Triple::GNUX32)
-    return "/libx32/ld-linux-x32.so.2";
-  else
-    return "/lib64/ld-linux-x86-64.so.2";
-}
-
 static void AddRunTimeLibs(const ToolChain &TC, const Driver &D,
                            ArgStringList &CmdArgs, const ArgList &Args) {
   // Make use of compiler-rt if --rtlib option is used
@@ -9459,7 +9446,7 @@ void gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
     if (!Args.hasArg(options::OPT_shared)) {
       const std::string Loader =
-          D.DyldPrefix + getLinuxDynamicLinker(Args, ToolChain);
+          D.DyldPrefix + ToolChain.getDynamicLinker(Args);
       CmdArgs.push_back("-dynamic-linker");
       CmdArgs.push_back(Args.MakeArgString(Loader));
     }

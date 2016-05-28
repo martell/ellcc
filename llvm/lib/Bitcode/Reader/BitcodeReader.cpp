@@ -37,6 +37,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <deque>
+#include <utility>
 
 using namespace llvm;
 
@@ -5634,6 +5635,8 @@ std::error_code BitcodeReader::materializeModule() {
   UpgradedIntrinsics.clear();
 
   UpgradeDebugInfo(*TheModule);
+
+  UpgradeModuleFlags(*TheModule);
   return std::error_code();
 }
 
@@ -5711,13 +5714,13 @@ std::error_code ModuleSummaryIndexBitcodeReader::error(BitcodeError E) {
 ModuleSummaryIndexBitcodeReader::ModuleSummaryIndexBitcodeReader(
     MemoryBuffer *Buffer, DiagnosticHandlerFunction DiagnosticHandler,
     bool CheckGlobalValSummaryPresenceOnly)
-    : DiagnosticHandler(DiagnosticHandler), Buffer(Buffer),
+    : DiagnosticHandler(std::move(DiagnosticHandler)), Buffer(Buffer),
       CheckGlobalValSummaryPresenceOnly(CheckGlobalValSummaryPresenceOnly) {}
 
 ModuleSummaryIndexBitcodeReader::ModuleSummaryIndexBitcodeReader(
     DiagnosticHandlerFunction DiagnosticHandler,
     bool CheckGlobalValSummaryPresenceOnly)
-    : DiagnosticHandler(DiagnosticHandler), Buffer(nullptr),
+    : DiagnosticHandler(std::move(DiagnosticHandler)), Buffer(nullptr),
       CheckGlobalValSummaryPresenceOnly(CheckGlobalValSummaryPresenceOnly) {}
 
 void ModuleSummaryIndexBitcodeReader::freeState() { Buffer = nullptr; }
@@ -6382,6 +6385,9 @@ std::error_code ModuleSummaryIndexBitcodeReader::initLazyStream(
 }
 
 namespace {
+// FIXME: This class is only here to support the transition to llvm::Error. It
+// will be removed once this transition is complete. Clients should prefer to
+// deal with the Error value directly, rather than converting to error_code.
 class BitcodeErrorCategoryType : public std::error_category {
   const char *name() const LLVM_NOEXCEPT override {
     return "llvm.bitcode";

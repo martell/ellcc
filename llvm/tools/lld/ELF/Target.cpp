@@ -113,6 +113,8 @@ public:
                 int32_t Index, unsigned RelOff) const override;
   void relocateOne(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
 
+  bool canRelaxGot(uint32_t Type, const uint8_t *Data) const override;
+  void relaxGot(uint8_t *Loc, uint64_t Val) const override;
   void relaxTlsGdToIe(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
   void relaxTlsGdToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
   void relaxTlsIeToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const override;
@@ -230,6 +232,14 @@ bool TargetInfo::isTlsLocalDynamicRel(uint32_t Type) const { return false; }
 
 bool TargetInfo::isTlsGlobalDynamicRel(uint32_t Type) const {
   return false;
+}
+
+bool TargetInfo::canRelaxGot(uint32_t Type, const uint8_t *Data) const {
+  return false;
+}
+
+void TargetInfo::relaxGot(uint8_t *Loc, uint64_t Val) const {
+  llvm_unreachable("Should not have claimed to be relaxable");
 }
 
 void TargetInfo::relaxTlsGdToLe(uint8_t *Loc, uint32_t Type,
@@ -683,8 +693,8 @@ void X86_64TargetInfo::relaxTlsLdToLe(uint8_t *Loc, uint32_t Type,
   }
 
   const uint8_t Inst[] = {
-      0x66, 0x66,                                          //.word 0x6666
-      0x66,                                                //.byte 0x66
+      0x66, 0x66,                                          // .word 0x6666
+      0x66,                                                // .byte 0x66
       0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00 // mov %fs:0,%rax
   };
   memcpy(Loc - 3, Inst, sizeof(Inst));
@@ -700,15 +710,6 @@ void X86_64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
   case R_X86_64_32S:
   case R_X86_64_TPOFF32:
   case R_X86_64_GOT32:
-    checkInt<32>(Val, Type);
-    write32le(Loc, Val);
-    break;
-  case R_X86_64_64:
-  case R_X86_64_DTPOFF64:
-  case R_X86_64_SIZE64:
-  case R_X86_64_PC64:
-    write64le(Loc, Val);
-    break;
   case R_X86_64_GOTPCREL:
   case R_X86_64_GOTPCRELX:
   case R_X86_64_REX_GOTPCRELX:
@@ -722,9 +723,57 @@ void X86_64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
     checkInt<32>(Val, Type);
     write32le(Loc, Val);
     break;
+  case R_X86_64_64:
+  case R_X86_64_DTPOFF64:
+  case R_X86_64_SIZE64:
+  case R_X86_64_PC64:
+    write64le(Loc, Val);
+    break;
   default:
     fatal("unrecognized reloc " + Twine(Type));
   }
+}
+
+bool X86_64TargetInfo::canRelaxGot(uint32_t Type, const uint8_t *Data) const {
+  if (Type != R_X86_64_GOTPCRELX && Type != R_X86_64_REX_GOTPCRELX)
+    return false;
+  const uint8_t Op = Data[-2];
+  const uint8_t ModRm = Data[-1];
+  // Relax mov.
+  if (Op == 0x8b)
+    return true;
+  // Relax call and jmp.
+  return Op == 0xff && (ModRm == 0x15 || ModRm == 0x25);
+}
+
+void X86_64TargetInfo::relaxGot(uint8_t *Loc, uint64_t Val) const {
+  const uint8_t Op = Loc[-2];
+  const uint8_t ModRm = Loc[-1];
+
+  // Convert mov foo@GOTPCREL(%rip), %reg to lea foo(%rip), %reg.
+  if (Op == 0x8b) {
+    *(Loc - 2) = 0x8d;
+    relocateOne(Loc, R_X86_64_PC32, Val);
+    return;
+  }
+
+  assert(Op == 0xff);
+  if (ModRm == 0x15) {
+    // ABI says we can convert call *foo@GOTPCREL(%rip) to nop call foo.
+    // Instead we convert to addr32 call foo, where addr32 is instruction
+    // prefix. That makes result expression to be a single instruction.
+    *(Loc - 2) = 0x67; // addr32 prefix
+    *(Loc - 1) = 0xe8; // call
+  } else {
+    assert(ModRm == 0x25);
+    // Convert jmp *foo@GOTPCREL(%rip) to jmp foo nop.
+    // jmp doesn't return, so it is fine to use nop here, it is just a stub.
+    *(Loc - 2) = 0xe9; // jmp
+    *(Loc + 3) = 0x90; // nop
+    Loc -= 1;
+    Val += 1;
+  }
+  relocateOne(Loc, R_X86_64_PC32, Val);
 }
 
 // Relocation masks following the #lo(value), #hi(value), #ha(value),
@@ -1075,14 +1124,17 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
                                     uint64_t Val) const {
   switch (Type) {
   case R_AARCH64_ABS16:
+  case R_AARCH64_PREL16:
     checkIntUInt<16>(Val, Type);
     write16le(Loc, Val);
     break;
   case R_AARCH64_ABS32:
+  case R_AARCH64_PREL32:
     checkIntUInt<32>(Val, Type);
     write32le(Loc, Val);
     break;
   case R_AARCH64_ABS64:
+  case R_AARCH64_PREL64:
     write64le(Loc, Val);
     break;
   case R_AARCH64_ADD_ABS_LO12_NC:
@@ -1093,17 +1145,14 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
     or32le(Loc, (Val & 0xFFF) << 10);
     break;
   case R_AARCH64_ADR_GOT_PAGE:
+  case R_AARCH64_ADR_PREL_PG_HI21:
+  case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
     checkInt<33>(Val, Type);
     updateAArch64Addr(Loc, (Val >> 12) & 0x1FFFFF); // X[32:12]
     break;
   case R_AARCH64_ADR_PREL_LO21:
     checkInt<21>(Val, Type);
     updateAArch64Addr(Loc, Val & 0x1FFFFF);
-    break;
-  case R_AARCH64_ADR_PREL_PG_HI21:
-  case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
-    checkInt<33>(Val, Type);
-    updateAArch64Addr(Loc, (Val >> 12) & 0x1FFFFF); // X[32:12]
     break;
   case R_AARCH64_CALL26:
   case R_AARCH64_JUMP26:
@@ -1133,17 +1182,6 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
     break;
   case R_AARCH64_LDST64_ABS_LO12_NC:
     or32le(Loc, (Val & 0xFF8) << 7);
-    break;
-  case R_AARCH64_PREL16:
-    checkIntUInt<16>(Val, Type);
-    write16le(Loc, Val);
-    break;
-  case R_AARCH64_PREL32:
-    checkIntUInt<32>(Val, Type);
-    write32le(Loc, Val);
-    break;
-  case R_AARCH64_PREL64:
-    write64le(Loc, Val);
     break;
   case R_AARCH64_TSTBR14:
     checkInt<16>(Val, Type);

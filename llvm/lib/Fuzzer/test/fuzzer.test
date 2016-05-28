@@ -5,10 +5,15 @@ RUN: LLVMFuzzer-SimpleTest 2>&1 | FileCheck %s
 RUN: not LLVMFuzzer-NullDerefTest %S/hi.txt 2>&1 | FileCheck %s --check-prefix=SingleInput
 SingleInput-NOT: Test unit written to ./crash-
 
+# only_ascii mode. Will perform some minimal self-validation.
+RUN: LLVMFuzzer-SimpleTest -only_ascii=1 2>&1
+
 RUN: LLVMFuzzer-SimpleCmpTest -max_total_time=1 2>&1 | FileCheck %s --check-prefix=MaxTotalTime
 MaxTotalTime: Done {{.*}} runs in {{.}} second(s)
 
-RUN: not LLVMFuzzer-NullDerefTest 2>&1 | FileCheck %s --check-prefix=NullDerefTest
+RUN: not LLVMFuzzer-NullDerefTest                  2>&1 | FileCheck %s --check-prefix=NullDerefTest
+RUN: not LLVMFuzzer-NullDerefTest -close_fd_mask=3 2>&1 | FileCheck %s --check-prefix=NullDerefTest
+NullDerefTest: ERROR: AddressSanitizer: SEGV on unknown address
 NullDerefTest: Test unit written to ./crash-
 RUN: not LLVMFuzzer-NullDerefTest  -artifact_prefix=ZZZ 2>&1 | FileCheck %s --check-prefix=NullDerefTestPrefix
 NullDerefTestPrefix: Test unit written to ZZZcrash-
@@ -19,6 +24,9 @@ RUN: ASAN_OPTIONS=handle_segv=0 not LLVMFuzzer-NullDerefTest 2>&1 | FileCheck %s
 LIBFUZZER_OWN_SEGV_HANDLER: == ERROR: libFuzzer: deadly signal
 LIBFUZZER_OWN_SEGV_HANDLER: SUMMARY: libFuzzer: deadly signal
 LIBFUZZER_OWN_SEGV_HANDLER: Test unit written to ./crash-
+
+RUN: not LLVMFuzzer-NullDerefOnEmptyTest -print_final_stats=1 2>&1 | FileCheck %s --check-prefix=NULL_DEREF_ON_EMPTY
+NULL_DEREF_ON_EMPTY: stat::number_of_executed_units:
 
 #not LLVMFuzzer-FullCoverageSetTest -timeout=15 -seed=1 -mutate_depth=2 -use_full_coverage_set=1 2>&1 | FileCheck %s
 

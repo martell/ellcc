@@ -581,7 +581,7 @@ SDValue SITargetLowering::LowerFormalArguments(
     DiagnosticInfoUnsupported NoGraphicsHSA(
         *Fn, "unsupported non-compute shaders with HSA", DL.getDebugLoc());
     DAG.getContext()->diagnose(NoGraphicsHSA);
-    return SDValue();
+    return DAG.getEntryNode();
   }
 
   SmallVector<ISD::InputArg, 16> Splits;
@@ -1656,6 +1656,10 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::amdgcn_ldexp:
     return DAG.getNode(AMDGPUISD::LDEXP, DL, VT,
                        Op.getOperand(1), Op.getOperand(2));
+
+  case Intrinsic::amdgcn_fract:
+    return DAG.getNode(AMDGPUISD::FRACT, DL, VT, Op.getOperand(1));
+
   case Intrinsic::amdgcn_class:
     return DAG.getNode(AMDGPUISD::FP_CLASS, DL, VT,
                        Op.getOperand(1), Op.getOperand(2));

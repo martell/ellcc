@@ -56,7 +56,7 @@ AMDGPUSubtarget::initializeSubtargetDependencies(const Triple &TT,
   // for SI has the unhelpful behavior that it unsets everything else if you
   // disable it.
 
-  SmallString<256> FullFS("+promote-alloca,+fp64-denormals,");
+  SmallString<256> FullFS("+promote-alloca,+fp64-denormals,+load-store-opt,");
   if (isAmdHsaOS()) // Turn on FlatForGlobal for HSA.
     FullFS += "+flat-for-global,";
   FullFS += FS;
@@ -98,7 +98,7 @@ AMDGPUSubtarget::AMDGPUSubtarget(const Triple &TT, StringRef GPU, StringRef FS,
       LDSBankCount(0),
       IsaVersion(ISAVersion0_0_0),
       EnableSIScheduler(false),
-      DebuggerInsertNops(false), DebuggerReserveTrapVGPRs(false),
+      DebuggerInsertNops(false), DebuggerReserveRegs(false),
       FrameLowering(nullptr),
       GISel(),
       InstrItins(getInstrItineraryForCPU(GPU)), TargetTriple(TT) {

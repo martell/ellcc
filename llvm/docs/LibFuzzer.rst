@@ -273,9 +273,8 @@ The most important command line options are:
   If 1 (default) and if LeakSanitizer is enabled
   try to detect memory leaks during fuzzing (i.e. not only at shut down).
 ``-close_fd_mask``
-  Indicate output streams to close at startup. Be careful, this will also
-  remove diagnostic output from the tools in use; for example the messages
-  AddressSanitizer_ sends to ``stderr``/``stdout`` will also be lost.
+  Indicate output streams to close at startup. Be careful, this will
+  remove diagnostic output from target code (e.g. messages on assert failure).
 
    - 0 (default): close neither ``stdout`` nor ``stderr``
    - 1 : close ``stdout``
@@ -600,6 +599,35 @@ It will later use those recorded inputs during mutations.
 
 This mode can be combined with DataFlowSanitizer_ to achieve better sensitivity.
 
+Fuzzer-friendly build mode
+---------------------------
+Sometimes the code under test is not fuzzing-friendly. Examples:
+
+  - The target code uses a PRNG seeded e.g. by system time and
+    thus two consequent invocations may potentially execute different code paths
+    even if the end result will be the same. This will cause a fuzzer to treat
+    two similar inputs as significantly different and it will blow up the test corpus.
+    E.g. libxml uses ``rand()`` inside its hash table.
+  - The target code uses checksums to protect from invalid inputs.
+    E.g. png checks CRC for every chunk.
+
+In many cases it makes sense to build a special fuzzing-friendly build
+with certain fuzzing-unfriendly features disabled. We propose to use a common build macro
+for all such cases for consistency: ``FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION``.
+
+.. code-block:: c++
+
+  void MyInitPRNG() {
+  #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    // In fuzzing mode the behavior of the code should be deterministic.
+    srand(0);
+  #else
+    srand(time(0));
+  #endif
+  }
+
+
+
 AFL compatibility
 -----------------
 LibFuzzer can be used together with AFL_ on the same test corpus.
@@ -687,6 +715,18 @@ and the process will exit.
 
 If your target has massive leaks and the leak detection is disabled
 you will eventually run out of RAM (see the ``-rss_limit_mb`` flag).
+
+
+Developing libFuzzer
+====================
+
+Building libFuzzer as a part of LLVM project and running its test requires 
+special CMake configuration:
+
+.. code-block:: console
+
+    cmake -GNinja  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_SANITIZER=Address -DLLVM_USE_SANITIZE_COVERAGE=YES -DCMAKE_BUILD_TYPE=Release /path/to/llvm
+    ninja check-fuzzer
 
 
 Fuzzing components of LLVM

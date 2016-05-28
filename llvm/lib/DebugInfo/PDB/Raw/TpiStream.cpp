@@ -10,11 +10,11 @@
 #include "llvm/DebugInfo/PDB/Raw/TpiStream.h"
 
 #include "llvm/DebugInfo/CodeView/CodeView.h"
+#include "llvm/DebugInfo/CodeView/StreamReader.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/DebugInfo/PDB/Raw/MappedBlockStream.h"
 #include "llvm/DebugInfo/PDB/Raw/RawConstants.h"
 #include "llvm/DebugInfo/PDB/Raw/RawError.h"
-#include "llvm/DebugInfo/PDB/Raw/StreamReader.h"
 
 #include "llvm/Support/Endian.h"
 
@@ -56,20 +56,19 @@ struct TpiStream::HeaderInfo {
   EmbeddedBuf HashAdjBuffer;
 };
 
-TpiStream::TpiStream(PDBFile &File)
-    : Pdb(File), Stream(StreamTPI, File), HashFunction(nullptr) {}
+TpiStream::TpiStream(PDBFile &File, uint32_t StreamIdx)
+    : Pdb(File), Stream(StreamIdx, File), HashFunction(nullptr) {}
 
 TpiStream::~TpiStream() {}
 
 Error TpiStream::reload() {
-  StreamReader Reader(Stream);
+  codeview::StreamReader Reader(Stream);
 
   if (Reader.bytesRemaining() < sizeof(HeaderInfo))
     return make_error<RawError>(raw_error_code::corrupt_file,
                                 "TPI Stream does not contain a header.");
 
-  Header.reset(new HeaderInfo());
-  if (Reader.readObject(Header.get()))
+  if (Reader.readObject(Header))
     return make_error<RawError>(raw_error_code::corrupt_file,
                                 "TPI Stream does not contain a header.");
 
@@ -93,24 +92,24 @@ Error TpiStream::reload() {
   HashFunction = HashBufferV8;
 
   // The actual type records themselves come from this stream
-  if (auto EC = RecordsBuffer.initialize(Reader, Header->TypeRecordBytes))
+  if (auto EC = Reader.readArray(TypeRecords, Header->TypeRecordBytes))
     return EC;
 
   // Hash indices, hash values, etc come from the hash stream.
   MappedBlockStream HS(Header->HashStreamIndex, Pdb);
-  StreamReader HSR(HS);
+  codeview::StreamReader HSR(HS);
   HSR.setOffset(Header->HashValueBuffer.Off);
   if (auto EC =
-          HashValuesBuffer.initialize(HSR, Header->HashValueBuffer.Length))
+          HSR.readStreamRef(HashValuesBuffer, Header->HashValueBuffer.Length))
     return EC;
 
   HSR.setOffset(Header->HashAdjBuffer.Off);
-  if (auto EC = HashAdjBuffer.initialize(HSR, Header->HashAdjBuffer.Length))
+  if (auto EC = HSR.readStreamRef(HashAdjBuffer, Header->HashAdjBuffer.Length))
     return EC;
 
   HSR.setOffset(Header->IndexOffsetBuffer.Off);
-  if (auto EC = TypeIndexOffsetBuffer.initialize(
-          HSR, Header->IndexOffsetBuffer.Length))
+  if (auto EC = HSR.readStreamRef(TypeIndexOffsetBuffer,
+                                  Header->IndexOffsetBuffer.Length))
     return EC;
 
   return Error::success();
@@ -129,6 +128,15 @@ uint32_t TpiStream::NumTypeRecords() const {
   return TypeIndexEnd() - TypeIndexBegin();
 }
 
-iterator_range<codeview::TypeIterator> TpiStream::types(bool *HadError) const {
-  return codeview::makeTypeRange(RecordsBuffer.data(), /*HadError=*/HadError);
+uint16_t TpiStream::getTypeHashStreamIndex() const {
+  return Header->HashStreamIndex;
+}
+
+uint16_t TpiStream::getTypeHashStreamAuxIndex() const {
+  return Header->HashAuxStreamIndex;
+}
+
+iterator_range<codeview::CVTypeArray::Iterator>
+TpiStream::types(bool *HadError) const {
+  return llvm::make_range(TypeRecords.begin(HadError), TypeRecords.end());
 }

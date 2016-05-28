@@ -10,11 +10,10 @@
 #ifndef LLVM_DEBUGINFO_CODEVIEW_CVTYPEVISITOR_H
 #define LLVM_DEBUGINFO_CODEVIEW_CVTYPEVISITOR_H
 
+#include "llvm/DebugInfo/CodeView/CVRecord.h"
 #include "llvm/DebugInfo/CodeView/CodeView.h"
-#include "llvm/DebugInfo/CodeView/RecordIterator.h"
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
-#include "llvm/DebugInfo/CodeView/TypeStream.h"
 #include "llvm/Support/ErrorOr.h"
 
 namespace llvm {
@@ -51,14 +50,14 @@ public:
 #define MEMBER_RECORD_ALIAS(EnumName, EnumVal, Name, AliasName)
 #include "TypeRecords.def"
 
-  void visitTypeRecord(const TypeIterator::Record &Record) {
+  void visitTypeRecord(const CVRecord<TypeLeafKind> &Record) {
     ArrayRef<uint8_t> LeafData = Record.Data;
     ArrayRef<uint8_t> RecordData = LeafData;
     auto *DerivedThis = static_cast<Derived *>(this);
     DerivedThis->visitTypeBegin(Record.Type, RecordData);
     switch (Record.Type) {
     default:
-      DerivedThis->visitUnknownType(Record.Type);
+      DerivedThis->visitUnknownType(Record.Type, RecordData);
       break;
     case LF_FIELDLIST:
       DerivedThis->visitFieldList(Record.Type, LeafData);
@@ -81,8 +80,8 @@ public:
   }
 
   /// Visits the type records in Data. Sets the error flag on parse failures.
-  void visitTypeStream(ArrayRef<uint8_t> Data) {
-    for (const auto &I : makeTypeRange(Data, &HadError)) {
+  void visitTypeStream(const CVTypeArray &Types) {
+    for (const auto &I : Types) {
       visitTypeRecord(I);
       if (hadError())
         break;
@@ -90,14 +89,14 @@ public:
   }
 
   /// Action to take on unknown types. By default, they are ignored.
-  void visitUnknownType(TypeLeafKind Leaf) {}
+  void visitUnknownType(TypeLeafKind Leaf, ArrayRef<uint8_t> RecordData) {}
 
   /// Paired begin/end actions for all types. Receives all record data,
   /// including the fixed-length record prefix.
   void visitTypeBegin(TypeLeafKind Leaf, ArrayRef<uint8_t> RecordData) {}
   void visitTypeEnd(TypeLeafKind Leaf, ArrayRef<uint8_t> RecordData) {}
 
-  static ArrayRef<uint8_t> skipPadding(ArrayRef<uint8_t> Data) {
+  ArrayRef<uint8_t> skipPadding(ArrayRef<uint8_t> Data) {
     if (Data.empty())
       return Data;
     uint8_t Leaf = Data.front();
@@ -105,7 +104,12 @@ public:
       return Data;
     // Leaf is greater than 0xf0. We should advance by the number of bytes in
     // the low 4 bits.
-    return Data.drop_front(Leaf & 0x0F);
+    unsigned BytesToAdvance = Leaf & 0x0F;
+    if (Data.size() < BytesToAdvance) {
+      parseError();
+      return None;
+    }
+    return Data.drop_front(BytesToAdvance);
   }
 
   /// Visits individual member records of a field list record. Member records do
@@ -137,6 +141,8 @@ public:
 #include "TypeRecords.def"
       }
       FieldData = skipPadding(FieldData);
+      if (hadError())
+        break;
     }
   }
 

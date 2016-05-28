@@ -1,7 +1,7 @@
 # Build ELLCC.
 VERSION=0.1.30
 # Debug Release RelWithDebInfo
-BUILD_TYPE=Debug
+BUILD_TYPE=Release
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory

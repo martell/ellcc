@@ -441,8 +441,12 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
                                  : CodeGenOptions::OnlyAlwaysInlining);
   // -fno-inline-functions overrides OptimizationLevel > 1.
   Opts.NoInline = Args.hasArg(OPT_fno_inline);
-  Opts.setInlining(Args.hasArg(OPT_fno_inline_functions) ?
-                     CodeGenOptions::OnlyAlwaysInlining : Opts.getInlining());
+  if (Arg* InlineArg = Args.getLastArg(options::OPT_finline_functions,
+                                       options::OPT_fno_inline_functions)) {
+    Opts.setInlining(
+      InlineArg->getOption().matches(options::OPT_finline_functions) ?
+        CodeGenOptions::NormalInlining : CodeGenOptions::OnlyAlwaysInlining);
+  }
 
   if (Arg *A = Args.getLastArg(OPT_fveclib)) {
     StringRef Name = A->getValue();
@@ -856,8 +860,51 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
                         ModuleFiles.end());
 }
 
+static bool parseShowColorsArgs(const ArgList &Args, bool DefaultColor) {
+  // Color diagnostics default to auto ("on" if terminal supports) in the driver
+  // but default to off in cc1, needing an explicit OPT_fdiagnostics_color.
+  // Support both clang's -f[no-]color-diagnostics and gcc's
+  // -f[no-]diagnostics-colors[=never|always|auto].
+  enum {
+    Colors_On,
+    Colors_Off,
+    Colors_Auto
+  } ShowColors = DefaultColor ? Colors_Auto : Colors_Off;
+  for (Arg *A : Args) {
+    const Option &O = A->getOption();
+    if (!O.matches(options::OPT_fcolor_diagnostics) &&
+        !O.matches(options::OPT_fdiagnostics_color) &&
+        !O.matches(options::OPT_fno_color_diagnostics) &&
+        !O.matches(options::OPT_fno_diagnostics_color) &&
+        !O.matches(options::OPT_fdiagnostics_color_EQ))
+      continue;
+
+    if (O.matches(options::OPT_fcolor_diagnostics) ||
+        O.matches(options::OPT_fdiagnostics_color)) {
+      ShowColors = Colors_On;
+    } else if (O.matches(options::OPT_fno_color_diagnostics) ||
+               O.matches(options::OPT_fno_diagnostics_color)) {
+      ShowColors = Colors_Off;
+    } else {
+      assert(O.matches(options::OPT_fdiagnostics_color_EQ));
+      StringRef Value(A->getValue());
+      if (Value == "always")
+        ShowColors = Colors_On;
+      else if (Value == "never")
+        ShowColors = Colors_Off;
+      else if (Value == "auto")
+        ShowColors = Colors_Auto;
+    }
+  }
+  if (ShowColors == Colors_On ||
+      (ShowColors == Colors_Auto && llvm::sys::Process::StandardErrHasColors()))
+    return true;
+  return false;
+}
+
 bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
-                                DiagnosticsEngine *Diags) {
+                                DiagnosticsEngine *Diags,
+                                bool DefaultDiagColor) {
   using namespace options;
   bool Success = true;
 
@@ -870,7 +917,7 @@ bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   Opts.Pedantic = Args.hasArg(OPT_pedantic);
   Opts.PedanticErrors = Args.hasArg(OPT_pedantic_errors);
   Opts.ShowCarets = !Args.hasArg(OPT_fno_caret_diagnostics);
-  Opts.ShowColors = Args.hasArg(OPT_fcolor_diagnostics);
+  Opts.ShowColors = parseShowColorsArgs(Args, DefaultDiagColor);
   Opts.ShowColumn = Args.hasFlag(OPT_fshow_column,
                                  OPT_fno_show_column,
                                  /*Default=*/true);
@@ -1616,6 +1663,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   if (Opts.CUDAIsDevice && Args.hasArg(OPT_fcuda_flush_denormals_to_zero))
     Opts.CUDADeviceFlushDenormalsToZero = 1;
 
+  if (Opts.CUDAIsDevice && Args.hasArg(OPT_fcuda_approx_transcendentals))
+    Opts.CUDADeviceApproxTranscendentals = 1;
+
   if (Opts.ObjC1) {
     if (Arg *arg = Args.getLastArg(OPT_fobjc_runtime_EQ)) {
       StringRef value = arg->getValue();
@@ -1947,24 +1997,30 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   }
 
   // Check if -fopenmp is specified.
-  Opts.OpenMP = Args.hasArg(options::OPT_fopenmp);
+  Opts.OpenMP = Args.hasArg(options::OPT_fopenmp) ? 1 : 0;
   Opts.OpenMPUseTLS =
       Opts.OpenMP && !Args.hasArg(options::OPT_fnoopenmp_use_tls);
   Opts.OpenMPIsDevice =
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_is_device);
 
-  // Provide diagnostic when a given target is not expected to be an OpenMP
-  // device or host.
-  if (Opts.OpenMP && !Opts.OpenMPIsDevice) {
-    switch (T.getArch()) {
-    default:
-      break;
-    // Add unsupported host targets here:
-    case llvm::Triple::nvptx:
-    case llvm::Triple::nvptx64:
-      Diags.Report(clang::diag::err_drv_omp_host_target_not_supported)
-          << TargetOpts.Triple;
-      break;
+  if (Opts.OpenMP) {
+    int Version =
+        getLastArgIntValue(Args, OPT_fopenmp_version_EQ, Opts.OpenMP, Diags);
+    if (Version != 0)
+      Opts.OpenMP = Version;
+    // Provide diagnostic when a given target is not expected to be an OpenMP
+    // device or host.
+    if (!Opts.OpenMPIsDevice) {
+      switch (T.getArch()) {
+      default:
+        break;
+      // Add unsupported host targets here:
+      case llvm::Triple::nvptx:
+      case llvm::Triple::nvptx64:
+        Diags.Report(clang::diag::err_drv_omp_host_target_not_supported)
+            << TargetOpts.Triple;
+        break;
+      }
     }
   }
 
@@ -2227,7 +2283,8 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   Success &= ParseAnalyzerArgs(*Res.getAnalyzerOpts(), Args, Diags);
   Success &= ParseMigratorArgs(Res.getMigratorOpts(), Args);
   ParseDependencyOutputArgs(Res.getDependencyOutputOpts(), Args);
-  Success &= ParseDiagnosticArgs(Res.getDiagnosticOpts(), Args, &Diags);
+  Success &= ParseDiagnosticArgs(Res.getDiagnosticOpts(), Args, &Diags,
+                                 false /*DefaultDiagColor*/);
   ParseCommentArgs(LangOpts.CommentOpts, Args);
   ParseFileSystemArgs(Res.getFileSystemOpts(), Args);
   // FIXME: We shouldn't have to pass the DashX option around here
@@ -2403,7 +2460,7 @@ std::string CompilerInvocation::getModuleHash() const {
 
   // Extend the signature with the module file extensions.
   const FrontendOptions &frontendOpts = getFrontendOpts();
-  for (auto ext : frontendOpts.ModuleFileExtensions) {
+  for (const auto &ext : frontendOpts.ModuleFileExtensions) {
     code = ext->hashExtension(code);
   }
 
