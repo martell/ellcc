@@ -18690,7 +18690,7 @@ fi
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for windows.h" >&5
 $as_echo_n "checking for windows.h... " >&6; }
-if ${ac_cv_header_windows_h+:} false; then :
+if ${curl_cv_header_windows_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -18720,19 +18720,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_windows_h="yes"
+      curl_cv_header_windows_h="yes"
 
 else
 
-      ac_cv_header_windows_h="no"
+      curl_cv_header_windows_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_windows_h" >&5
-$as_echo "$ac_cv_header_windows_h" >&6; }
-  case "$ac_cv_header_windows_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_windows_h" >&5
+$as_echo "$curl_cv_header_windows_h" >&6; }
+  case "$curl_cv_header_windows_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -18750,12 +18750,12 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether build target is a native Windows one" >&5
 $as_echo_n "checking whether build target is a native Windows one... " >&6; }
-if ${ac_cv_native_windows+:} false; then :
+if ${curl_cv_native_windows+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
-    if test "$ac_cv_header_windows_h" = "no"; then
-      ac_cv_native_windows="no"
+    if test "$curl_cv_header_windows_h" = "no"; then
+      curl_cv_native_windows="no"
     else
       cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -18779,20 +18779,20 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-        ac_cv_native_windows="yes"
+        curl_cv_native_windows="yes"
 
 else
 
-        ac_cv_native_windows="no"
+        curl_cv_native_windows="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     fi
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_native_windows" >&5
-$as_echo "$ac_cv_native_windows" >&6; }
-   if test "x$ac_cv_native_windows" = xyes; then
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_native_windows" >&5
+$as_echo "$curl_cv_native_windows" >&6; }
+   if test "x$curl_cv_native_windows" = xyes; then
   DOING_NATIVE_WINDOWS_TRUE=
   DOING_NATIVE_WINDOWS_FALSE='#'
 else
@@ -18801,12 +18801,12 @@ else
 fi
 
 
-case X-"$ac_cv_native_windows" in
+case X-"$curl_cv_native_windows" in
   X-yes)
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winsock.h" >&5
 $as_echo_n "checking for winsock.h... " >&6; }
-if ${ac_cv_header_winsock_h+:} false; then :
+if ${curl_cv_header_winsock_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -18837,19 +18837,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winsock_h="yes"
+      curl_cv_header_winsock_h="yes"
 
 else
 
-      ac_cv_header_winsock_h="no"
+      curl_cv_header_winsock_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winsock_h" >&5
-$as_echo "$ac_cv_header_winsock_h" >&6; }
-  case "$ac_cv_header_winsock_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winsock_h" >&5
+$as_echo "$curl_cv_header_winsock_h" >&6; }
+  case "$curl_cv_header_winsock_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -18862,7 +18862,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winsock2.h" >&5
 $as_echo_n "checking for winsock2.h... " >&6; }
-if ${ac_cv_header_winsock2_h+:} false; then :
+if ${curl_cv_header_winsock2_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -18893,19 +18893,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winsock2_h="yes"
+      curl_cv_header_winsock2_h="yes"
 
 else
 
-      ac_cv_header_winsock2_h="no"
+      curl_cv_header_winsock2_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winsock2_h" >&5
-$as_echo "$ac_cv_header_winsock2_h" >&6; }
-  case "$ac_cv_header_winsock2_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winsock2_h" >&5
+$as_echo "$curl_cv_header_winsock2_h" >&6; }
+  case "$curl_cv_header_winsock2_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -18918,7 +18918,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ws2tcpip.h" >&5
 $as_echo_n "checking for ws2tcpip.h... " >&6; }
-if ${ac_cv_header_ws2tcpip_h+:} false; then :
+if ${curl_cv_header_ws2tcpip_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -18950,19 +18950,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_ws2tcpip_h="yes"
+      curl_cv_header_ws2tcpip_h="yes"
 
 else
 
-      ac_cv_header_ws2tcpip_h="no"
+      curl_cv_header_ws2tcpip_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_ws2tcpip_h" >&5
-$as_echo "$ac_cv_header_ws2tcpip_h" >&6; }
-  case "$ac_cv_header_ws2tcpip_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_ws2tcpip_h" >&5
+$as_echo "$curl_cv_header_ws2tcpip_h" >&6; }
+  case "$curl_cv_header_ws2tcpip_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -18975,7 +18975,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winldap.h" >&5
 $as_echo_n "checking for winldap.h... " >&6; }
-if ${ac_cv_header_winldap_h+:} false; then :
+if ${curl_cv_header_winldap_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -19009,19 +19009,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winldap_h="yes"
+      curl_cv_header_winldap_h="yes"
 
 else
 
-      ac_cv_header_winldap_h="no"
+      curl_cv_header_winldap_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winldap_h" >&5
-$as_echo "$ac_cv_header_winldap_h" >&6; }
-  case "$ac_cv_header_winldap_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winldap_h" >&5
+$as_echo "$curl_cv_header_winldap_h" >&6; }
+  case "$curl_cv_header_winldap_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -19034,7 +19034,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winber.h" >&5
 $as_echo_n "checking for winber.h... " >&6; }
-if ${ac_cv_header_winber_h+:} false; then :
+if ${curl_cv_header_winber_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -19070,19 +19070,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winber_h="yes"
+      curl_cv_header_winber_h="yes"
 
 else
 
-      ac_cv_header_winber_h="no"
+      curl_cv_header_winber_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winber_h" >&5
-$as_echo "$ac_cv_header_winber_h" >&6; }
-  case "$ac_cv_header_winber_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winber_h" >&5
+$as_echo "$curl_cv_header_winber_h" >&6; }
+  case "$curl_cv_header_winber_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -19094,18 +19094,18 @@ _ACEOF
 
     ;;
   *)
-    ac_cv_header_winsock_h="no"
-    ac_cv_header_winsock2_h="no"
-    ac_cv_header_ws2tcpip_h="no"
-    ac_cv_header_winldap_h="no"
-    ac_cv_header_winber_h="no"
+    curl_cv_header_winsock_h="no"
+    curl_cv_header_winsock2_h="no"
+    curl_cv_header_ws2tcpip_h="no"
+    curl_cv_header_winldap_h="no"
+    curl_cv_header_winber_h="no"
     ;;
 esac
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether build target supports WIN32 file API" >&5
 $as_echo_n "checking whether build target supports WIN32 file API... " >&6; }
   curl_win32_file_api="no"
-  if test "$ac_cv_header_windows_h" = "yes"; then
+  if test "$curl_cv_header_windows_h" = "yes"; then
     if test x"$enable_largefile" != "xno"; then
       cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -19889,8 +19889,8 @@ fi
 
 if test "$HAVE_GETHOSTBYNAME" != "1"
 then
-    if test "$ac_cv_header_windows_h" = "yes"; then
-    if test "$ac_cv_header_winsock_h" = "yes"; then
+    if test "$curl_cv_header_windows_h" = "yes"; then
+    if test "$curl_cv_header_winsock_h" = "yes"; then
       case $host in
         *-*-mingw32ce*)
           winsock_LIB="-lwinsock"
@@ -19900,7 +19900,7 @@ then
           ;;
       esac
     fi
-    if test "$ac_cv_header_winsock2_h" = "yes"; then
+    if test "$curl_cv_header_winsock2_h" = "yes"; then
       winsock_LIB="-lws2_32"
     fi
     if test ! -z "$winsock_LIB"; then
@@ -20121,96 +20121,6 @@ if test "$HAVE_GETHOSTBYNAME" != "1"; then
   as_fn_error $? "couldn't find libraries for gethostbyname()" "$LINENO" 5
 fi
 
-ac_fn_c_check_func "$LINENO" "strcasecmp" "ac_cv_func_strcasecmp"
-if test "x$ac_cv_func_strcasecmp" = xyes; then :
-
-else
-   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for strcasecmp in -lresolve" >&5
-$as_echo_n "checking for strcasecmp in -lresolve... " >&6; }
-if ${ac_cv_lib_resolve_strcasecmp+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lresolve  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-
-#ifdef __cplusplus
-extern "C"
-#endif
-char strcasecmp ();
-int main (void)
-{
-return strcasecmp ();
- ;
- return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_resolve_strcasecmp=yes
-else
-  ac_cv_lib_resolve_strcasecmp=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_resolve_strcasecmp" >&5
-$as_echo "$ac_cv_lib_resolve_strcasecmp" >&6; }
-if test "x$ac_cv_lib_resolve_strcasecmp" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBRESOLVE 1
-_ACEOF
-
-  LIBS="-lresolve $LIBS"
-
-fi
-
-fi
-
-
-if test "$ac_cv_lib_resolve_strcasecmp" = "$ac_cv_func_strcasecmp"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for strcasecmp in -lresolve" >&5
-$as_echo_n "checking for strcasecmp in -lresolve... " >&6; }
-if ${ac_cv_lib_resolve_strcasecmp+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lresolve -lnsl $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-
-#ifdef __cplusplus
-extern "C"
-#endif
-char strcasecmp ();
-int main (void)
-{
-return strcasecmp ();
- ;
- return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_resolve_strcasecmp=yes
-else
-  ac_cv_lib_resolve_strcasecmp=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_resolve_strcasecmp" >&5
-$as_echo "$ac_cv_lib_resolve_strcasecmp" >&6; }
-if test "x$ac_cv_lib_resolve_strcasecmp" = xyes; then :
-  LIBS="-lresolve $LIBS"
-fi
-
-fi
-ac_cv_func_strcasecmp="no"
-
 
 curl_includes_winsock2="\
 /* includes start */
@@ -20231,7 +20141,7 @@ curl_includes_winsock2="\
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for windows.h" >&5
 $as_echo_n "checking for windows.h... " >&6; }
-if ${ac_cv_header_windows_h+:} false; then :
+if ${curl_cv_header_windows_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -20261,19 +20171,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_windows_h="yes"
+      curl_cv_header_windows_h="yes"
 
 else
 
-      ac_cv_header_windows_h="no"
+      curl_cv_header_windows_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_windows_h" >&5
-$as_echo "$ac_cv_header_windows_h" >&6; }
-  case "$ac_cv_header_windows_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_windows_h" >&5
+$as_echo "$curl_cv_header_windows_h" >&6; }
+  case "$curl_cv_header_windows_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -20291,7 +20201,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winsock.h" >&5
 $as_echo_n "checking for winsock.h... " >&6; }
-if ${ac_cv_header_winsock_h+:} false; then :
+if ${curl_cv_header_winsock_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -20322,19 +20232,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winsock_h="yes"
+      curl_cv_header_winsock_h="yes"
 
 else
 
-      ac_cv_header_winsock_h="no"
+      curl_cv_header_winsock_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winsock_h" >&5
-$as_echo "$ac_cv_header_winsock_h" >&6; }
-  case "$ac_cv_header_winsock_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winsock_h" >&5
+$as_echo "$curl_cv_header_winsock_h" >&6; }
+  case "$curl_cv_header_winsock_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -20347,7 +20257,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winsock2.h" >&5
 $as_echo_n "checking for winsock2.h... " >&6; }
-if ${ac_cv_header_winsock2_h+:} false; then :
+if ${curl_cv_header_winsock2_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -20378,19 +20288,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winsock2_h="yes"
+      curl_cv_header_winsock2_h="yes"
 
 else
 
-      ac_cv_header_winsock2_h="no"
+      curl_cv_header_winsock2_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winsock2_h" >&5
-$as_echo "$ac_cv_header_winsock2_h" >&6; }
-  case "$ac_cv_header_winsock2_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winsock2_h" >&5
+$as_echo "$curl_cv_header_winsock2_h" >&6; }
+  case "$curl_cv_header_winsock2_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -20545,13 +20455,13 @@ if ac_fn_c_try_compile "$LINENO"; then :
 
       { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
-      ac_cv_func_clock_gettime="yes"
+      curl_func_clock_gettime="yes"
 
 else
 
       { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-      ac_cv_func_clock_gettime="no"
+      curl_func_clock_gettime="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
@@ -20559,7 +20469,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 
     #
-  if test "$ac_cv_func_clock_gettime" = "yes"; then
+  if test "$curl_func_clock_gettime" = "yes"; then
     #
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clock_gettime in libraries" >&5
 $as_echo_n "checking for clock_gettime in libraries... " >&6; }
@@ -20621,12 +20531,12 @@ rm -f core conftest.err conftest.$ac_objext \
 $as_echo "cannot find clock_gettime" >&6; }
         { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: HAVE_CLOCK_GETTIME_MONOTONIC will not be defined" >&5
 $as_echo "$as_me: WARNING: HAVE_CLOCK_GETTIME_MONOTONIC will not be defined" >&2;}
-        ac_cv_func_clock_gettime="no"
+        curl_func_clock_gettime="no"
         ;;
       X-)
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: no additional lib required" >&5
 $as_echo "no additional lib required" >&6; }
-        ac_cv_func_clock_gettime="yes"
+        curl_func_clock_gettime="yes"
         ;;
       *)
         if test -z "$curl_cv_save_LIBS"; then
@@ -20636,12 +20546,12 @@ $as_echo "no additional lib required" >&6; }
         fi
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_gclk_LIBS" >&5
 $as_echo "$curl_cv_gclk_LIBS" >&6; }
-        ac_cv_func_clock_gettime="yes"
+        curl_func_clock_gettime="yes"
         ;;
     esac
     #
         if test "x$cross_compiling" != "xyes" &&
-      test "$ac_cv_func_clock_gettime" = "yes"; then
+      test "$curl_func_clock_gettime" = "yes"; then
       { $as_echo "$as_me:${as_lineno-$LINENO}: checking if monotonic clock_gettime works" >&5
 $as_echo_n "checking if monotonic clock_gettime works... " >&6; }
       if test "$cross_compiling" = yes; then :
@@ -20696,7 +20606,7 @@ else
 $as_echo "no" >&6; }
         { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: HAVE_CLOCK_GETTIME_MONOTONIC will not be defined" >&5
 $as_echo "$as_me: WARNING: HAVE_CLOCK_GETTIME_MONOTONIC will not be defined" >&2;}
-        ac_cv_func_clock_gettime="no"
+        curl_func_clock_gettime="no"
         LIBS="$curl_cv_save_LIBS"
 
 fi
@@ -20706,7 +20616,7 @@ fi
 
     fi
     #
-    case "$ac_cv_func_clock_gettime" in
+    case "$curl_func_clock_gettime" in
       yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -20919,7 +20829,7 @@ if test x$CURL_DISABLE_LDAP != x1 ; then
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for lber.h" >&5
 $as_echo_n "checking for lber.h... " >&6; }
-if ${ac_cv_header_lber_h+:} false; then :
+if ${curl_cv_header_lber_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -20957,19 +20867,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_lber_h="yes"
+      curl_cv_header_lber_h="yes"
 
 else
 
-      ac_cv_header_lber_h="no"
+      curl_cv_header_lber_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_lber_h" >&5
-$as_echo "$ac_cv_header_lber_h" >&6; }
-  if test "$ac_cv_header_lber_h" = "yes"; then
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_lber_h" >&5
+$as_echo "$curl_cv_header_lber_h" >&6; }
+  if test "$curl_cv_header_lber_h" = "yes"; then
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_LBER_H 1
@@ -21036,7 +20946,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ldap.h" >&5
 $as_echo_n "checking for ldap.h... " >&6; }
-if ${ac_cv_header_ldap_h+:} false; then :
+if ${curl_cv_header_ldap_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -21076,19 +20986,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_ldap_h="yes"
+      curl_cv_header_ldap_h="yes"
 
 else
 
-      ac_cv_header_ldap_h="no"
+      curl_cv_header_ldap_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_ldap_h" >&5
-$as_echo "$ac_cv_header_ldap_h" >&6; }
-  case "$ac_cv_header_ldap_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_ldap_h" >&5
+$as_echo "$curl_cv_header_ldap_h" >&6; }
+  case "$curl_cv_header_ldap_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -21101,7 +21011,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ldapssl.h" >&5
 $as_echo_n "checking for ldapssl.h... " >&6; }
-if ${ac_cv_header_ldapssl_h+:} false; then :
+if ${curl_cv_header_ldapssl_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -21147,19 +21057,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_ldapssl_h="yes"
+      curl_cv_header_ldapssl_h="yes"
 
 else
 
-      ac_cv_header_ldapssl_h="no"
+      curl_cv_header_ldapssl_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_ldapssl_h" >&5
-$as_echo "$ac_cv_header_ldapssl_h" >&6; }
-  case "$ac_cv_header_ldapssl_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_ldapssl_h" >&5
+$as_echo "$curl_cv_header_ldapssl_h" >&6; }
+  case "$curl_cv_header_ldapssl_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -21172,7 +21082,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ldap_ssl.h" >&5
 $as_echo_n "checking for ldap_ssl.h... " >&6; }
-if ${ac_cv_header_ldap_ssl_h+:} false; then :
+if ${curl_cv_header_ldap_ssl_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -21214,19 +21124,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_ldap_ssl_h="yes"
+      curl_cv_header_ldap_ssl_h="yes"
 
 else
 
-      ac_cv_header_ldap_ssl_h="no"
+      curl_cv_header_ldap_ssl_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_ldap_ssl_h" >&5
-$as_echo "$ac_cv_header_ldap_ssl_h" >&6; }
-  case "$ac_cv_header_ldap_ssl_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_ldap_ssl_h" >&5
+$as_echo "$curl_cv_header_ldap_ssl_h" >&6; }
+  case "$curl_cv_header_ldap_ssl_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -21238,7 +21148,7 @@ _ACEOF
 
 
   if test -z "$LDAPLIBNAME" ; then
-    if test "$ac_cv_native_windows" = "yes"; then
+    if test "$curl_cv_native_windows" = "yes"; then
             LDAPLIBNAME="wldap32"
       LBERLIBNAME="no"
     fi
@@ -21917,7 +21827,7 @@ fi
 $as_echo_n "checking whether to enable Windows native SSL/TLS (Windows native builds only)... " >&6; }
 if test "$curl_ssl_msg" = "$init_ssl_msg"; then
   if test "x$OPT_WINSSL" != "xno"  &&
-     test "x$ac_cv_native_windows" = "xyes"; then
+     test "x$curl_cv_native_windows" = "xyes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
 
@@ -24515,7 +24425,9 @@ done
 
       if test "x$cyassllibname" = "xwolfssl"; then
                         for ac_func in wolfSSLv3_client_method \
-                       wolfSSL_get_peer_certificate
+                       wolfSSL_CTX_UseSupportedCurve \
+                       wolfSSL_get_peer_certificate \
+                       wolfSSL_UseALPN
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
@@ -24528,12 +24440,14 @@ fi
 done
 
       else
-                for ac_func in CyaSSL_get_peer_certificate
+                for ac_func in CyaSSL_CTX_UseSupportedCurve \
+                       CyaSSL_get_peer_certificate
 do :
-  ac_fn_c_check_func "$LINENO" "CyaSSL_get_peer_certificate" "ac_cv_func_CyaSSL_get_peer_certificate"
-if test "x$ac_cv_func_CyaSSL_get_peer_certificate" = xyes; then :
+  as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
+ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
+if eval test \"x\$"$as_ac_var"\" = x"yes"; then :
   cat >>confdefs.h <<_ACEOF
-#define HAVE_CYASSL_GET_PEER_CERTIFICATE 1
+#define `$as_echo "HAVE_$ac_func" | $as_tr_cpp` 1
 _ACEOF
 
 fi
@@ -27225,7 +27139,7 @@ fi
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for malloc.h" >&5
 $as_echo_n "checking for malloc.h... " >&6; }
-if ${ac_cv_header_malloc_h+:} false; then :
+if ${curl_cv_header_malloc_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -27250,19 +27164,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_malloc_h="yes"
+      curl_cv_header_malloc_h="yes"
 
 else
 
-      ac_cv_header_malloc_h="no"
+      curl_cv_header_malloc_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_malloc_h" >&5
-$as_echo "$ac_cv_header_malloc_h" >&6; }
-  if test "$ac_cv_header_malloc_h" = "yes"; then
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_malloc_h" >&5
+$as_echo "$curl_cv_header_malloc_h" >&6; }
+  if test "$curl_cv_header_malloc_h" = "yes"; then
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_MALLOC_H 1
@@ -27313,7 +27227,7 @@ _ACEOF
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for memory.h" >&5
 $as_echo_n "checking for memory.h... " >&6; }
-if ${ac_cv_header_memory_h+:} false; then :
+if ${curl_cv_header_memory_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -27338,19 +27252,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_memory_h="yes"
+      curl_cv_header_memory_h="yes"
 
 else
 
-      ac_cv_header_memory_h="no"
+      curl_cv_header_memory_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_memory_h" >&5
-$as_echo "$ac_cv_header_memory_h" >&6; }
-  if test "$ac_cv_header_memory_h" = "yes"; then
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_memory_h" >&5
+$as_echo "$curl_cv_header_memory_h" >&6; }
+  if test "$curl_cv_header_memory_h" = "yes"; then
 
 cat >>confdefs.h <<_ACEOF
 #define HAVE_MEMORY_H 1
@@ -27723,7 +27637,7 @@ done
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for struct timeval" >&5
 $as_echo_n "checking for struct timeval... " >&6; }
-if ${ac_cv_struct_timeval+:} false; then :
+if ${curl_cv_struct_timeval+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -27776,19 +27690,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_struct_timeval="yes"
+      curl_cv_struct_timeval="yes"
 
 else
 
-      ac_cv_struct_timeval="no"
+      curl_cv_struct_timeval="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_struct_timeval" >&5
-$as_echo "$ac_cv_struct_timeval" >&6; }
-  case "$ac_cv_struct_timeval" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_struct_timeval" >&5
+$as_echo "$curl_cv_struct_timeval" >&6; }
+  case "$curl_cv_struct_timeval" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -28047,7 +27961,7 @@ _ACEOF
 
 
 soname_bump=no
-if test x"$ac_cv_native_windows" != "xyes" &&
+if test x"$curl_cv_native_windows" != "xyes" &&
    test $ac_cv_sizeof_off_t -ne $curl_sizeof_curl_off_t; then
   { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: This libcurl built is probably not ABI compatible with previous" >&5
 $as_echo "$as_me: WARNING: This libcurl built is probably not ABI compatible with previous" >&2;}
@@ -28152,7 +28066,7 @@ curl_includes_ws2tcpip="\
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for windows.h" >&5
 $as_echo_n "checking for windows.h... " >&6; }
-if ${ac_cv_header_windows_h+:} false; then :
+if ${curl_cv_header_windows_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -28182,19 +28096,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_windows_h="yes"
+      curl_cv_header_windows_h="yes"
 
 else
 
-      ac_cv_header_windows_h="no"
+      curl_cv_header_windows_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_windows_h" >&5
-$as_echo "$ac_cv_header_windows_h" >&6; }
-  case "$ac_cv_header_windows_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_windows_h" >&5
+$as_echo "$curl_cv_header_windows_h" >&6; }
+  case "$curl_cv_header_windows_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -28212,7 +28126,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for winsock2.h" >&5
 $as_echo_n "checking for winsock2.h... " >&6; }
-if ${ac_cv_header_winsock2_h+:} false; then :
+if ${curl_cv_header_winsock2_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -28243,19 +28157,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_winsock2_h="yes"
+      curl_cv_header_winsock2_h="yes"
 
 else
 
-      ac_cv_header_winsock2_h="no"
+      curl_cv_header_winsock2_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_winsock2_h" >&5
-$as_echo "$ac_cv_header_winsock2_h" >&6; }
-  case "$ac_cv_header_winsock2_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_winsock2_h" >&5
+$as_echo "$curl_cv_header_winsock2_h" >&6; }
+  case "$curl_cv_header_winsock2_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -28268,7 +28182,7 @@ _ACEOF
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ws2tcpip.h" >&5
 $as_echo_n "checking for ws2tcpip.h... " >&6; }
-if ${ac_cv_header_ws2tcpip_h+:} false; then :
+if ${curl_cv_header_ws2tcpip_h+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -28300,19 +28214,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_header_ws2tcpip_h="yes"
+      curl_cv_header_ws2tcpip_h="yes"
 
 else
 
-      ac_cv_header_ws2tcpip_h="no"
+      curl_cv_header_ws2tcpip_h="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_header_ws2tcpip_h" >&5
-$as_echo "$ac_cv_header_ws2tcpip_h" >&6; }
-  case "$ac_cv_header_ws2tcpip_h" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_header_ws2tcpip_h" >&5
+$as_echo "$curl_cv_header_ws2tcpip_h" >&6; }
+  case "$curl_cv_header_ws2tcpip_h" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -28437,7 +28351,7 @@ $as_echo "$curl_typeof_curl_socklen_t" >&6; }
 $as_echo_n "checking size of curl_socklen_t... " >&6; }
   curl_sizeof_curl_socklen_t="unknown"
   curl_pull_headers_socklen_t="unknown"
-  if test "$ac_cv_header_ws2tcpip_h" = "yes"; then
+  if test "$curl_cv_header_ws2tcpip_h" = "yes"; then
     tst_pull_header_checks='none ws2tcpip'
     tst_size_checks='4'
   else
@@ -28815,19 +28729,19 @@ if ac_fn_c_try_link "$LINENO"; then :
 
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-        ac_cv_sig_atomic_t_volatile="no"
+        curl_cv_sig_atomic_t_volatile="no"
 
 else
 
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
-        ac_cv_sig_atomic_t_volatile="yes"
+        curl_cv_sig_atomic_t_volatile="yes"
 
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
       #
-      if test "$ac_cv_sig_atomic_t_volatile" = "yes"; then
+      if test "$curl_cv_sig_atomic_t_volatile" = "yes"; then
 
 $as_echo "#define HAVE_SIG_ATOMIC_T_VOLATILE 1" >>confdefs.h
 
@@ -29121,7 +29035,7 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SELECT 1
 _ACEOF
 
-      ac_cv_func_select="yes"
+      curl_cv_func_select="yes"
     fi
   fi
 
@@ -29308,7 +29222,7 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_RECV 1
 _ACEOF
 
-      ac_cv_func_recv="yes"
+      curl_cv_func_recv="yes"
     fi
   else
     as_fn_error $? "Unable to link function recv" "$LINENO" 5
@@ -29532,7 +29446,7 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SEND 1
 _ACEOF
 
-      ac_cv_func_send="yes"
+      curl_cv_func_send="yes"
     fi
   else
     as_fn_error $? "Unable to link function send" "$LINENO" 5
@@ -29554,7 +29468,7 @@ done
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for MSG_NOSIGNAL" >&5
 $as_echo_n "checking for MSG_NOSIGNAL... " >&6; }
-if ${ac_cv_msg_nosignal+:} false; then :
+if ${curl_cv_msg_nosignal+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -29596,19 +29510,19 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-      ac_cv_msg_nosignal="yes"
+      curl_cv_msg_nosignal="yes"
 
 else
 
-      ac_cv_msg_nosignal="no"
+      curl_cv_msg_nosignal="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_msg_nosignal" >&5
-$as_echo "$ac_cv_msg_nosignal" >&6; }
-  case "$ac_cv_msg_nosignal" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_msg_nosignal" >&5
+$as_echo "$curl_cv_msg_nosignal" >&6; }
+  case "$curl_cv_msg_nosignal" in
     yes)
 
 cat >>confdefs.h <<_ACEOF
@@ -29786,11 +29700,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_ALARM 1
 _ACEOF
 
-    ac_cv_func_alarm="yes"
+    curl_cv_func_alarm="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_alarm="no"
+    curl_cv_func_alarm="no"
   fi
 
 
@@ -29992,11 +29906,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_BASENAME 1
 _ACEOF
 
-    ac_cv_func_basename="yes"
+    curl_cv_func_basename="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_basename="no"
+    curl_cv_func_basename="no"
   fi
 
 
@@ -30159,11 +30073,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_CLOSESOCKET 1
 _ACEOF
 
-    ac_cv_func_closesocket="yes"
+    curl_cv_func_closesocket="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_closesocket="no"
+    curl_cv_func_closesocket="no"
   fi
 
 
@@ -30298,11 +30212,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_CLOSESOCKET_CAMEL 1
 _ACEOF
 
-    ac_cv_func_closesocket_camel="yes"
+    curl_cv_func_closesocket_camel="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_closesocket_camel="no"
+    curl_cv_func_closesocket_camel="no"
   fi
 
 
@@ -30443,11 +30357,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_CONNECT 1
 _ACEOF
 
-    ac_cv_func_connect="yes"
+    curl_cv_func_connect="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_connect="no"
+    curl_cv_func_connect="no"
   fi
 
 
@@ -30620,7 +30534,7 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FCNTL 1
 _ACEOF
 
-    ac_cv_func_fcntl="yes"
+    curl_cv_func_fcntl="yes"
 
   #
   tst_compi_fcntl_o_nonblock="unknown"
@@ -30632,7 +30546,7 @@ _ACEOF
       ;;
   esac
   #
-  if test "$ac_cv_func_fcntl" = "yes"; then
+  if test "$curl_cv_func_fcntl" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if fcntl O_NONBLOCK is compilable" >&5
 $as_echo_n "checking if fcntl O_NONBLOCK is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -30694,17 +30608,17 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FCNTL_O_NONBLOCK 1
 _ACEOF
 
-    ac_cv_func_fcntl_o_nonblock="yes"
+    curl_cv_func_fcntl_o_nonblock="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_fcntl_o_nonblock="no"
+    curl_cv_func_fcntl_o_nonblock="no"
   fi
 
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_fcntl="no"
+    curl_cv_func_fcntl="no"
   fi
 
 
@@ -30874,11 +30788,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FDOPEN 1
 _ACEOF
 
-    ac_cv_func_fdopen="yes"
+    curl_cv_func_fdopen="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_fdopen="no"
+    curl_cv_func_fdopen="no"
   fi
 
 
@@ -31042,11 +30956,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FREEADDRINFO 1
 _ACEOF
 
-    ac_cv_func_freeaddrinfo="yes"
+    curl_cv_func_freeaddrinfo="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_freeaddrinfo="no"
+    curl_cv_func_freeaddrinfo="no"
   fi
 
 
@@ -31221,11 +31135,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FREEIFADDRS 1
 _ACEOF
 
-    ac_cv_func_freeifaddrs="yes"
+    curl_cv_func_freeifaddrs="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_freeifaddrs="no"
+    curl_cv_func_freeifaddrs="no"
   fi
 
 
@@ -31455,11 +31369,11 @@ $as_echo "#define HAVE_FSETXATTR_6 1" >>confdefs.h
 
     fi
     #
-    ac_cv_func_fsetxattr="yes"
+    curl_cv_func_fsetxattr="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_fsetxattr="no"
+    curl_cv_func_fsetxattr="no"
   fi
 
 
@@ -31604,11 +31518,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_FTRUNCATE 1
 _ACEOF
 
-    ac_cv_func_ftruncate="yes"
+    curl_cv_func_ftruncate="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ftruncate="no"
+    curl_cv_func_ftruncate="no"
   fi
 
 
@@ -31845,15 +31759,15 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETADDRINFO 1
 _ACEOF
 
-    ac_cv_func_getaddrinfo="yes"
+    curl_cv_func_getaddrinfo="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_getaddrinfo="no"
-    ac_cv_func_getaddrinfo_threadsafe="no"
+    curl_cv_func_getaddrinfo="no"
+    curl_cv_func_getaddrinfo_threadsafe="no"
   fi
   #
-  if test "$ac_cv_func_getaddrinfo" = "yes"; then
+  if test "$curl_cv_func_getaddrinfo" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if getaddrinfo is threadsafe" >&5
 $as_echo_n "checking if getaddrinfo is threadsafe... " >&6; }
     case $host_os in
@@ -31895,7 +31809,7 @@ $as_echo_n "checking if getaddrinfo is threadsafe... " >&6; }
         ;;
     esac
     if test "$tst_tsafe_getaddrinfo" = "unknown" &&
-       test "$ac_cv_native_windows" = "yes"; then
+       test "$curl_cv_native_windows" = "yes"; then
       tst_tsafe_getaddrinfo="yes"
     fi
     if test "$tst_tsafe_getaddrinfo" = "unknown"; then
@@ -32018,9 +31932,9 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETADDRINFO_THREADSAFE 1
 _ACEOF
 
-      ac_cv_func_getaddrinfo_threadsafe="yes"
+      curl_cv_func_getaddrinfo_threadsafe="yes"
     else
-      ac_cv_func_getaddrinfo_threadsafe="no"
+      curl_cv_func_getaddrinfo_threadsafe="no"
     fi
   fi
 
@@ -32159,11 +32073,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GAI_STRERROR 1
 _ACEOF
 
-    ac_cv_func_gai_strerror="yes"
+    curl_cv_func_gai_strerror="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gai_strerror="no"
+    curl_cv_func_gai_strerror="no"
   fi
 
 
@@ -32301,11 +32215,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETHOSTBYADDR 1
 _ACEOF
 
-    ac_cv_func_gethostbyaddr="yes"
+    curl_cv_func_gethostbyaddr="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gethostbyaddr="no"
+    curl_cv_func_gethostbyaddr="no"
   fi
 
 
@@ -32550,11 +32464,11 @@ $as_echo "#define HAVE_GETHOSTBYADDR_R_8 1" >>confdefs.h
 
     fi
     #
-    ac_cv_func_gethostbyaddr_r="yes"
+    curl_cv_func_gethostbyaddr_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gethostbyaddr_r="no"
+    curl_cv_func_gethostbyaddr_r="no"
   fi
 
 
@@ -32692,11 +32606,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETHOSTBYNAME 1
 _ACEOF
 
-    ac_cv_func_gethostbyname="yes"
+    curl_cv_func_gethostbyname="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gethostbyname="no"
+    curl_cv_func_gethostbyname="no"
   fi
 
 
@@ -32941,11 +32855,11 @@ $as_echo "#define HAVE_GETHOSTBYNAME_R_6 1" >>confdefs.h
 
     fi
     #
-    ac_cv_func_gethostbyname_r="yes"
+    curl_cv_func_gethostbyname_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gethostbyname_r="no"
+    curl_cv_func_gethostbyname_r="no"
   fi
 
 
@@ -33130,11 +33044,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETHOSTNAME 1
 _ACEOF
 
-    ac_cv_func_gethostname="yes"
+    curl_cv_func_gethostname="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gethostname="no"
+    curl_cv_func_gethostname="no"
   fi
 
 
@@ -33335,11 +33249,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETIFADDRS 1
 _ACEOF
 
-    ac_cv_func_getifaddrs="yes"
+    curl_cv_func_getifaddrs="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_getifaddrs="no"
+    curl_cv_func_getifaddrs="no"
   fi
 
 
@@ -33583,11 +33497,11 @@ $as_echo "#define GETSERVBYPORT_R_BUFSIZE sizeof(struct servent_data)" >>confdef
 $as_echo "#define GETSERVBYPORT_R_BUFSIZE 4096" >>confdefs.h
 
     fi
-    ac_cv_func_getservbyport_r="yes"
+    curl_cv_func_getservbyport_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_getservbyport_r="no"
+    curl_cv_func_getservbyport_r="no"
   fi
 
 
@@ -33820,11 +33734,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GMTIME_R 1
 _ACEOF
 
-    ac_cv_func_gmtime_r="yes"
+    curl_cv_func_gmtime_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_gmtime_r="no"
+    curl_cv_func_gmtime_r="no"
   fi
 
 
@@ -34066,11 +33980,11 @@ $as_echo "#define HAVE_INET_NTOA_R_3 1" >>confdefs.h
 
     fi
     #
-    ac_cv_func_inet_ntoa_r="yes"
+    curl_cv_func_inet_ntoa_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_inet_ntoa_r="no"
+    curl_cv_func_inet_ntoa_r="no"
   fi
 
 
@@ -34313,11 +34227,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_INET_NTOP 1
 _ACEOF
 
-    ac_cv_func_inet_ntop="yes"
+    curl_cv_func_inet_ntop="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_inet_ntop="no"
+    curl_cv_func_inet_ntop="no"
   fi
 
 
@@ -34553,11 +34467,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_INET_PTON 1
 _ACEOF
 
-    ac_cv_func_inet_pton="yes"
+    curl_cv_func_inet_pton="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_inet_pton="no"
+    curl_cv_func_inet_pton="no"
   fi
 
 
@@ -34736,13 +34650,13 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTL 1
 _ACEOF
 
-    ac_cv_func_ioctl="yes"
+    curl_cv_func_ioctl="yes"
 
   #
   tst_compi_ioctl_fionbio="unknown"
   tst_allow_ioctl_fionbio="unknown"
   #
-  if test "$ac_cv_func_ioctl" = "yes"; then
+  if test "$curl_cv_func_ioctl" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if ioctl FIONBIO is compilable" >&5
 $as_echo_n "checking if ioctl FIONBIO is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -34804,11 +34718,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTL_FIONBIO 1
 _ACEOF
 
-    ac_cv_func_ioctl_fionbio="yes"
+    curl_cv_func_ioctl_fionbio="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctl_fionbio="no"
+    curl_cv_func_ioctl_fionbio="no"
   fi
 
 
@@ -34816,7 +34730,7 @@ $as_echo "no" >&6; }
   tst_compi_ioctl_siocgifaddr="unknown"
   tst_allow_ioctl_siocgifaddr="unknown"
   #
-  if test "$ac_cv_func_ioctl" = "yes"; then
+  if test "$curl_cv_func_ioctl" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if ioctl SIOCGIFADDR is compilable" >&5
 $as_echo_n "checking if ioctl SIOCGIFADDR is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -34879,17 +34793,17 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTL_SIOCGIFADDR 1
 _ACEOF
 
-    ac_cv_func_ioctl_siocgifaddr="yes"
+    curl_cv_func_ioctl_siocgifaddr="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctl_siocgifaddr="no"
+    curl_cv_func_ioctl_siocgifaddr="no"
   fi
 
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctl="no"
+    curl_cv_func_ioctl="no"
   fi
 
 
@@ -35024,13 +34938,13 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTLSOCKET 1
 _ACEOF
 
-    ac_cv_func_ioctlsocket="yes"
+    curl_cv_func_ioctlsocket="yes"
 
   #
   tst_compi_ioctlsocket_fionbio="unknown"
   tst_allow_ioctlsocket_fionbio="unknown"
   #
-  if test "$ac_cv_func_ioctlsocket" = "yes"; then
+  if test "$curl_cv_func_ioctlsocket" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if ioctlsocket FIONBIO is compilable" >&5
 $as_echo_n "checking if ioctlsocket FIONBIO is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -35092,17 +35006,17 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTLSOCKET_FIONBIO 1
 _ACEOF
 
-    ac_cv_func_ioctlsocket_fionbio="yes"
+    curl_cv_func_ioctlsocket_fionbio="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctlsocket_fionbio="no"
+    curl_cv_func_ioctlsocket_fionbio="no"
   fi
 
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctlsocket="no"
+    curl_cv_func_ioctlsocket="no"
   fi
 
 
@@ -35247,13 +35161,13 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTLSOCKET_CAMEL 1
 _ACEOF
 
-    ac_cv_func_ioctlsocket_camel="yes"
+    curl_cv_func_ioctlsocket_camel="yes"
 
   #
   tst_compi_ioctlsocket_camel_fionbio="unknown"
   tst_allow_ioctlsocket_camel_fionbio="unknown"
   #
-  if test "$ac_cv_func_ioctlsocket_camel" = "yes"; then
+  if test "$curl_cv_func_ioctlsocket_camel" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if IoctlSocket FIONBIO is compilable" >&5
 $as_echo_n "checking if IoctlSocket FIONBIO is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -35315,17 +35229,17 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_IOCTLSOCKET_CAMEL_FIONBIO 1
 _ACEOF
 
-    ac_cv_func_ioctlsocket_camel_fionbio="yes"
+    curl_cv_func_ioctlsocket_camel_fionbio="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctlsocket_camel_fionbio="no"
+    curl_cv_func_ioctlsocket_camel_fionbio="no"
   fi
 
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_ioctlsocket_camel="no"
+    curl_cv_func_ioctlsocket_camel="no"
   fi
 
 
@@ -35526,11 +35440,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_LOCALTIME_R 1
 _ACEOF
 
-    ac_cv_func_localtime_r="yes"
+    curl_cv_func_localtime_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_localtime_r="no"
+    curl_cv_func_localtime_r="no"
   fi
 
 
@@ -35714,11 +35628,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_MEMRCHR 1
 _ACEOF
 
-    ac_cv_func_memrchr="yes"
+    curl_cv_func_memrchr="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_memrchr="no"
+    curl_cv_func_memrchr="no"
   fi
 
 
@@ -35916,11 +35830,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_POLL_FINE 1
 _ACEOF
 
-    ac_cv_func_poll="yes"
+    curl_cv_func_poll="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_poll="no"
+    curl_cv_func_poll="no"
   fi
 
 
@@ -36058,13 +35972,13 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SETSOCKOPT 1
 _ACEOF
 
-    ac_cv_func_setsockopt="yes"
+    curl_cv_func_setsockopt="yes"
 
   #
   tst_compi_setsockopt_so_nonblock="unknown"
   tst_allow_setsockopt_so_nonblock="unknown"
   #
-  if test "$ac_cv_func_setsockopt" = "yes"; then
+  if test "$curl_cv_func_setsockopt" = "yes"; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking if setsockopt SO_NONBLOCK is compilable" >&5
 $as_echo_n "checking if setsockopt SO_NONBLOCK is compilable... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -36126,17 +36040,17 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SETSOCKOPT_SO_NONBLOCK 1
 _ACEOF
 
-    ac_cv_func_setsockopt_so_nonblock="yes"
+    curl_cv_func_setsockopt_so_nonblock="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_setsockopt_so_nonblock="no"
+    curl_cv_func_setsockopt_so_nonblock="no"
   fi
 
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_setsockopt="no"
+    curl_cv_func_setsockopt="no"
   fi
 
 
@@ -36306,11 +36220,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SIGACTION 1
 _ACEOF
 
-    ac_cv_func_sigaction="yes"
+    curl_cv_func_sigaction="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_sigaction="no"
+    curl_cv_func_sigaction="no"
   fi
 
 
@@ -36455,11 +36369,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SIGINTERRUPT 1
 _ACEOF
 
-    ac_cv_func_siginterrupt="yes"
+    curl_cv_func_siginterrupt="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_siginterrupt="no"
+    curl_cv_func_siginterrupt="no"
   fi
 
 
@@ -36604,11 +36518,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SIGNAL 1
 _ACEOF
 
-    ac_cv_func_signal="yes"
+    curl_cv_func_signal="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_signal="no"
+    curl_cv_func_signal="no"
   fi
 
 
@@ -36819,11 +36733,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SIGSETJMP 1
 _ACEOF
 
-    ac_cv_func_sigsetjmp="yes"
+    curl_cv_func_sigsetjmp="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_sigsetjmp="no"
+    curl_cv_func_sigsetjmp="no"
   fi
 
 
@@ -36964,11 +36878,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SOCKET 1
 _ACEOF
 
-    ac_cv_func_socket="yes"
+    curl_cv_func_socket="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_socket="no"
+    curl_cv_func_socket="no"
   fi
 
 
@@ -37116,11 +37030,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_SOCKETPAIR 1
 _ACEOF
 
-    ac_cv_func_socketpair="yes"
+    curl_cv_func_socketpair="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_socketpair="no"
+    curl_cv_func_socketpair="no"
   fi
 
 
@@ -37265,11 +37179,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRCASECMP 1
 _ACEOF
 
-    ac_cv_func_strcasecmp="yes"
+    curl_cv_func_strcasecmp="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strcasecmp="no"
+    curl_cv_func_strcasecmp="no"
   fi
 
 
@@ -37414,11 +37328,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRCMPI 1
 _ACEOF
 
-    ac_cv_func_strcmpi="yes"
+    curl_cv_func_strcmpi="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strcmpi="no"
+    curl_cv_func_strcmpi="no"
   fi
 
 
@@ -37563,11 +37477,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRDUP 1
 _ACEOF
 
-    ac_cv_func_strdup="yes"
+    curl_cv_func_strdup="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strdup="no"
+    curl_cv_func_strdup="no"
   fi
 
 
@@ -37968,11 +37882,11 @@ cat >>confdefs.h <<_ACEOF
 _ACEOF
 
     fi
-    ac_cv_func_strerror_r="yes"
+    curl_cv_func_strerror_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strerror_r="no"
+    curl_cv_func_strerror_r="no"
   fi
   #
   if test "$tst_compi_strerror_r" = "yes" &&
@@ -38124,11 +38038,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRICMP 1
 _ACEOF
 
-    ac_cv_func_stricmp="yes"
+    curl_cv_func_stricmp="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_stricmp="no"
+    curl_cv_func_stricmp="no"
   fi
 
 
@@ -38273,11 +38187,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRNCASECMP 1
 _ACEOF
 
-    ac_cv_func_strncasecmp="yes"
+    curl_cv_func_strncasecmp="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strncasecmp="no"
+    curl_cv_func_strncasecmp="no"
   fi
 
 
@@ -38422,11 +38336,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRNCMPI 1
 _ACEOF
 
-    ac_cv_func_strncmpi="yes"
+    curl_cv_func_strncmpi="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strncmpi="no"
+    curl_cv_func_strncmpi="no"
   fi
 
 
@@ -38571,11 +38485,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRNICMP 1
 _ACEOF
 
-    ac_cv_func_strnicmp="yes"
+    curl_cv_func_strnicmp="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strnicmp="no"
+    curl_cv_func_strnicmp="no"
   fi
 
 
@@ -38720,11 +38634,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRSTR 1
 _ACEOF
 
-    ac_cv_func_strstr="yes"
+    curl_cv_func_strstr="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strstr="no"
+    curl_cv_func_strstr="no"
   fi
 
 
@@ -38869,11 +38783,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRTOK_R 1
 _ACEOF
 
-    ac_cv_func_strtok_r="yes"
+    curl_cv_func_strtok_r="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strtok_r="no"
+    curl_cv_func_strtok_r="no"
   fi
 
 
@@ -39018,11 +38932,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_STRTOLL 1
 _ACEOF
 
-    ac_cv_func_strtoll="yes"
+    curl_cv_func_strtoll="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_strtoll="no"
+    curl_cv_func_strtoll="no"
   fi
 
 
@@ -39192,11 +39106,11 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_WRITEV 1
 _ACEOF
 
-    ac_cv_func_writev="yes"
+    curl_cv_func_writev="yes"
   else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    ac_cv_func_writev="no"
+    curl_cv_func_writev="no"
   fi
 
 
@@ -39591,13 +39505,13 @@ cat >>confdefs.h <<_ACEOF
 #define HAVE_GETNAMEINFO 1
 _ACEOF
 
-      ac_cv_func_getnameinfo="yes"
+      curl_cv_func_getnameinfo="yes"
     fi
   fi
 
 
 if test "$ipv6" = "yes"; then
-  if test "$ac_cv_func_getaddrinfo" = "yes"; then
+  if test "$curl_cv_func_getaddrinfo" = "yes"; then
 
 $as_echo "#define ENABLE_IPV6 1" >>confdefs.h
 
@@ -39622,7 +39536,7 @@ done
   #
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for working NI_WITHSCOPEID" >&5
 $as_echo_n "checking for working NI_WITHSCOPEID... " >&6; }
-if ${ac_cv_working_ni_withscopeid+:} false; then :
+if ${curl_cv_working_ni_withscopeid+:} false; then :
   $as_echo_n "(cached) " >&6
 else
 
@@ -39650,11 +39564,11 @@ int main (void)
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :
 
-        ac_cv_working_ni_withscopeid="yes"
+        curl_cv_working_ni_withscopeid="yes"
 
 else
 
-        ac_cv_working_ni_withscopeid="no"
+        curl_cv_working_ni_withscopeid="no"
 
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext # AC-COMPILE-IFELSE
@@ -39728,12 +39642,12 @@ _ACEOF
 if ac_fn_c_try_run "$LINENO"; then :
 
       # Exit code == 0. Program worked.
-      ac_cv_working_ni_withscopeid="yes"
+      curl_cv_working_ni_withscopeid="yes"
 
 else
 
       # Exit code != 0. Program failed.
-      ac_cv_working_ni_withscopeid="no"
+      curl_cv_working_ni_withscopeid="no"
 
 fi
 rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
@@ -39742,9 +39656,9 @@ fi
  # AC-RUN-IFELSE
 
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_working_ni_withscopeid" >&5
-$as_echo "$ac_cv_working_ni_withscopeid" >&6; } # AC-CACHE-CHECK
-  case "$ac_cv_working_ni_withscopeid" in
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $curl_cv_working_ni_withscopeid" >&5
+$as_echo "$curl_cv_working_ni_withscopeid" >&6; } # AC-CACHE-CHECK
+  case "$curl_cv_working_ni_withscopeid" in
     yes)
 
 $as_echo "#define HAVE_NI_WITHSCOPEID 1" >>confdefs.h
@@ -39760,15 +39674,15 @@ fi
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking how to set a socket into non-blocking mode" >&5
 $as_echo_n "checking how to set a socket into non-blocking mode... " >&6; }
-  if test "x$ac_cv_func_fcntl_o_nonblock" = "xyes"; then
+  if test "x$curl_cv_func_fcntl_o_nonblock" = "xyes"; then
     tst_method="fcntl O_NONBLOCK"
-  elif test "x$ac_cv_func_ioctl_fionbio" = "xyes"; then
+  elif test "x$curl_cv_func_ioctl_fionbio" = "xyes"; then
     tst_method="ioctl FIONBIO"
-  elif test "x$ac_cv_func_ioctlsocket_fionbio" = "xyes"; then
+  elif test "x$curl_cv_func_ioctlsocket_fionbio" = "xyes"; then
     tst_method="ioctlsocket FIONBIO"
-  elif test "x$ac_cv_func_ioctlsocket_camel_fionbio" = "xyes"; then
+  elif test "x$curl_cv_func_ioctlsocket_camel_fionbio" = "xyes"; then
     tst_method="IoctlSocket FIONBIO"
-  elif test "x$ac_cv_func_setsockopt_so_nonblock" = "xyes"; then
+  elif test "x$curl_cv_func_setsockopt_so_nonblock" = "xyes"; then
     tst_method="setsockopt SO_NONBLOCK"
   fi
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $tst_method" >&5
@@ -40022,7 +39936,7 @@ else
 fi
 
 
-if test "x$ac_cv_native_windows" != "xyes" &&
+if test "x$curl_cv_native_windows" != "xyes" &&
    test "x$enable_shared" = "xyes"; then
   build_libhostname=yes
 else
@@ -40165,7 +40079,7 @@ $as_echo_n "checking whether to enable SSPI support (Windows native builds only)
 if test "${enable_sspi+set}" = set; then :
   enableval=$enable_sspi;  case "$enableval" in
   yes)
-       if test "$ac_cv_native_windows" = "yes"; then
+       if test "$curl_cv_native_windows" = "yes"; then
          { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
 
@@ -40256,7 +40170,7 @@ fi
 
       { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to enable NTLM delegation to winbind's helper" >&5
 $as_echo_n "checking whether to enable NTLM delegation to winbind's helper... " >&6; }
-  if test "$ac_cv_native_windows" = "yes" ||
+  if test "$curl_cv_native_windows" = "yes" ||
     test "x$SSL_ENABLED" = "x"; then
     want_ntlm_wb_file=""
     want_ntlm_wb="no"
@@ -40385,7 +40299,7 @@ fi
 $as_echo_n "checking whether hiding of library internal symbols will actually happen... " >&6; }
   CFLAG_CURL_SYMBOL_HIDING=""
   doing_symbol_hiding="no"
-  if test x"$ac_cv_native_windows" != "xyes" &&
+  if test x"$curl_cv_native_windows" != "xyes" &&
     test "$want_symbol_hiding" = "yes" &&
     test "$supports_symbol_hiding" = "yes"; then
     doing_symbol_hiding="yes"

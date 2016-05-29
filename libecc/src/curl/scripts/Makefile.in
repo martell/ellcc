@@ -278,7 +278,7 @@ ZLIB_LIBS = @ZLIB_LIBS@
 #                            | (__| |_| |  _ <| |___
 #                             \___|\___/|_| \_\_____|
 #
-# Copyright (C) 1998 - 2015, Daniel Stenberg, <daniel@haxx.se>, et al.
+# Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
 #
 # This software is licensed as described in the file COPYING, which
 # you should have received as part of this distribution. The terms
@@ -546,7 +546,7 @@ all-local: $(ZSH_COMPLETION_FUNCTION_FILENAME)
 $(ZSH_COMPLETION_FUNCTION_FILENAME): zsh.pl
 @CROSSCOMPILING_TRUE@	@echo "NOTICE: we can't generate zsh completion when cross-compiling!"
 @CROSSCOMPILING_FALSE@	@if ! test -x "$(PERL)"; then echo "No perl: can't install zsh.pl"; exit 0; fi
-@CROSSCOMPILING_FALSE@	$(PERL) $(srcdir)/zsh.pl $(top_builddir)/src/curl > $@
+@CROSSCOMPILING_FALSE@	$(PERL) $(srcdir)/zsh.pl $(top_builddir)/src/curl$(EXEEXT) > $@
 
 install-data-local:
 @CROSSCOMPILING_TRUE@	@echo "NOTICE: we can't install zsh completion when cross-compiling!"

@@ -1683,7 +1683,7 @@ uninstall-am:
 all: $(check_PROGRAMS)
 
 checksrc:
-	@@PERL@ $(top_srcdir)/lib/checksrc.pl -D$(top_srcdir)/docs/examples *.c
+	@PERL@ $(top_srcdir)/lib/checksrc.pl $(srcdir)/*.c
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

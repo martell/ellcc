@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the curl library to version 7.49.0.
 * Removed build of Microblaze libraries.
 * Update to LLVM r271112.
 * Update the nghttp2 library to version 1.11.0.
