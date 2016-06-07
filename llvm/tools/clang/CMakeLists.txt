@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.8)
+cmake_minimum_required(VERSION 3.4.3)
 
 # FIXME: It may be removed when we use 2.8.12.
 if(CMAKE_VERSION VERSION_LESS 2.8.12)
@@ -196,6 +196,8 @@ set(C_INCLUDE_DIRS "" CACHE STRING
 set(GCC_INSTALL_PREFIX "" CACHE PATH "Directory where gcc is installed." )
 set(DEFAULT_SYSROOT "" CACHE PATH
   "Default <path> to all compiler invocations for --sysroot=<path>." )
+
+set(ENABLE_LINKER_BUILD_ID OFF CACHE BOOL "pass --build-id to ld")
 
 set(CLANG_DEFAULT_CXX_STDLIB "" CACHE STRING
   "Default C++ stdlib to use (empty for architecture default, \"libstdc++\" or \"libc++\"")

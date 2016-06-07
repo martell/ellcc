@@ -66,6 +66,13 @@ static void runNewCustomLtoPasses(Module &M, TargetMachine &TM) {
   PassBuilder PB(&TM);
 
   AAManager AA;
+
+  // Parse a custom AA pipeline if asked to.
+  if (!PB.parseAAPipeline(AA, Config->LtoAAPipeline)) {
+    error("Unable to parse AA pipeline description: " + Config->LtoAAPipeline);
+    return;
+  }
+
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
@@ -147,7 +154,7 @@ BitcodeCompiler::BitcodeCompiler()
       Mover(*Combined) {}
 
 static void undefine(Symbol *S) {
-  replaceBody<Undefined>(S, S->body()->getName(), STV_DEFAULT, 0);
+  replaceBody<Undefined>(S, S->body()->getName(), STV_DEFAULT, S->body()->Type);
 }
 
 void BitcodeCompiler::add(BitcodeFile &F) {

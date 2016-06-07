@@ -371,7 +371,7 @@ protected:
 
   // If true, emit GOTPCRELX/REX_GOTPCRELX instead of GOTPCREL, on
   // X86_64 ELF.
-  bool RelaxELFRelocations;
+  bool RelaxELFRelocations = false;
 
 public:
   explicit MCAsmInfo();
@@ -535,6 +535,10 @@ public:
   ExceptionHandling getExceptionHandlingType() const { return ExceptionsType; }
   WinEH::EncodingType getWinEHEncodingType() const { return WinEHEncodingType; }
 
+  void setExceptionsType(ExceptionHandling EH) {
+    ExceptionsType = EH;
+  }
+
   /// Returns true if the exception handling method for the platform uses call
   /// frame information to unwind.
   bool usesCFIForEH() const {
@@ -582,6 +586,7 @@ public:
   bool shouldUseLogicalShr() const { return UseLogicalShr; }
 
   bool canRelaxRelocations() const { return RelaxELFRelocations; }
+  void setRelaxELFRelocations(bool V) { RelaxELFRelocations = V; }
 };
 }
 

@@ -489,10 +489,8 @@ class NamedMatchClass<string CName, bit Optional = 1> : AsmOperandClass {
   let ParserMethod = !if(Optional, "parseOptionalOperand", "parse"#CName);
   let RenderMethod = "addImmOperands";
   let IsOptional = Optional;
-  let DefaultMethod = "default"#CName;
+  let DefaultMethod = !if(Optional, "default"#CName, ?);
 }
-
-def sdwa_sel : NamedMatchClass<"SDWASel">;
 
 class NamedOperandBit<string Name, AsmOperandClass MatchClass> : Operand<i1> {
   let PrintMethod = "print"#Name;
@@ -547,9 +545,9 @@ def row_mask : NamedOperandU32<"RowMask", NamedMatchClass<"RowMask">>;
 def bank_mask : NamedOperandU32<"BankMask", NamedMatchClass<"BankMask">>;
 def bound_ctrl : NamedOperandBit<"BoundCtrl", NamedMatchClass<"BoundCtrl">>;
 
-def dst_sel : NamedOperandU32<"SDWADstSel", sdwa_sel>;
-def src0_sel : NamedOperandU32<"SDWASrc0Sel", sdwa_sel>;
-def src1_sel : NamedOperandU32<"SDWASrc1Sel", sdwa_sel>;
+def dst_sel : NamedOperandU32<"SDWADstSel", NamedMatchClass<"SDWADstSel">>;
+def src0_sel : NamedOperandU32<"SDWASrc0Sel", NamedMatchClass<"SDWASrc0Sel">>;
+def src1_sel : NamedOperandU32<"SDWASrc1Sel", NamedMatchClass<"SDWASrc1Sel">>;
 def dst_unused : NamedOperandU32<"SDWADstUnused", NamedMatchClass<"SDWADstUnused">>;
 
 def hwreg : NamedOperandU16<"Hwreg", NamedMatchClass<"Hwreg", 0>>;
@@ -1248,19 +1246,20 @@ class getInsSDWA <RegisterClass Src0RC, RegisterClass Src1RC, int NumSrcArgs,
             !if (!eq(NumSrcArgs, 1),
               !if (!eq(HasModifiers, 1),
                 // VOP1_SDWA with modifiers
-                (ins InputModsNoDefault:$src0_modifiers, Src0RC:$src0,
+                (ins InputModsNoDefault:$src0_fmodifiers, Src0RC:$src0,
                      clampmod:$clamp, dst_sel:$dst_sel, dst_unused:$dst_unused,
                      src0_sel:$src0_sel)
               /* else */,
                 // VOP1_SDWA without modifiers
+                // FIXME: sext() modifier is not supported yet
                 (ins Src0RC:$src0, dst_sel:$dst_sel, dst_unused:$dst_unused,
                      src0_sel:$src0_sel)
               /* endif */)
               /* NumSrcArgs == 2 */,
               !if (!eq(HasModifiers, 1),
                 // VOP2_SDWA with modifiers
-                (ins InputModsNoDefault:$src0_modifiers, Src0RC:$src0,
-                     InputModsNoDefault:$src1_modifiers, Src1RC:$src1,
+                (ins InputModsNoDefault:$src0_fmodifiers, Src0RC:$src0,
+                     InputModsNoDefault:$src1_fmodifiers, Src1RC:$src1,
                      clampmod:$clamp, dst_sel:$dst_sel, dst_unused:$dst_unused,
                      src0_sel:$src0_sel, src1_sel:$src1_sel)
               /* else */,
@@ -1331,13 +1330,13 @@ class getAsmSDWA <bit HasDst, int NumSrcArgs, bit HasModifiers, ValueType DstVT 
                        "$sdst",
                        "$vdst"),
                     ""); // use $sdst for VOPC
-  string src0 = !if(!eq(NumSrcArgs, 1), "$src0_modifiers", "$src0_modifiers,");
+  string src0 = !if(!eq(NumSrcArgs, 1), "$src0_fmodifiers", "$src0_fmodifiers,");
   string src1 = !if(!eq(NumSrcArgs, 1), "",
-                   !if(!eq(NumSrcArgs, 2), " $src1_modifiers",
-                                           " $src1_modifiers,"));
+                   !if(!eq(NumSrcArgs, 2), " $src1_fmodifiers",
+                                           " $src1_fmodifiers,"));
   string args = !if(!eq(HasModifiers, 0),
                      getAsm32<0, NumSrcArgs, DstVT>.ret,
-                     ", "#src0#src1#", $clamp");
+                     ", "#src0#src1#"$clamp");
   string sdwa = !if(!eq(NumSrcArgs, 0),
                     "",
                     !if(!eq(NumSrcArgs, 1),
@@ -1476,6 +1475,19 @@ def VOP2b_I32_I1_I32_I32_I1 : VOPProfile<[i32, i32, i32, i1]> {
   let Ins32 = (ins Src0RC32:$src0, Src1RC32:$src1);
 }
 
+// Read in from vcc or arbitrary SGPR
+def VOP2e_I32_I32_I32_I1 : VOPProfile<[i32, i32, i32, i1]> {
+  let Src0RC32 = VCSrc_32; // See comment in def VOP2b_I32_I1_I32_I32_I1 above.
+  let Asm32 = "$vdst, $src0, $src1, vcc";
+  let Asm64 = "$vdst, $src0, $src1, $src2";
+  let Outs32 = (outs DstRC:$vdst);
+  let Outs64 = (outs DstRC:$vdst);
+
+  // Suppress src2 implied by type since the 32-bit encoding uses an
+  // implicit VCC use.
+  let Ins32 = (ins Src0RC32:$src0, Src1RC32:$src1);
+}
+
 class VOP3b_Profile<ValueType vt> : VOPProfile<[vt, vt, vt, vt]> {
   let Outs64 = (outs DstRC:$vdst, SReg_64:$sdst);
   let Asm64 = "$vdst, $sdst, $src0_modifiers, $src1_modifiers, $src2_modifiers"#"$clamp"#"$omod";
@@ -1517,11 +1529,6 @@ def VOPC_I1_F64_I32 : VOPC_Class_Profile<f64>;
 def VOP_I64_I64_I32 : VOPProfile <[i64, i64, i32, untyped]>;
 def VOP_I64_I32_I64 : VOPProfile <[i64, i32, i64, untyped]>;
 def VOP_I64_I64_I64 : VOPProfile <[i64, i64, i64, untyped]>;
-def VOP_CNDMASK : VOPProfile <[i32, i32, i32, untyped]> {
-  let Ins32 = (ins Src0RC32:$src0, Src1RC32:$src1);
-  let Ins64 = (ins Src0RC64:$src0, Src1RC64:$src1, SSrc_64:$src2);
-  let Asm64 = "$vdst, $src0, $src1, $src2";
-}
 
 def VOP_F32_F32_F32_F32 : VOPProfile <[f32, f32, f32, f32]>;
 def VOP_MADAK : VOPProfile <[f32, f32, f32, f32]> {
@@ -1543,8 +1550,8 @@ def VOP_MAC : VOPProfile <[f32, f32, f32, f32]> {
                     VGPR_32:$src2, // stub argument
                     dpp_ctrl:$dpp_ctrl, row_mask:$row_mask,
                     bank_mask:$bank_mask, bound_ctrl:$bound_ctrl);
-  let InsSDWA = (ins InputModsNoDefault:$src0_modifiers, Src0RC32:$src0,
-                     InputModsNoDefault:$src1_modifiers, Src1RC32:$src1,
+  let InsSDWA = (ins InputModsNoDefault:$src0_fmodifiers, Src0RC32:$src0,
+                     InputModsNoDefault:$src1_fmodifiers, Src1RC32:$src1,
                      VGPR_32:$src2, // stub argument
                      clampmod:$clamp, dst_sel:$dst_sel, dst_unused:$dst_unused,
                      src0_sel:$src0_sel, src1_sel:$src1_sel);
@@ -1671,15 +1678,17 @@ class VOP1_DPP <vop1 op, string opName, VOPProfile p> :
 class SDWADisableFields <VOPProfile p> {
   bits<8> src0 = !if(!eq(p.NumSrcArgs, 0), 0, ?);
   bits<3> src0_sel = !if(!eq(p.NumSrcArgs, 0), 6, ?);
-  bits<3> src0_modifiers = !if(p.HasModifiers, ?, 0);
+  bits<2> src0_fmodifiers = !if(p.HasModifiers, ?, 0);
+  bits<1> src0_imodifiers = 0; // FIXME: always 0 untill sext modifier is supported
   bits<3> src1_sel = !if(!eq(p.NumSrcArgs, 0), 6,
                          !if(!eq(p.NumSrcArgs, 1), 6,
                              ?));
-  bits<3> src1_modifiers = !if(!eq(p.NumSrcArgs, 0), 0,
-                               !if(!eq(p.NumSrcArgs, 1), 0,
-                                   !if(p.HasModifiers, ?, 0)));
+  bits<2> src1_fmodifiers = !if(!eq(p.NumSrcArgs, 0), 0,
+                                !if(!eq(p.NumSrcArgs, 1), 0,
+                                    !if(p.HasModifiers, ?, 0)));
+  bits<1> src1_imodifiers = 0;
   bits<3> dst_sel = !if(p.HasDst, ?, 6);
-  bits<2> dst_unused = !if(p.HasDst, ?, 0);
+  bits<2> dst_unused = !if(p.HasDst, ?, 2);
   bits<1> clamp = !if(p.HasModifiers, ?, 0);
 }
 
@@ -1687,6 +1696,7 @@ class VOP1_SDWA <vop1 op, string opName, VOPProfile p> :
   VOP1_SDWAe <op.VI>,
   VOP_SDWA <p.OutsSDWA, p.InsSDWA, opName#p.AsmSDWA, [], p.HasModifiers>,
   SDWADisableFields <p> {
+  let AsmMatchConverter = !if(!eq(p.HasModifiers,1), "cvtSdwaVop1_mod", "cvtSdwaVop1_nomod");
   let AssemblerPredicates = !if(p.HasExt, [isVI], [DisableInst]);
   let DecoderNamespace = "SDWA";
   let DisableDecoder = DisableVIDecoder;
@@ -1760,6 +1770,7 @@ class VOP2_SDWA <vop2 op, string opName, VOPProfile p> :
   VOP2_SDWAe <op.VI>,
   VOP_SDWA <p.OutsSDWA, p.InsSDWA, opName#p.AsmSDWA, [], p.HasModifiers>,
   SDWADisableFields <p> {
+  let AsmMatchConverter = !if(!eq(p.HasModifiers,1), "cvtSdwaVop2_mod", "cvtSdwaVop2_nomod");
   let AssemblerPredicates = !if(p.HasExt, [isVI], [DisableInst]);
   let DecoderNamespace = "SDWA";
   let DisableDecoder = DisableVIDecoder;
@@ -1860,6 +1871,26 @@ class VOP3b_Real_vi <bits<10> op, dag outs, dag ins, string asm, string opName,
   let DisableDecoder = DisableVIDecoder;
 }
 
+class VOP3e_Real_si <bits<9> op, dag outs, dag ins, string asm, string opName,
+                     bit HasMods = 0, bit VOP3Only = 0> :
+  VOP3Common <outs, ins, asm, [], HasMods, VOP3Only>,
+  VOP3e <op>,
+  SIMCInstr<opName#"_e64", SISubtarget.SI> {
+  let AssemblerPredicates = [isSICI];
+  let DecoderNamespace = "SICI";
+  let DisableDecoder = DisableSIDecoder;
+}
+
+class VOP3e_Real_vi <bits<10> op, dag outs, dag ins, string asm, string opName,
+                     bit HasMods = 0, bit VOP3Only = 0> :
+  VOP3Common <outs, ins, asm, [], HasMods, VOP3Only>,
+  VOP3e_vi <op>,
+  SIMCInstr <opName#"_e64", SISubtarget.VI> {
+  let AssemblerPredicates = [isVI];
+  let DecoderNamespace = "VI";
+  let DisableDecoder = DisableVIDecoder;
+}
+
 multiclass VOP3_m <vop op, dag outs, dag ins, string asm, list<dag> pattern,
                    string opName, int NumSrcArgs, bit HasMods = 1, bit VOP3Only = 0> {
 
@@ -1935,6 +1966,19 @@ multiclass VOP3b_2_3_m <vop op, dag outs, dag ins, string asm,
             VOP3DisableFields<1, useSrc2Input, HasMods>;
 
   def _vi : VOP3b_Real_vi <op.VI3, outs, ins, asm, opName, HasMods, VOP3Only>,
+            VOP3DisableFields<1, useSrc2Input, HasMods>;
+}
+
+// Same as VOP3b_2_3_m but no 2nd destination (sdst), e.g. v_cndmask_b32.
+multiclass VOP3e_2_3_m <vop op, dag outs, dag ins, string asm,
+                        list<dag> pattern, string opName, string revOp,
+                        bit HasMods = 1, bit useSrc2Input = 0, bit VOP3Only = 0> {
+  def "" : VOP3_Pseudo <outs, ins, pattern, opName, HasMods, VOP3Only>;
+
+  def _si : VOP3e_Real_si <op.SI3, outs, ins, asm, opName, HasMods, VOP3Only>,
+            VOP3DisableFields<1, useSrc2Input, HasMods>;
+
+  def _vi : VOP3e_Real_vi <op.VI3, outs, ins, asm, opName, HasMods, VOP3Only>,
             VOP3DisableFields<1, useSrc2Input, HasMods>;
 }
 
@@ -2063,6 +2107,33 @@ multiclass VOP2InstSI <vop2 op, string opName, VOPProfile P,
         [(set P.DstVT:$vdst, (node P.Src0VT:$src0, P.Src1VT:$src1))]),
     opName, revOp, P.HasModifiers>;
 }
+
+multiclass VOP2e_Helper <vop2 op, string opName, VOPProfile p,
+                         list<dag> pat32, list<dag> pat64,
+                         string revOp, bit useSGPRInput> {
+
+  let SchedRW = [Write32Bit, WriteSALU] in {
+    let Uses = !if(useSGPRInput, [VCC, EXEC], [EXEC]), Defs = [VCC] in {
+      defm _e32 : VOP2_m <op, opName, p, pat32, revOp>;
+    }
+
+    defm _e64 : VOP3e_2_3_m <op, p.Outs64, p.Ins64, opName#p.Asm64, pat64,
+                             opName, revOp, p.HasModifiers, useSGPRInput>;
+  }
+}
+
+multiclass VOP2eInst <vop2 op, string opName, VOPProfile P,
+                      SDPatternOperator node = null_frag,
+                      string revOp = opName> : VOP2e_Helper <
+  op, opName, P, [],
+  !if(P.HasModifiers,
+      [(set P.DstVT:$vdst,
+           (node (P.Src0VT (VOP3Mods0 P.Src0VT:$src0, i32:$src0_modifiers,
+                                      i1:$clamp, i32:$omod)),
+                 (P.Src1VT (VOP3Mods P.Src1VT:$src1, i32:$src1_modifiers))))],
+      [(set P.DstVT:$vdst, (node P.Src0VT:$src0, P.Src1VT:$src1))]),
+  revOp, !eq(P.NumSrcArgs, 3)
+>;
 
 multiclass VOP2b_Helper <vop2 op, string opName, VOPProfile p,
                          list<dag> pat32, list<dag> pat64,

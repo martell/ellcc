@@ -163,11 +163,17 @@ lookupUnqualifiedTypeNameInBase(Sema &S, const IdentifierInfo &II,
       auto *TD = TST->getTemplateName().getAsTemplateDecl();
       if (!TD)
         continue;
-      auto *BasePrimaryTemplate =
-          dyn_cast_or_null<CXXRecordDecl>(TD->getTemplatedDecl());
-      if (!BasePrimaryTemplate)
-        continue;
-      BaseRD = BasePrimaryTemplate;
+      if (auto *BasePrimaryTemplate =
+          dyn_cast_or_null<CXXRecordDecl>(TD->getTemplatedDecl())) {
+        if (BasePrimaryTemplate->getCanonicalDecl() != RD->getCanonicalDecl())
+          BaseRD = BasePrimaryTemplate;
+        else if (auto *CTD = dyn_cast<ClassTemplateDecl>(TD)) {
+          if (const ClassTemplatePartialSpecializationDecl *PS =
+                  CTD->findPartialSpecialization(Base.getType()))
+            if (PS->getCanonicalDecl() != RD->getCanonicalDecl())
+              BaseRD = PS;
+        }
+      }
     }
     if (BaseRD) {
       for (NamedDecl *ND : BaseRD->lookup(&II)) {
@@ -10948,7 +10954,8 @@ ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
   // Parameter declarators cannot be interface types. All ObjC objects are
   // passed by reference.
   if (T->isObjCObjectType()) {
-    SourceLocation TypeEndLoc = TSInfo->getTypeLoc().getLocEnd();
+    SourceLocation TypeEndLoc =
+        getLocForEndOfToken(TSInfo->getTypeLoc().getLocEnd());
     Diag(NameLoc,
          diag::err_object_cannot_be_passed_returned_by_value) << 1 << T
       << FixItHint::CreateInsertion(TypeEndLoc, "*");

@@ -15,16 +15,17 @@ else()
   set(COMPILER_RT_STANDALONE_BUILD FALSE)
 endif()
 
-# The CompilerRT build system requires CMake version 2.8.8 or higher in order
-# to use its support for building convenience "libraries" as a collection of
-# .o files. This is particularly useful in producing larger, more complex
-# runtime libraries.
-if (NOT MSVC)
-  cmake_minimum_required(VERSION 2.8.8)
-else()
-  # Version 2.8.12.1 is required to build with Visual Studio 2013.
-  cmake_minimum_required(VERSION 2.8.12.1)
-endif()
+cmake_minimum_required(VERSION 3.4.3)
+# FIXME:
+# The OLD behavior (pre 3.2) for this policy is to not set the value of the 
+# CMAKE_EXE_LINKER_FLAGS variable in the generated test project. The NEW behavior
+# for this policy is to set the value of the CMAKE_EXE_LINKER_FLAGS variable 
+# in the test project to the same as it is in the calling project. The new 
+# behavior cause the compiler_rt test to fail during try_compile: see
+# projects/compiler-rt/cmake/Modules/CompilerRTUtils.cmake:121 such that
+# CAN_TARGET_${arch} is not set properly. This results in COMPILER_RT_SUPPORTED_ARCH
+# not being updated properly leading to poblems.
+cmake_policy(SET CMP0056 OLD) 
 
 # FIXME: It may be removed when we use 2.8.12.
 if(CMAKE_VERSION VERSION_LESS 2.8.12)

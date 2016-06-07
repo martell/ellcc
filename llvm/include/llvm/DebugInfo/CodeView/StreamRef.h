@@ -10,24 +10,29 @@
 #ifndef LLVM_DEBUGINFO_CODEVIEW_STREAMREF_H
 #define LLVM_DEBUGINFO_CODEVIEW_STREAMREF_H
 
+#include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/StreamInterface.h"
 
 namespace llvm {
 namespace codeview {
 
-class StreamRef : public StreamInterface {
+class StreamRef : private StreamInterface {
 public:
   StreamRef() : Stream(nullptr), ViewOffset(0), Length(0) {}
   StreamRef(const StreamInterface &Stream)
       : Stream(&Stream), ViewOffset(0), Length(Stream.getLength()) {}
   StreamRef(const StreamInterface &Stream, uint32_t Offset, uint32_t Length)
       : Stream(&Stream), ViewOffset(Offset), Length(Length) {}
+
+  StreamRef(const StreamRef &Stream, uint32_t Offset, uint32_t Length) = delete;
   StreamRef(const StreamRef &Other)
       : Stream(Other.Stream), ViewOffset(Other.ViewOffset),
         Length(Other.Length) {}
 
   Error readBytes(uint32_t Offset, uint32_t Size,
                   ArrayRef<uint8_t> &Buffer) const override {
+    if (Size + Offset > Length)
+      return make_error<CodeViewError>(cv_error_code::insufficient_buffer);
     return Stream->readBytes(ViewOffset + Offset, Size, Buffer);
   }
 
@@ -45,6 +50,10 @@ public:
       return StreamRef();
     N = std::min(N, Length);
     return StreamRef(*Stream, ViewOffset, N);
+  }
+
+  StreamRef slice(uint32_t Offset, uint32_t Len) const {
+    return drop_front(Offset).keep_front(Len);
   }
 
   bool operator==(const StreamRef &Other) const {

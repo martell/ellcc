@@ -276,13 +276,14 @@ public:
     Context = &M->getContext();
 
     // First ensure the function is well-enough formed to compute dominance
-    // information.
-    if (F.empty()) {
-      if (OS)
-        *OS << "Function '" << F.getName()
-            << "' does not contain an entry block!\n";
-      return false;
-    }
+    // information, and directly compute a dominance tree. We don't rely on the
+    // pass manager to provide this as it isolates us from a potentially
+    // out-of-date dominator tree and makes it significantly more complex to run
+    // this code outside of a pass manager.
+    // FIXME: It's really gross that we have to cast away constness here.
+    if (!F.empty())
+      DT.recalculate(const_cast<Function &>(F));
+
     for (const BasicBlock &BB : F) {
       if (!BB.empty() && BB.back().isTerminator())
         continue;
@@ -295,13 +296,6 @@ public:
       }
       return false;
     }
-
-    // Now directly compute a dominance tree. We don't rely on the pass
-    // manager to provide this as it isolates us from a potentially
-    // out-of-date dominator tree and makes it significantly more complex to
-    // run this code outside of a pass manager.
-    // FIXME: It's really gross that we have to cast away constness here.
-    DT.recalculate(const_cast<Function &>(F));
 
     Broken = false;
     // FIXME: We strip const here because the inst visitor strips const.
@@ -320,17 +314,10 @@ public:
     Context = &M.getContext();
     Broken = false;
 
-    // Scan through, checking all of the external function's linkage now...
-    for (const Function &F : M) {
-      visitGlobalValue(F);
-
-      // Check to make sure function prototypes are okay.
-      if (F.isDeclaration()) {
-        visitFunction(F);
-        if (F.getIntrinsicID() == Intrinsic::experimental_deoptimize)
-          DeoptimizeDeclarations.push_back(&F);
-      }
-    }
+    // Collect all declarations of the llvm.experimental.deoptimize intrinsic.
+    for (const Function &F : M)
+      if (F.getIntrinsicID() == Intrinsic::experimental_deoptimize)
+        DeoptimizeDeclarations.push_back(&F);
 
     // Now that we've visited every function, verify that we never asked to
     // recover a frame index that wasn't escaped.
@@ -1872,6 +1859,8 @@ void Verifier::verifySiblingFuncletUnwinds() {
 // visitFunction - Verify that a function is ok.
 //
 void Verifier::visitFunction(const Function &F) {
+  visitGlobalValue(F);
+
   // Check function arguments.
   FunctionType *FT = F.getFunctionType();
   unsigned NumArgs = F.arg_size();
@@ -1991,6 +1980,7 @@ void Verifier::visitFunction(const Function &F) {
              "blockaddress may not be used with the entry block!", Entry);
     }
 
+    unsigned NumDebugAttachments = 0;
     // Visit metadata attachments.
     for (const auto &I : MDs) {
       // Verify that the attachment is legal.
@@ -1998,6 +1988,9 @@ void Verifier::visitFunction(const Function &F) {
       default:
         break;
       case LLVMContext::MD_dbg:
+        ++NumDebugAttachments;
+        AssertDI(NumDebugAttachments == 1,
+                 "function must have a single !dbg attachment", &F, I.second);
         AssertDI(isa<DISubprogram>(I.second),
                  "function !dbg attachment must be a subprogram", &F, I.second);
         break;
@@ -2959,6 +2952,7 @@ void Verifier::visitLoadInst(LoadInst &LI) {
   Type *ElTy = LI.getType();
   Assert(LI.getAlignment() <= Value::MaximumAlignment,
          "huge alignment values are unsupported", &LI);
+  Assert(ElTy->isSized(), "loading unsized types is not allowed", &LI);
   if (LI.isAtomic()) {
     Assert(LI.getOrdering() != AtomicOrdering::Release &&
                LI.getOrdering() != AtomicOrdering::AcquireRelease,
@@ -2987,6 +2981,7 @@ void Verifier::visitStoreInst(StoreInst &SI) {
          "Stored value type does not match pointer operand type!", &SI, ElTy);
   Assert(SI.getAlignment() <= Value::MaximumAlignment,
          "huge alignment values are unsupported", &SI);
+  Assert(ElTy->isSized(), "storing unsized types is not allowed", &SI);
   if (SI.isAtomic()) {
     Assert(SI.getOrdering() != AtomicOrdering::Acquire &&
                SI.getOrdering() != AtomicOrdering::AcquireRelease,
@@ -4427,7 +4422,6 @@ void Verifier::verifyDeoptimizeCallingConvs() {
 
 bool llvm::verifyFunction(const Function &f, raw_ostream *OS) {
   Function &F = const_cast<Function &>(f);
-  assert(!F.isDeclaration() && "Cannot verify external functions");
 
   // Don't use a raw_null_ostream.  Printing IR is expensive.
   Verifier V(OS, /*ShouldTreatBrokenDebugInfoAsError=*/true);
@@ -4444,8 +4438,7 @@ bool llvm::verifyModule(const Module &M, raw_ostream *OS,
 
   bool Broken = false;
   for (const Function &F : M)
-    if (!F.isDeclaration() && !F.isMaterializable())
-      Broken |= !V.verify(F);
+    Broken |= !V.verify(F);
 
   Broken |= !V.verify(M);
   if (BrokenDebugInfo)
@@ -4482,7 +4475,12 @@ struct VerifierLegacyPass : public FunctionPass {
   }
 
   bool doFinalization(Module &M) override {
-    bool HasErrors = !V.verify(M);
+    bool HasErrors = false;
+    for (Function &F : M)
+      if (F.isDeclaration())
+        HasErrors |= !V.verify(F);
+
+    HasErrors |= !V.verify(M);
     if (FatalErrors) {
       if (HasErrors)
         report_fatal_error("Broken module found, compilation aborted!");

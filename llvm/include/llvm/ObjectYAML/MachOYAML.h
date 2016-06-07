@@ -57,6 +57,13 @@ struct LoadCommand {
   uint64_t ZeroPadBytes;
 };
 
+struct NListEntry {
+  uint32_t n_strx;
+  uint8_t n_type;
+  uint8_t n_sect;
+  uint16_t n_desc;
+  uint64_t n_value;
+};
 struct RebaseOpcode {
   MachO::RebaseOpcode Opcode;
   uint8_t Imm;
@@ -71,11 +78,28 @@ struct BindOpcode {
   StringRef Symbol;
 };
 
+struct ExportEntry {
+  ExportEntry()
+      : TerminalSize(0), NodeOffset(0), Name(), Flags(0), Address(0), Other(0),
+        ImportName(), Children() {}
+  uint64_t TerminalSize;
+  uint64_t NodeOffset;
+  std::string Name;
+  llvm::yaml::Hex64 Flags;
+  llvm::yaml::Hex64 Address;
+  llvm::yaml::Hex64 Other;
+  std::string ImportName;
+  std::vector<MachOYAML::ExportEntry> Children;
+};
+
 struct LinkEditData {
   std::vector<MachOYAML::RebaseOpcode> RebaseOpcodes;
   std::vector<MachOYAML::BindOpcode> BindOpcodes;
   std::vector<MachOYAML::BindOpcode> WeakBindOpcodes;
   std::vector<MachOYAML::BindOpcode> LazyBindOpcodes;
+  MachOYAML::ExportEntry ExportTrie;
+  std::vector<NListEntry> NameList;
+  std::vector<StringRef> StringTable;
 };
 
 struct Object {
@@ -95,6 +119,9 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::yaml::Hex64)
 LLVM_YAML_IS_SEQUENCE_VECTOR(int64_t)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::MachOYAML::RebaseOpcode)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::MachOYAML::BindOpcode)
+LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::MachOYAML::ExportEntry)
+LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::MachOYAML::NListEntry)
+LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::StringRef)
 
 namespace llvm {
 namespace yaml {
@@ -123,8 +150,16 @@ template <> struct MappingTraits<MachOYAML::BindOpcode> {
   static void mapping(IO &IO, MachOYAML::BindOpcode &BindOpcode);
 };
 
+template <> struct MappingTraits<MachOYAML::ExportEntry> {
+  static void mapping(IO &IO, MachOYAML::ExportEntry &ExportEntry);
+};
+
 template <> struct MappingTraits<MachOYAML::Section> {
   static void mapping(IO &IO, MachOYAML::Section &Section);
+};
+
+template <> struct MappingTraits<MachOYAML::NListEntry> {
+  static void mapping(IO &IO, MachOYAML::NListEntry &NListEntry);
 };
 
 #define HANDLE_LOAD_COMMAND(LCName, LCValue, LCStruct)                         \

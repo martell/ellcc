@@ -35,6 +35,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/Analysis/RegionInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
@@ -49,6 +50,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/GCOVProfiler.h"
 #include "llvm/Transforms/IPO/ConstantMerge.h"
 #include "llvm/Transforms/IPO/ElimAvailExtern.h"
 #include "llvm/Transforms/IPO/ForceFunctionAttrs.h"
@@ -68,8 +70,9 @@
 #include "llvm/Transforms/Scalar/DCE.h"
 #include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 #include "llvm/Transforms/Scalar/EarlyCSE.h"
-#include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/GuardWidening.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/IndVarSimplify.h"
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
 #include "llvm/Transforms/Scalar/LowerAtomic.h"
@@ -80,6 +83,7 @@
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Scalar/Sink.h"
+#include "llvm/Transforms/Utils/MemorySSA.h"
 #include <type_traits>
 
 using namespace llvm;

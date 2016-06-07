@@ -24,6 +24,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/IntrinsicLowering.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -1843,8 +1844,13 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     const GlobalValue *GV = G->getGlobal();
     isDirect = true;
     bool isDef = GV->isStrongDefinitionForLinker();
-    bool isStub = (!isDef && Subtarget->isTargetMachO()) &&
-                   getTargetMachine().getRelocationModel() != Reloc::Static;
+    const TargetMachine &TM = getTargetMachine();
+    Reloc::Model RM = TM.getRelocationModel();
+    const Triple &TargetTriple = TM.getTargetTriple();
+    bool isStub =
+        !shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV) &&
+        Subtarget->isTargetMachO();
+
     isARMFunc = !Subtarget->isThumb() || (isStub && !Subtarget->isMClass());
     // ARM call to a local ARM function is predicable.
     isLocalARMFunc = !Subtarget->isThumb() && (isDef || !ARMInterworking);
@@ -1919,7 +1925,7 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   } else {
     if (!isDirect && !Subtarget->hasV5TOps())
       CallOpc = ARMISD::CALL_NOLINK;
-    else if (doesNotRet && isDirect && Subtarget->hasRAS() &&
+    else if (doesNotRet && isDirect && Subtarget->hasRetAddrStack() &&
              // Emit regular call when code size is the priority
              !MF.getFunction()->optForMinSize())
       // "mov lr, pc; b _foo" to avoid confusing the RSP
@@ -2792,9 +2798,12 @@ SDValue ARMTargetLowering::LowerGlobalAddressELF(SDValue Op,
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
   SDLoc dl(Op);
   const GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+  const TargetMachine &TM = getTargetMachine();
+  Reloc::Model RM = TM.getRelocationModel();
+  const Triple &TargetTriple = TM.getTargetTriple();
+  if (RM == Reloc::PIC_) {
     bool UseGOT_PREL =
-        !(GV->hasHiddenVisibility() || GV->hasLocalLinkage());
+        !shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV);
 
     MachineFunction &MF = DAG.getMachineFunction();
     ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();

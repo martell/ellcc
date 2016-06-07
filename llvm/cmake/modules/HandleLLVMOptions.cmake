@@ -166,7 +166,8 @@ if( CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT WIN32 )
   # TODO: support other platforms and toolchains.
   if( LLVM_BUILD_32_BITS )
     message(STATUS "Building 32 bits executables and libraries.")
-    add_llvm_definitions( -m32 )
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -m32")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -m32")
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -m32")
@@ -559,7 +560,7 @@ add_llvm_definitions( -D__STDC_LIMIT_MACROS )
 
 # clang doesn't print colored diagnostics when invoked from Ninja
 if (UNIX AND
-    CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+    CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND
     CMAKE_GENERATOR STREQUAL "Ninja")
   append("-fcolor-diagnostics" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
 endif()

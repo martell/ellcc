@@ -1262,6 +1262,30 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
     }
   }
 
+  if (ABIName.empty() &&
+      (Triple.getVendor() == llvm::Triple::MipsTechnologies ||
+       Triple.getVendor() == llvm::Triple::ImaginationTechnologies)) {
+    ABIName = llvm::StringSwitch<const char *>(CPUName)
+                  .Case("mips1", "o32")
+                  .Case("mips2", "o32")
+                  .Case("mips3", "n64")
+                  .Case("mips4", "n64")
+                  .Case("mips5", "n64")
+                  .Case("mips32", "o32")
+                  .Case("mips32r2", "o32")
+                  .Case("mips32r3", "o32")
+                  .Case("mips32r5", "o32")
+                  .Case("mips32r6", "o32")
+                  .Case("mips64", "n64")
+                  .Case("mips64r2", "n64")
+                  .Case("mips64r3", "n64")
+                  .Case("mips64r5", "n64")
+                  .Case("mips64r6", "n64")
+                  .Case("octeon", "n64")
+                  .Case("p5600", "o32")
+                  .Default("");
+  }
+
   if (ABIName.empty()) {
     // Deduce ABI name from the target triple.
     if (Triple.getArch() == llvm::Triple::mips ||
@@ -2354,12 +2378,14 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
                              .Case("crypto", "+crypto")
                              .Case("fp16", "+fullfp16")
                              .Case("profile", "+spe")
+                             .Case("ras", "+ras")
                              .Case("nofp", "-fp-armv8")
                              .Case("nosimd", "-neon")
                              .Case("nocrc", "-crc")
                              .Case("nocrypto", "-crypto")
                              .Case("nofp16", "-fullfp16")
                              .Case("noprofile", "-spe")
+                             .Case("noras", "-ras")
                              .Default(nullptr);
     if (result)
       Features.push_back(result);
@@ -2379,7 +2405,7 @@ static bool DecodeAArch64Mcpu(const Driver &D, StringRef Mcpu, StringRef &CPU,
   CPU = Split.first;
   if (CPU == "cortex-a53" || CPU == "cortex-a57" ||
       CPU == "cortex-a72" || CPU == "cortex-a35" || CPU == "exynos-m1" ||
-      CPU == "kryo") {
+      CPU == "kryo"       || CPU == "cortex-a73") {
     Features.push_back("+neon");
     Features.push_back("+crc");
     Features.push_back("+crypto");
@@ -2870,6 +2896,8 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
   // When using an integrated assembler, translate -Wa, and -Xassembler
   // options.
   bool CompressDebugSections = false;
+
+  bool UseRelaxRelocations = false;
   const char *MipsTargetFeature = nullptr;
   for (const Arg *A :
        Args.filtered(options::OPT_Wa_COMMA, options::OPT_Xassembler)) {
@@ -2945,6 +2973,12 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
       } else if (Value == "-nocompress-debug-sections" ||
                  Value == "--nocompress-debug-sections") {
         CompressDebugSections = false;
+      } else if (Value == "-mrelax-relocations=yes" ||
+                 Value == "--mrelax-relocations=yes") {
+        UseRelaxRelocations = true;
+      } else if (Value == "-mrelax-relocations=no" ||
+                 Value == "--mrelax-relocations=no") {
+        UseRelaxRelocations = false;
       } else if (Value.startswith("-I")) {
         CmdArgs.push_back(Value.data());
         // We need to consume the next argument if the current arg is a plain
@@ -2976,6 +3010,8 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
     else
       D.Diag(diag::warn_debug_compression_unavailable);
   }
+  if (UseRelaxRelocations)
+    CmdArgs.push_back("--mrelax-relocations");
   if (MipsTargetFeature != nullptr) {
     CmdArgs.push_back("-target-feature");
     CmdArgs.push_back(MipsTargetFeature);
@@ -8845,6 +8881,7 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     if (Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back("-Bshareable");
     } else {
+      Args.AddAllArgs(CmdArgs, options::OPT_pie);
       CmdArgs.push_back("-dynamic-linker");
       CmdArgs.push_back("/libexec/ld.elf_so");
     }
@@ -8946,15 +8983,15 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     if (!Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back(
           Args.MakeArgString(getToolChain().GetFilePath("crt0.o")));
-      CmdArgs.push_back(
-          Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
-      CmdArgs.push_back(
-          Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
-    } else {
-      CmdArgs.push_back(
-          Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
+    }
+    CmdArgs.push_back(
+        Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
+    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie)) {
       CmdArgs.push_back(
           Args.MakeArgString(getToolChain().GetFilePath("crtbeginS.o")));
+    } else {
+      CmdArgs.push_back(
+          Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
     }
   }
 
@@ -9020,12 +9057,12 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles)) {
-    if (!Args.hasArg(options::OPT_shared))
-      CmdArgs.push_back(
-          Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
-    else
+    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie))
       CmdArgs.push_back(
           Args.MakeArgString(getToolChain().GetFilePath("crtendS.o")));
+    else
+      CmdArgs.push_back(
+          Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
     CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtn.o")));
   }
 

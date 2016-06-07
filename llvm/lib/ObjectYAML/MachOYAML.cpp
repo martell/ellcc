@@ -103,6 +103,9 @@ void MappingTraits<MachOYAML::LinkEditData>::mapping(
   IO.mapOptional("BindOpcodes", LinkEditData.BindOpcodes);
   IO.mapOptional("WeakBindOpcodes", LinkEditData.WeakBindOpcodes);
   IO.mapOptional("LazyBindOpcodes", LinkEditData.LazyBindOpcodes);
+  IO.mapOptional("ExportTrie", LinkEditData.ExportTrie);
+  IO.mapOptional("NameList", LinkEditData.NameList);
+  IO.mapOptional("StringTable", LinkEditData.StringTable);
 }
 
 void MappingTraits<MachOYAML::RebaseOpcode>::mapping(
@@ -119,6 +122,27 @@ void MappingTraits<MachOYAML::BindOpcode>::mapping(
   IO.mapOptional("ULEBExtraData", BindOpcode.ULEBExtraData);
   IO.mapOptional("SLEBExtraData", BindOpcode.SLEBExtraData);
   IO.mapOptional("Symbol", BindOpcode.Symbol);
+}
+
+void MappingTraits<MachOYAML::ExportEntry>::mapping(
+    IO &IO, MachOYAML::ExportEntry &ExportEntry) {
+  IO.mapRequired("TerminalSize", ExportEntry.TerminalSize);
+  IO.mapOptional("NodeOffset", ExportEntry.NodeOffset);
+  IO.mapOptional("Name", ExportEntry.Name);
+  IO.mapOptional("Flags", ExportEntry.Flags);
+  IO.mapOptional("Address", ExportEntry.Address);
+  IO.mapOptional("Other", ExportEntry.Other);
+  IO.mapOptional("ImportName", ExportEntry.ImportName);
+  IO.mapOptional("Children", ExportEntry.Children);
+}
+
+void MappingTraits<MachOYAML::NListEntry>::mapping(
+    IO &IO, MachOYAML::NListEntry &NListEntry) {
+  IO.mapRequired("n_strx", NListEntry.n_strx);
+  IO.mapRequired("n_type", NListEntry.n_type);
+  IO.mapRequired("n_sect", NListEntry.n_sect);
+  IO.mapRequired("n_desc", NListEntry.n_desc);
+  IO.mapRequired("n_value", NListEntry.n_value);
 }
 
 template <typename StructType>
@@ -138,6 +162,12 @@ void mapLoadCommandData<MachO::segment_command_64>(
 
 template <>
 void mapLoadCommandData<MachO::dylib_command>(
+    IO &IO, MachOYAML::LoadCommand &LoadCommand) {
+  IO.mapOptional("PayloadString", LoadCommand.PayloadString);
+}
+
+template <>
+void mapLoadCommandData<MachO::rpath_command>(
     IO &IO, MachOYAML::LoadCommand &LoadCommand) {
   IO.mapOptional("PayloadString", LoadCommand.PayloadString);
 }

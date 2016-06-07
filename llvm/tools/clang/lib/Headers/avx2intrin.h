@@ -81,25 +81,25 @@ _mm256_packus_epi32(__m256i __V1, __m256i __V2)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_add_epi8(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v32qi)__a + (__v32qi)__b);
+  return (__m256i)((__v32qu)__a + (__v32qu)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_add_epi16(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v16hi)__a + (__v16hi)__b);
+  return (__m256i)((__v16hu)__a + (__v16hu)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_add_epi32(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v8si)__a + (__v8si)__b);
+  return (__m256i)((__v8su)__a + (__v8su)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_add_epi64(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v4di)__a + (__v4di)__b);
+  return (__m256i)((__v4du)__a + (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
@@ -133,13 +133,13 @@ _mm256_adds_epu16(__m256i __a, __m256i __b)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_and_si256(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v4di)__a & (__v4di)__b);
+  return (__m256i)((__v4du)__a & (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_andnot_si256(__m256i __a, __m256i __b)
 {
-  return (__m256i)(~(__v4di)__a & (__v4di)__b);
+  return (__m256i)(~(__v4du)__a & (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
@@ -402,42 +402,36 @@ _mm256_cvtepi32_epi64(__m128i __V)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu8_epi16(__m128i __V)
 {
-  typedef unsigned char __v16qu __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector((__v16qu)__V, __v16hi);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu8_epi32(__m128i __V)
 {
-  typedef unsigned char __v16qu __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector(__builtin_shufflevector((__v16qu)__V, (__v16qu)__V, 0, 1, 2, 3, 4, 5, 6, 7), __v8si);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu8_epi64(__m128i __V)
 {
-  typedef unsigned char __v16qu __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector(__builtin_shufflevector((__v16qu)__V, (__v16qu)__V, 0, 1, 2, 3), __v4di);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu16_epi32(__m128i __V)
 {
-  typedef unsigned short __v8hu __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector((__v8hu)__V, __v8si);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu16_epi64(__m128i __V)
 {
-  typedef unsigned short __v8hu __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector(__builtin_shufflevector((__v8hu)__V, (__v8hu)__V, 0, 1, 2, 3), __v4di);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_cvtepu32_epi64(__m128i __V)
 {
-  typedef unsigned int __v4su __attribute__((__vector_size__(16)));
   return (__m256i)__builtin_convertvector((__v4su)__V, __v4di);
 }
 
@@ -468,13 +462,13 @@ _mm256_mulhi_epi16(__m256i __a, __m256i __b)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_mullo_epi16(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v16hi)__a * (__v16hi)__b);
+  return (__m256i)((__v16hu)__a * (__v16hu)__b);
 }
 
 static __inline__  __m256i __DEFAULT_FN_ATTRS
 _mm256_mullo_epi32 (__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v8si)__a * (__v8si)__b);
+  return (__m256i)((__v8su)__a * (__v8su)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
@@ -486,7 +480,7 @@ _mm256_mul_epu32(__m256i __a, __m256i __b)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_or_si256(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v4di)__a | (__v4di)__b);
+  return (__m256i)((__v4du)__a | (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
@@ -664,25 +658,25 @@ _mm256_srl_epi64(__m256i __a, __m128i __count)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_sub_epi8(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v32qi)__a - (__v32qi)__b);
+  return (__m256i)((__v32qu)__a - (__v32qu)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_sub_epi16(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v16hi)__a - (__v16hi)__b);
+  return (__m256i)((__v16hu)__a - (__v16hu)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_sub_epi32(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v8si)__a - (__v8si)__b);
+  return (__m256i)((__v8su)__a - (__v8su)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_sub_epi64(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v4di)__a - (__v4di)__b);
+  return (__m256i)((__v4du)__a - (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS
@@ -760,7 +754,7 @@ _mm256_unpacklo_epi64(__m256i __a, __m256i __b)
 static __inline__ __m256i __DEFAULT_FN_ATTRS
 _mm256_xor_si256(__m256i __a, __m256i __b)
 {
-  return (__m256i)((__v4di)__a ^ (__v4di)__b);
+  return (__m256i)((__v4du)__a ^ (__v4du)__b);
 }
 
 static __inline__ __m256i __DEFAULT_FN_ATTRS

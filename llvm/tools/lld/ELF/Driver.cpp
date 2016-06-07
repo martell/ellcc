@@ -115,9 +115,6 @@ void LinkerDriver::addFile(StringRef Path) {
     return;
   MemoryBufferRef MBRef = *Buffer;
 
-  if (Cpio)
-    Cpio->append(relativeToRoot(Path), MBRef.getBuffer());
-
   switch (identify_magic(MBRef.getBuffer())) {
   case file_magic::unknown:
     readLinkerScript(MBRef);
@@ -153,6 +150,10 @@ Optional<MemoryBufferRef> LinkerDriver::readFile(StringRef Path) {
   std::unique_ptr<MemoryBuffer> &MB = *MBOrErr;
   MemoryBufferRef MBRef = MB->getMemBufferRef();
   OwningMBs.push_back(std::move(MB)); // take MB ownership
+
+  if (Cpio)
+    Cpio->append(relativeToRoot(Path), MBRef.getBuffer());
+
   return MBRef;
 }
 
@@ -247,21 +248,22 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
     return;
   }
   if (Args.hasArg(OPT_version)) {
-    printVersion();
+    outs() << getVersionString();
     return;
   }
-
-  readConfigs(Args);
-  initLLVM(Args);
 
   if (auto *Arg = Args.getLastArg(OPT_reproduce)) {
     // Note that --reproduce is a debug option so you can ignore it
     // if you are trying to understand the whole picture of the code.
     Cpio.reset(CpioFile::create(Arg->getValue()));
-    if (Cpio)
+    if (Cpio) {
       Cpio->append("response.txt", createResponseFile(Args));
+      Cpio->append("version.txt", getVersionString());
+    }
   }
 
+  readConfigs(Args);
+  initLLVM(Args);
   createFiles(Args);
   checkOptions(Args);
   if (HasError)
@@ -338,6 +340,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->Entry = getString(Args, OPT_entry);
   Config->Fini = getString(Args, OPT_fini, "_fini");
   Config->Init = getString(Args, OPT_init, "_init");
+  Config->LtoAAPipeline = getString(Args, OPT_lto_aa_pipeline);
   Config->LtoNewPmPasses = getString(Args, OPT_lto_newpm_passes);
   Config->OutputFile = getString(Args, OPT_o);
   Config->SoName = getString(Args, OPT_soname);
@@ -422,6 +425,7 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
     case OPT_l:
       addLibrary(Arg->getValue());
       break;
+    case OPT_alias_script_T:
     case OPT_INPUT:
     case OPT_script:
       addFile(Arg->getValue());

@@ -62,7 +62,7 @@ static bool refersToGotEntry(RelExpr Expr) {
   return Expr == R_GOT || Expr == R_GOT_OFF || Expr == R_MIPS_GOT_LOCAL ||
          Expr == R_MIPS_GOT_LOCAL_PAGE || Expr == R_GOT_PAGE_PC ||
          Expr == R_GOT_PC || Expr == R_GOT_FROM_END || Expr == R_TLSGD ||
-         Expr == R_TLSGD_PC;
+         Expr == R_TLSGD_PC || Expr == R_TLSDESC || Expr == R_TLSDESC_PAGE;
 }
 
 static bool isPreemptible(const SymbolBody &Body, uint32_t Type) {
@@ -94,6 +94,19 @@ static unsigned handleTlsRelocation(uint32_t Type, SymbolBody &Body,
     return 0;
 
   typedef typename ELFT::uint uintX_t;
+
+  if ((Expr == R_TLSDESC || Expr == R_TLSDESC_PAGE || Expr == R_HINT) &&
+      Config->Shared) {
+    if (Out<ELFT>::Got->addDynTlsEntry(Body)) {
+      uintX_t Off = Out<ELFT>::Got->getGlobalDynOffset(Body);
+      Out<ELFT>::RelaDyn->addReloc(
+          {Target->TlsDescRel, Out<ELFT>::Got, Off, false, &Body, 0});
+    }
+    if (Expr != R_HINT)
+      C.Relocations.push_back({Expr, Type, Offset, Addend, &Body});
+    return 1;
+  }
+
   if (Expr == R_TLSLD_PC || Expr == R_TLSLD) {
     // Local-Dynamic relocs can be relaxed to Local-Exec.
     if (!Config->Shared) {
@@ -116,7 +129,8 @@ static unsigned handleTlsRelocation(uint32_t Type, SymbolBody &Body,
     return 1;
   }
 
-  if (Target->isTlsGlobalDynamicRel(Type)) {
+  if (Expr == R_TLSDESC_PAGE || Expr == R_TLSDESC || Expr == R_HINT ||
+      Target->isTlsGlobalDynamicRel(Type)) {
     if (Config->Shared) {
       if (Out<ELFT>::Got->addDynTlsEntry(Body)) {
         uintX_t Off = Out<ELFT>::Got->getGlobalDynOffset(Body);
@@ -134,18 +148,20 @@ static unsigned handleTlsRelocation(uint32_t Type, SymbolBody &Body,
     // depending on the symbol being locally defined or not.
     if (isPreemptible(Body, Type)) {
       C.Relocations.push_back(
-          {R_RELAX_TLS_GD_TO_IE, Type, Offset, Addend, &Body});
+          {Target->adjustRelaxExpr(Type, nullptr, R_RELAX_TLS_GD_TO_IE), Type,
+           Offset, Addend, &Body});
       if (!Body.isInGot()) {
         Out<ELFT>::Got->addEntry(Body);
         Out<ELFT>::RelaDyn->addReloc({Target->TlsGotRel, Out<ELFT>::Got,
                                       Body.getGotOffset<ELFT>(), false, &Body,
                                       0});
       }
-      return 2;
+      return Target->TlsGdRelaxSkip;
     }
     C.Relocations.push_back(
-        {R_RELAX_TLS_GD_TO_LE, Type, Offset, Addend, &Body});
-    return Target->TlsGdToLeSkip;
+        {Target->adjustRelaxExpr(Type, nullptr, R_RELAX_TLS_GD_TO_LE), Type,
+         Offset, Addend, &Body});
+    return Target->TlsGdRelaxSkip;
   }
 
   // Initial-Exec relocs can be relaxed to Local-Exec if the symbol is locally
@@ -237,7 +253,8 @@ template <class ELFT> static bool isAbsolute(const SymbolBody &Body) {
 }
 
 static bool needsPlt(RelExpr Expr) {
-  return Expr == R_PLT_PC || Expr == R_PPC_PLT_OPD || Expr == R_PLT;
+  return Expr == R_PLT_PC || Expr == R_PPC_PLT_OPD || Expr == R_PLT ||
+         Expr == R_PLT_PAGE_PC;
 }
 
 // True if this expression is of the form Sym - X, where X is a position in the
@@ -254,12 +271,12 @@ static bool isStaticLinkTimeConstant(RelExpr E, uint32_t Type,
   if (E == R_SIZE || E == R_GOT_FROM_END || E == R_GOT_OFF ||
       E == R_MIPS_GOT_LOCAL || E == R_MIPS_GOT_LOCAL_PAGE ||
       E == R_GOT_PAGE_PC || E == R_GOT_PC || E == R_PLT_PC || E == R_TLSGD_PC ||
-      E == R_TLSGD || E == R_PPC_PLT_OPD)
+      E == R_TLSGD || E == R_PPC_PLT_OPD || E == R_TLSDESC_PAGE || E == R_HINT)
     return true;
 
   // These never do, except if the entire file is position dependent or if
   // only the low bits are used.
-  if (E == R_GOT || E == R_PLT)
+  if (E == R_GOT || E == R_PLT || E == R_TLSDESC)
     return Target->usesOnlyLowPageBits(Type) || !Config->Pic;
 
   if (isPreemptible(Body, Type))
@@ -297,6 +314,8 @@ static RelExpr toPlt(RelExpr Expr) {
     return R_PPC_PLT_OPD;
   if (Expr == R_PC)
     return R_PLT_PC;
+  if (Expr == R_PAGE_PC)
+    return R_PLT_PAGE_PC;
   if (Expr == R_ABS)
     return R_PLT;
   return Expr;
@@ -370,8 +389,8 @@ static RelExpr adjustExpr(const elf::ObjectFile<ELFT> &File, SymbolBody &Body,
   } else if (!Preemptible) {
     if (needsPlt(Expr))
       Expr = fromPlt(Expr);
-    if (Expr == R_GOT_PC && Target->canRelaxGot(Type, Data + Offset))
-      Expr = R_RELAX_GOT_PC;
+    if (Expr == R_GOT_PC)
+      Expr = Target->adjustRelaxExpr(Type, Data + Offset, Expr);
   }
 
   if (IsWrite || isStaticLinkTimeConstant<ELFT>(Expr, Type, Body))
@@ -493,10 +512,6 @@ static void scanRelocs(InputSectionBase<ELFT> &C, ArrayRef<RelTy> Rels) {
     uint32_t Type = RI.getType(Config->Mips64EL);
 
     RelExpr Expr = Target->getRelExpr(Type, Body);
-    // Ignore "hint" relocation because it is for optional code optimization.
-    if (Expr == R_HINT)
-      continue;
-
     uintX_t Offset = C.getOffset(RI.r_offset);
     if (Offset == (uintX_t)-1)
       continue;
@@ -518,6 +533,10 @@ static void scanRelocs(InputSectionBase<ELFT> &C, ArrayRef<RelTy> Rels) {
       I += (Processed - 1);
       continue;
     }
+
+    // Ignore "hint" relocation because it is for optional code optimization.
+    if (Expr == R_HINT)
+      continue;
 
     if (needsPlt(Expr) || Expr == R_THUNK || refersToGotEntry(Expr) ||
         !isPreemptible(Body, Type)) {

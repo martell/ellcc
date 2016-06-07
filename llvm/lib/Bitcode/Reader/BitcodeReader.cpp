@@ -443,6 +443,9 @@ private:
                                        unsigned &NextMetadataNo);
   std::error_code parseMetadataKinds();
   std::error_code parseMetadataKindRecord(SmallVectorImpl<uint64_t> &Record);
+  std::error_code
+  parseGlobalObjectAttachment(GlobalObject &GO,
+                              ArrayRef<uint64_t> Record);
   std::error_code parseMetadataAttachment(Function &F);
   ErrorOr<std::string> parseModuleTriple();
   std::error_code parseUseLists();
@@ -2865,6 +2868,7 @@ std::error_code BitcodeReader::parseConstants() {
 
     // Read a record.
     Record.clear();
+    Type *VoidType = Type::getVoidTy(Context);
     Value *V = nullptr;
     unsigned BitCode = Stream.readRecord(Entry.ID, Record);
     switch (BitCode) {
@@ -2877,6 +2881,8 @@ std::error_code BitcodeReader::parseConstants() {
         return error("Invalid record");
       if (Record[0] >= TypeList.size() || !TypeList[Record[0]])
         return error("Invalid record");
+      if (TypeList[Record[0]] == VoidType)
+        return error("Invalid constant type");
       CurTy = TypeList[Record[0]];
       continue;  // Skip the ValueList manipulation.
     case bitc::CST_CODE_NULL:      // NULL
@@ -3083,6 +3089,9 @@ std::error_code BitcodeReader::parseConstants() {
                   ->getElementType())
         return error("Explicit gep operator type does not match pointee type "
                      "of pointer operand");
+
+      if (Elts.size() < 1)
+        return error("Invalid gep with no operands");
 
       ArrayRef<Constant *> Indices(Elts.begin() + 1, Elts.end());
       V = ConstantExpr::getGetElementPtr(PointeeType, Elts[0], Indices,
@@ -3820,6 +3829,16 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       }
       break;
     }
+    case bitc::MODULE_CODE_GLOBALVAR_ATTACHMENT: {
+      if (Record.size() % 2 == 0)
+        return error("Invalid record");
+      unsigned ValueID = Record[0];
+      if (ValueID >= ValueList.size())
+        return error("Invalid record");
+      if (auto *GV = dyn_cast<GlobalVariable>(ValueList[ValueID]))
+        parseGlobalObjectAttachment(*GV, ArrayRef<uint64_t>(Record).slice(1));
+      break;
+    }
     // FUNCTION:  [type, callingconv, isproto, linkage, paramattr,
     //             alignment, section, visibility, gc, unnamed_addr,
     //             prologuedata, dllstorageclass, comdat, prefixdata]
@@ -3863,7 +3882,7 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       if (Record.size() > 8 && Record[8]) {
         if (Record[8]-1 >= GCTable.size())
           return error("Invalid ID");
-        Func->setGC(GCTable[Record[8]-1].c_str());
+        Func->setGC(GCTable[Record[8] - 1]);
       }
       bool UnnamedAddr = false;
       if (Record.size() > 9)
@@ -4144,6 +4163,21 @@ ErrorOr<std::string> BitcodeReader::parseIdentificationBlock() {
   }
 }
 
+std::error_code BitcodeReader::parseGlobalObjectAttachment(
+    GlobalObject &GO, ArrayRef<uint64_t> Record) {
+  assert(Record.size() % 2 == 0);
+  for (unsigned I = 0, E = Record.size(); I != E; I += 2) {
+    auto K = MDKindMap.find(Record[I]);
+    if (K == MDKindMap.end())
+      return error("Invalid ID");
+    MDNode *MD = MetadataList.getMDNodeFwdRefOrNull(Record[I + 1]);
+    if (!MD)
+      return error("Invalid metadata attachment");
+    GO.addMetadata(K->second, *MD);
+  }
+  return std::error_code();
+}
+
 /// Parse metadata attachments.
 std::error_code BitcodeReader::parseMetadataAttachment(Function &F) {
   if (Stream.EnterSubBlock(bitc::METADATA_ATTACHMENT_ID))
@@ -4175,15 +4209,8 @@ std::error_code BitcodeReader::parseMetadataAttachment(Function &F) {
         return error("Invalid record");
       if (RecordLength % 2 == 0) {
         // A function attachment.
-        for (unsigned I = 0; I != RecordLength; I += 2) {
-          auto K = MDKindMap.find(Record[I]);
-          if (K == MDKindMap.end())
-            return error("Invalid ID");
-          MDNode *MD = MetadataList.getMDNodeFwdRefOrNull(Record[I + 1]);
-          if (!MD)
-            return error("Invalid metadata attachment");
-          F.setMetadata(K->second, MD);
-        }
+        if (std::error_code EC = parseGlobalObjectAttachment(F, Record))
+          return EC;
         continue;
       }
 
@@ -5232,6 +5259,7 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
       unsigned OpNum = 0;
       Value *Val, *Ptr;
       if (getValueTypePair(Record, OpNum, NextValueNo, Ptr) ||
+          !isa<PointerType>(Ptr->getType()) ||
           (BitCode == bitc::FUNC_CODE_INST_STOREATOMIC
                ? getValueTypePair(Record, OpNum, NextValueNo, Val)
                : popValue(Record, OpNum, NextValueNo,
@@ -5312,6 +5340,7 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
       unsigned OpNum = 0;
       Value *Ptr, *Val;
       if (getValueTypePair(Record, OpNum, NextValueNo, Ptr) ||
+          !isa<PointerType>(Ptr->getType()) ||
           popValue(Record, OpNum, NextValueNo,
                     cast<PointerType>(Ptr->getType())->getElementType(), Val) ||
           OpNum+4 != Record.size())

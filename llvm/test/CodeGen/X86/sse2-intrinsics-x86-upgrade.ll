@@ -84,6 +84,17 @@ define <2 x double> @test_x86_sse2_cvtps2pd(<4 x float> %a0) {
 declare <2 x double> @llvm.x86.sse2.cvtps2pd(<4 x float>) nounwind readnone
 
 
+define <4 x i32> @test_x86_sse2_cvttps2dq(<4 x float> %a0) {
+; CHECK-LABEL: test_x86_sse2_cvttps2dq:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    cvttps2dq %xmm0, %xmm0
+; CHECK-NEXT:    retl
+  %res = call <4 x i32> @llvm.x86.sse2.cvttps2dq(<4 x float> %a0) ; <<4 x i32>> [#uses=1]
+  ret <4 x i32> %res
+}
+declare <4 x i32> @llvm.x86.sse2.cvttps2dq(<4 x float>) nounwind readnone
+
+
 define void @test_x86_sse2_storel_dq(i8* %a0, <4 x i32> %a1) {
 ; CHECK-LABEL: test_x86_sse2_storel_dq:
 ; CHECK:       ## BB#0:
@@ -95,5 +106,36 @@ define void @test_x86_sse2_storel_dq(i8* %a0, <4 x i32> %a1) {
 }
 declare void @llvm.x86.sse2.storel.dq(i8*, <4 x i32>) nounwind
 
+
+define void @test_x86_sse2_storeu_dq(i8* %a0, <16 x i8> %a1) {
+  ; add operation forces the execution domain.
+; CHECK-LABEL: test_x86_sse2_storeu_dq:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; CHECK-NEXT:    paddb LCPI8_0, %xmm0
+; CHECK-NEXT:    movdqu %xmm0, (%eax)
+; CHECK-NEXT:    retl
+  %a2 = add <16 x i8> %a1, <i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1>
+  call void @llvm.x86.sse2.storeu.dq(i8* %a0, <16 x i8> %a2)
+  ret void
+}
+declare void @llvm.x86.sse2.storeu.dq(i8*, <16 x i8>) nounwind
+
+
+define void @test_x86_sse2_storeu_pd(i8* %a0, <2 x double> %a1) {
+  ; fadd operation forces the execution domain.
+; CHECK-LABEL: test_x86_sse2_storeu_pd:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; CHECK-NEXT:    movsd {{.*#+}} xmm1 = mem[0],zero
+; CHECK-NEXT:    pslldq {{.*#+}} xmm1 = zero,zero,zero,zero,zero,zero,zero,zero,xmm1[0,1,2,3,4,5,6,7]
+; CHECK-NEXT:    addpd %xmm0, %xmm1
+; CHECK-NEXT:    movupd %xmm1, (%eax)
+; CHECK-NEXT:    retl
+  %a2 = fadd <2 x double> %a1, <double 0x0, double 0x4200000000000000>
+  call void @llvm.x86.sse2.storeu.pd(i8* %a0, <2 x double> %a2)
+  ret void
+}
+declare void @llvm.x86.sse2.storeu.pd(i8*, <2 x double>) nounwind
 
 

@@ -241,6 +241,8 @@ def HasCrypto        : Predicate<"Subtarget->hasCrypto()">,
                                  AssemblerPredicate<"FeatureCrypto", "crypto">;
 def HasCRC           : Predicate<"Subtarget->hasCRC()">,
                                  AssemblerPredicate<"FeatureCRC", "crc">;
+def HasRAS           : Predicate<"Subtarget->hasRAS()">,
+                                 AssemblerPredicate<"FeatureRAS", "ras">;
 def HasFP16          : Predicate<"Subtarget->hasFP16()">,
                                  AssemblerPredicate<"FeatureFP16","half-float conversions">;
 def HasFullFP16      : Predicate<"Subtarget->hasFullFP16()">,
@@ -1910,6 +1912,7 @@ def HINT : AI<(outs), (ins imm0_239:$imm), MiscFrm, NoItinerary,
   bits<8> imm;
   let Inst{27-8} = 0b00110010000011110000;
   let Inst{7-0} = imm;
+  let DecoderMethod = "DecodeHINTInstruction";
 }
 
 def : InstAlias<"nop$p", (HINT 0, pred:$p)>, Requires<[IsARM, HasV6K]>;
@@ -1918,6 +1921,7 @@ def : InstAlias<"wfe$p", (HINT 2, pred:$p)>, Requires<[IsARM, HasV6K]>;
 def : InstAlias<"wfi$p", (HINT 3, pred:$p)>, Requires<[IsARM, HasV6K]>;
 def : InstAlias<"sev$p", (HINT 4, pred:$p)>, Requires<[IsARM, HasV6K]>;
 def : InstAlias<"sevl$p", (HINT 5, pred:$p)>, Requires<[IsARM, HasV8]>;
+def : InstAlias<"esb$p", (HINT 16, pred:$p)>, Requires<[IsARM, HasRAS]>;
 
 def SEL : AI<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm, NoItinerary, "sel",
              "\t$Rd, $Rn, $Rm", []>, Requires<[IsARM, HasV6]> {
@@ -1945,7 +1949,7 @@ def BKPT : AInoP<(outs), (ins imm0_65535:$val), MiscFrm, NoItinerary,
   let Inst{7-4} = 0b0111;
 }
 // default immediate for breakpoint mnemonic
-def : InstAlias<"bkpt", (BKPT 0)>, Requires<[IsARM]>;
+def : InstAlias<"bkpt", (BKPT 0), 0>, Requires<[IsARM]>;
 
 def HLT : AInoP<(outs), (ins imm0_65535:$val), MiscFrm, NoItinerary,
                  "hlt", "\t$val", []>, Requires<[IsARM, HasV8]> {
@@ -3333,7 +3337,7 @@ def MOVi16 : AI1<0b1000, (outs GPR:$Rd), (ins imm0_65535_expr:$imm),
 }
 
 def : InstAlias<"mov${p} $Rd, $imm",
-                (MOVi16 GPR:$Rd, imm0_65535_expr:$imm, pred:$p)>,
+                (MOVi16 GPR:$Rd, imm0_65535_expr:$imm, pred:$p), 0>,
         Requires<[IsARM, HasV6T2]>;
 
 def MOVi16_ga_pcrel : PseudoInst<(outs GPR:$Rd),
@@ -4853,21 +4857,21 @@ def CDP2 : ABXI<0b1110, (outs), (ins p_imm:$cop, imm0_15:$opc1,
 }
 
 class ACI<dag oops, dag iops, string opc, string asm,
-          IndexMode im = IndexModeNone>
+            list<dag> pattern, IndexMode im = IndexModeNone>
   : I<oops, iops, AddrModeNone, 4, im, BrFrm, NoItinerary,
-      opc, asm, "", []> {
+      opc, asm, "", pattern> {
   let Inst{27-25} = 0b110;
 }
 class ACInoP<dag oops, dag iops, string opc, string asm,
-          IndexMode im = IndexModeNone>
+          list<dag> pattern, IndexMode im = IndexModeNone>
   : InoP<oops, iops, AddrModeNone, 4, im, BrFrm, NoItinerary,
-         opc, asm, "", []> {
+         opc, asm, "", pattern> {
   let Inst{31-28} = 0b1111;
   let Inst{27-25} = 0b110;
 }
-multiclass LdStCop<bit load, bit Dbit, string asm> {
+multiclass LdStCop<bit load, bit Dbit, string asm, list<dag> pattern> {
   def _OFFSET : ACI<(outs), (ins p_imm:$cop, c_imm:$CRd, addrmode5:$addr),
-                    asm, "\t$cop, $CRd, $addr"> {
+                    asm, "\t$cop, $CRd, $addr", pattern> {
     bits<13> addr;
     bits<4> cop;
     bits<4> CRd;
@@ -4883,7 +4887,7 @@ multiclass LdStCop<bit load, bit Dbit, string asm> {
     let DecoderMethod = "DecodeCopMemInstruction";
   }
   def _PRE : ACI<(outs), (ins p_imm:$cop, c_imm:$CRd, addrmode5_pre:$addr),
-                 asm, "\t$cop, $CRd, $addr!", IndexModePre> {
+                 asm, "\t$cop, $CRd, $addr!", [], IndexModePre> {
     bits<13> addr;
     bits<4> cop;
     bits<4> CRd;
@@ -4900,7 +4904,7 @@ multiclass LdStCop<bit load, bit Dbit, string asm> {
   }
   def _POST: ACI<(outs), (ins p_imm:$cop, c_imm:$CRd, addr_offset_none:$addr,
                               postidx_imm8s4:$offset),
-                 asm, "\t$cop, $CRd, $addr, $offset", IndexModePost> {
+                 asm, "\t$cop, $CRd, $addr, $offset", [], IndexModePost> {
     bits<9> offset;
     bits<4> addr;
     bits<4> cop;
@@ -4919,7 +4923,7 @@ multiclass LdStCop<bit load, bit Dbit, string asm> {
   def _OPTION : ACI<(outs),
                     (ins p_imm:$cop, c_imm:$CRd, addr_offset_none:$addr,
                          coproc_option_imm:$option),
-      asm, "\t$cop, $CRd, $addr, $option"> {
+      asm, "\t$cop, $CRd, $addr, $option", []> {
     bits<8> option;
     bits<4> addr;
     bits<4> cop;
@@ -4936,9 +4940,9 @@ multiclass LdStCop<bit load, bit Dbit, string asm> {
     let DecoderMethod = "DecodeCopMemInstruction";
   }
 }
-multiclass LdSt2Cop<bit load, bit Dbit, string asm> {
+multiclass LdSt2Cop<bit load, bit Dbit, string asm, list<dag> pattern> {
   def _OFFSET : ACInoP<(outs), (ins p_imm:$cop, c_imm:$CRd, addrmode5:$addr),
-                       asm, "\t$cop, $CRd, $addr"> {
+                       asm, "\t$cop, $CRd, $addr", pattern> {
     bits<13> addr;
     bits<4> cop;
     bits<4> CRd;
@@ -4954,7 +4958,7 @@ multiclass LdSt2Cop<bit load, bit Dbit, string asm> {
     let DecoderMethod = "DecodeCopMemInstruction";
   }
   def _PRE : ACInoP<(outs), (ins p_imm:$cop, c_imm:$CRd, addrmode5_pre:$addr),
-                    asm, "\t$cop, $CRd, $addr!", IndexModePre> {
+                    asm, "\t$cop, $CRd, $addr!", [], IndexModePre> {
     bits<13> addr;
     bits<4> cop;
     bits<4> CRd;
@@ -4971,7 +4975,7 @@ multiclass LdSt2Cop<bit load, bit Dbit, string asm> {
   }
   def _POST: ACInoP<(outs), (ins p_imm:$cop, c_imm:$CRd, addr_offset_none:$addr,
                                  postidx_imm8s4:$offset),
-                 asm, "\t$cop, $CRd, $addr, $offset", IndexModePost> {
+                 asm, "\t$cop, $CRd, $addr, $offset", [], IndexModePost> {
     bits<9> offset;
     bits<4> addr;
     bits<4> cop;
@@ -4990,7 +4994,7 @@ multiclass LdSt2Cop<bit load, bit Dbit, string asm> {
   def _OPTION : ACInoP<(outs),
                        (ins p_imm:$cop, c_imm:$CRd, addr_offset_none:$addr,
                             coproc_option_imm:$option),
-      asm, "\t$cop, $CRd, $addr, $option"> {
+      asm, "\t$cop, $CRd, $addr, $option", []> {
     bits<8> option;
     bits<4> addr;
     bits<4> cop;
@@ -5008,14 +5012,15 @@ multiclass LdSt2Cop<bit load, bit Dbit, string asm> {
   }
 }
 
-defm LDC   : LdStCop <1, 0, "ldc">;
-defm LDCL  : LdStCop <1, 1, "ldcl">;
-defm STC   : LdStCop <0, 0, "stc">;
-defm STCL  : LdStCop <0, 1, "stcl">;
-defm LDC2  : LdSt2Cop<1, 0, "ldc2">, Requires<[PreV8]>;
-defm LDC2L : LdSt2Cop<1, 1, "ldc2l">, Requires<[PreV8]>;
-defm STC2  : LdSt2Cop<0, 0, "stc2">, Requires<[PreV8]>;
-defm STC2L : LdSt2Cop<0, 1, "stc2l">, Requires<[PreV8]>;
+defm LDC   : LdStCop <1, 0, "ldc", [(int_arm_ldc imm:$cop, imm:$CRd, addrmode5:$addr)]>;
+defm LDCL  : LdStCop <1, 1, "ldcl", [(int_arm_ldcl imm:$cop, imm:$CRd, addrmode5:$addr)]>;
+defm LDC2  : LdSt2Cop<1, 0, "ldc2", [(int_arm_ldc2 imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[PreV8]>;
+defm LDC2L : LdSt2Cop<1, 1, "ldc2l", [(int_arm_ldc2l imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[PreV8]>;
+
+defm STC   : LdStCop <0, 0, "stc", [(int_arm_stc imm:$cop, imm:$CRd, addrmode5:$addr)]>;
+defm STCL  : LdStCop <0, 1, "stcl", [(int_arm_stcl imm:$cop, imm:$CRd, addrmode5:$addr)]>;
+defm STC2  : LdSt2Cop<0, 0, "stc2", [(int_arm_stc2 imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[PreV8]>;
+defm STC2L : LdSt2Cop<0, 1, "stc2l", [(int_arm_stc2l imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[PreV8]>;
 
 //===----------------------------------------------------------------------===//
 // Move between coprocessor and ARM core register.
@@ -5186,7 +5191,7 @@ def MRS : ABI<0b0001, (outs GPRnopc:$Rd), (ins), NoItinerary,
   let Unpredictable{11-0} = 0b110100001111;
 }
 
-def : InstAlias<"mrs${p} $Rd, cpsr", (MRS GPRnopc:$Rd, pred:$p)>,
+def : InstAlias<"mrs${p} $Rd, cpsr", (MRS GPRnopc:$Rd, pred:$p), 0>,
          Requires<[IsARM]>;
 
 // The MRSsys instruction is the MRS instruction from the ARM ARM,
@@ -5592,9 +5597,9 @@ include "ARMInstrNEON.td"
 //
 
 // Memory barriers
-def : InstAlias<"dmb", (DMB 0xf)>, Requires<[IsARM, HasDB]>;
-def : InstAlias<"dsb", (DSB 0xf)>, Requires<[IsARM, HasDB]>;
-def : InstAlias<"isb", (ISB 0xf)>, Requires<[IsARM, HasDB]>;
+def : InstAlias<"dmb", (DMB 0xf), 0>, Requires<[IsARM, HasDB]>;
+def : InstAlias<"dsb", (DSB 0xf), 0>, Requires<[IsARM, HasDB]>;
+def : InstAlias<"isb", (ISB 0xf), 0>, Requires<[IsARM, HasDB]>;
 
 // System instructions
 def : MnemonicAlias<"swi", "svc">;
@@ -5610,10 +5615,10 @@ def : MnemonicAlias<"stmea", "stm">;
 // PKHBT/PKHTB with default shift amount. PKHTB is equivalent to PKHBT with the
 // input operands swapped when the shift amount is zero (i.e., unspecified).
 def : InstAlias<"pkhbt${p} $Rd, $Rn, $Rm",
-                (PKHBT GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, 0, pred:$p)>,
+                (PKHBT GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, 0, pred:$p), 0>,
         Requires<[IsARM, HasV6]>;
 def : InstAlias<"pkhtb${p} $Rd, $Rn, $Rm",
-                (PKHBT GPRnopc:$Rd, GPRnopc:$Rm, GPRnopc:$Rn, 0, pred:$p)>,
+                (PKHBT GPRnopc:$Rd, GPRnopc:$Rm, GPRnopc:$Rn, 0, pred:$p), 0>,
         Requires<[IsARM, HasV6]>;
 
 // PUSH/POP aliases for STM/LDM
@@ -5771,23 +5776,23 @@ def : InstAlias<"nop${p}", (MOVr R0, R0, pred:$p, zero_reg)>,
 // the instruction definitions need difference constraints pre-v6.
 // Use these aliases for the assembly parsing on pre-v6.
 def : InstAlias<"mul${s}${p} $Rd, $Rn, $Rm",
-            (MUL GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p, cc_out:$s)>,
+            (MUL GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 def : InstAlias<"mla${s}${p} $Rd, $Rn, $Rm, $Ra",
             (MLA GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, GPRnopc:$Ra,
-             pred:$p, cc_out:$s)>,
+             pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 def : InstAlias<"smlal${s}${p} $RdLo, $RdHi, $Rn, $Rm",
-            (SMLAL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+            (SMLAL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 def : InstAlias<"umlal${s}${p} $RdLo, $RdHi, $Rn, $Rm",
-            (UMLAL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+            (UMLAL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 def : InstAlias<"smull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
-            (SMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+            (SMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 def : InstAlias<"umull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
-            (UMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+            (UMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s), 0>,
          Requires<[IsARM, NoV6]>;
 
 // 'it' blocks in ARM mode just validate the predicates. The IT itself

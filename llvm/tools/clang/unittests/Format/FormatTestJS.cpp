@@ -62,6 +62,11 @@ protected:
   }
 };
 
+TEST_F(FormatTestJS, BlockComments) {
+  verifyFormat("/* aaaaaaaaaaaaa */ aaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
+}
+
 TEST_F(FormatTestJS, UnderstandsJavaScriptOperators) {
   verifyFormat("a == = b;");
   verifyFormat("a != = b;");
@@ -354,6 +359,10 @@ TEST_F(FormatTestJS, AsyncFunctions) {
   verifyFormat("class X {\n"
                "  async asyncMethod() { return fetch(1); }\n"
                "}");
+  verifyFormat("function initialize() {\n"
+               "  // Comment.\n"
+               "  return async.then();\n"
+               "}\n");
 }
 
 TEST_F(FormatTestJS, ArrayLiterals) {
@@ -1001,6 +1010,9 @@ TEST_F(FormatTestJS, Modules) {
                "} from 'some/module.js';");
   verifyFormat("import {X, Y,} from 'some/module.js';");
   verifyFormat("import {X as myLocalX, Y as myLocalY} from 'some/module.js';");
+  // Ensure Automatic Semicolon Insertion does not break on "as\n".
+  verifyFormat("import {X as myX} from 'm';", "import {X as\n"
+                                              " myX} from 'm';");
   verifyFormat("import * as lib from 'some/module.js';");
   verifyFormat("var x = {import: 1};\nx.import = 2;");
 
@@ -1270,6 +1282,13 @@ TEST_F(FormatTestJS, RequoteStringsLeave) {
   LeaveQuotes.JavaScriptQuotes = FormatStyle::JSQS_Leave;
   verifyFormat("var x = \"foo\";", LeaveQuotes);
   verifyFormat("var x = 'foo';", LeaveQuotes);
+}
+
+TEST_F(FormatTestJS, SupportShebangLines) {
+  verifyFormat("#!/usr/bin/env node\n"
+               "var x = hello();",
+               "#!/usr/bin/env node\n"
+               "var x   =  hello();");
 }
 
 } // end namespace tooling

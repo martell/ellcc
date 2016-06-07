@@ -13,8 +13,10 @@ set(ESAN_SOURCES
   esan_interface.cpp
   esan_interceptors.cpp
   esan_linux.cpp
+  esan_sideline_linux.cpp
   cache_frag.cpp
-  working_set.cpp)
+  working_set.cpp
+  working_set_posix.cpp)
 
 foreach (arch ${ESAN_SUPPORTED_ARCH})
   add_compiler_rt_runtime(clang_rt.esan

@@ -625,6 +625,22 @@ AST_MATCHER_P(Expr, ignoringParenImpCasts,
   return InnerMatcher.matches(*Node.IgnoreParenImpCasts(), Finder, Builder);
 }
 
+/// \brief Matches types that match InnerMatcher after any parens are stripped.
+///
+/// Given
+/// \code
+///   void (*fp)(void);
+/// \endcode
+/// The matcher
+/// \code
+///   varDecl(hasType(pointerType(pointee(ignoringParens(functionType())))))
+/// \endcode
+/// would match the declaration for fp.
+AST_MATCHER_P(QualType, ignoringParens,
+              internal::Matcher<QualType>, InnerMatcher) {
+  return InnerMatcher.matches(Node.IgnoreParens(), Finder, Builder);
+}
+
 /// \brief Matches classTemplateSpecializations where the n'th TemplateArgument
 /// matches the given InnerMatcher.
 ///
@@ -2169,6 +2185,10 @@ AST_MATCHER_P(CXXRecordDecl, hasMethod, internal::Matcher<CXXMethodDecl>,
 /// ChildT must be an AST base type.
 ///
 /// Usable as: Any Matcher
+/// Note that has is direct matcher, so it also matches things like implicit
+/// casts and paren casts. If you are matching with expr then you should
+/// probably consider using ignoringParenImpCasts like:
+/// has(ignoringParenImpCasts(expr())).
 const internal::ArgumentAdaptingMatcherFunc<internal::HasMatcher>
 LLVM_ATTRIBUTE_UNUSED has = {};
 
@@ -3299,7 +3319,7 @@ AST_POLYMORPHIC_MATCHER(isConstexpr,
 }
 
 /// \brief Matches the condition expression of an if statement, for loop,
-/// or conditional operator.
+/// switch statement or conditional operator.
 ///
 /// Example matches true (matcher = hasCondition(cxxBoolLiteral(equals(true))))
 /// \code
@@ -3308,7 +3328,7 @@ AST_POLYMORPHIC_MATCHER(isConstexpr,
 AST_POLYMORPHIC_MATCHER_P(
     hasCondition,
     AST_POLYMORPHIC_SUPPORTED_TYPES(IfStmt, ForStmt, WhileStmt, DoStmt,
-                                    AbstractConditionalOperator),
+                                    SwitchStmt, AbstractConditionalOperator),
     internal::Matcher<Expr>, InnerMatcher) {
   const Expr *const Condition = Node.getCond();
   return (Condition != nullptr &&

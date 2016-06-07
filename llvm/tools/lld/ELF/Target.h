@@ -57,7 +57,7 @@ public:
   virtual void relocateOne(uint8_t *Loc, uint32_t Type, uint64_t Val) const = 0;
   virtual ~TargetInfo();
 
-  unsigned TlsGdToLeSkip = 1;
+  unsigned TlsGdRelaxSkip = 1;
   unsigned PageSize = 4096;
 
   // On freebsd x86_64 the first page cannot be mmaped.
@@ -73,6 +73,7 @@ public:
   uint32_t PltRel;
   uint32_t RelativeRel;
   uint32_t IRelativeRel;
+  uint32_t TlsDescRel;
   uint32_t TlsGotRel = 0;
   uint32_t TlsModuleIndexRel;
   uint32_t TlsOffsetRel;
@@ -88,7 +89,8 @@ public:
 
   uint32_t ThunkSize = 0;
 
-  virtual bool canRelaxGot(uint32_t Type, const uint8_t *Data) const;
+  virtual RelExpr adjustRelaxExpr(uint32_t Type, const uint8_t *Data,
+                                  RelExpr Expr) const;
   virtual void relaxGot(uint8_t *Loc, uint64_t Val) const;
   virtual void relaxTlsGdToIe(uint8_t *Loc, uint32_t Type, uint64_t Val) const;
   virtual void relaxTlsGdToLe(uint8_t *Loc, uint32_t Type, uint64_t Val) const;

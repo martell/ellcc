@@ -184,7 +184,7 @@ static void addInstructionCombiningPass(const PassManagerBuilder &Builder,
 }
 
 static void addBoundsCheckingPass(const PassManagerBuilder &Builder,
-                                    legacy::PassManagerBase &PM) {
+                                  legacy::PassManagerBase &PM) {
   PM.add(createBoundsCheckingPass());
 }
 
@@ -210,14 +210,17 @@ static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
       static_cast<const PassManagerBuilderWrapper&>(Builder);
   const CodeGenOptions &CGOpts = BuilderWrapper.getCGOpts();
   bool Recover = CGOpts.SanitizeRecover.has(SanitizerKind::Address);
-  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/false, Recover));
+  bool UseAfterScope = CGOpts.SanitizeAddressUseAfterScope;
+  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/ false, Recover,
+                                            UseAfterScope));
   PM.add(createAddressSanitizerModulePass(/*CompileKernel*/false, Recover));
 }
 
 static void addKernelAddressSanitizerPasses(const PassManagerBuilder &Builder,
                                             legacy::PassManagerBase &PM) {
-  PM.add(createAddressSanitizerFunctionPass(/*CompileKernel*/true,
-                                            /*Recover*/true));
+  PM.add(createAddressSanitizerFunctionPass(
+      /*CompileKernel*/ true,
+      /*Recover*/ true, /*UseAfterScope*/ false));
   PM.add(createAddressSanitizerModulePass(/*CompileKernel*/true,
                                           /*Recover*/true));
 }
@@ -593,6 +596,7 @@ TargetMachine *EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
   Options.UseInitArray = CodeGenOpts.UseInitArray;
   Options.DisableIntegratedAS = CodeGenOpts.DisableIntegratedAS;
   Options.CompressDebugSections = CodeGenOpts.CompressDebugSections;
+  Options.RelaxELFRelocations = CodeGenOpts.RelaxELFRelocations;
 
   // Set EABI version.
   Options.EABIVersion = llvm::StringSwitch<llvm::EABI>(TargetOpts.EABIVersion)

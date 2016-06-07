@@ -47,14 +47,12 @@ __sanitizer_update_counter_bitset_and_clear_counters(uint8_t *bitset);
 __attribute__((weak)) uintptr_t
 __sanitizer_get_coverage_pc_buffer(uintptr_t **data);
 
-__attribute__((weak)) size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
-                                                     size_t MaxSize,
-                                                     unsigned int Seed);
 __attribute__((weak)) void __sanitizer_malloc_hook(void *ptr, size_t size);
 __attribute__((weak)) void __sanitizer_free_hook(void *ptr);
 __attribute__((weak)) void __lsan_enable();
 __attribute__((weak)) void __lsan_disable();
 __attribute__((weak)) int __lsan_do_recoverable_leak_check();
+__attribute__((weak)) int __sanitizer_print_memory_profile(size_t);
 }
 
 namespace fuzzer {
@@ -256,7 +254,9 @@ void Fuzzer::RssLimitCallback() {
   Printf(
       "==%d== ERROR: libFuzzer: out-of-memory (used: %zdMb; limit: %zdMb)\n",
       GetPid(), GetPeakRSSMb(), Options.RssLimitMb);
-  Printf("   To change the out-of-memory limit use -rss_limit_mb=<N>\n");
+  Printf("   To change the out-of-memory limit use -rss_limit_mb=<N>\n\n");
+  if (__sanitizer_print_memory_profile)
+    __sanitizer_print_memory_profile(50);
   DumpCurrentUnit("oom-");
   Printf("SUMMARY: libFuzzer: out-of-memory\n");
   PrintFinalStats();
@@ -655,7 +655,7 @@ void Fuzzer::TryDetectingAMemoryLeak(const uint8_t *Data, size_t Size,
   // Run the target once again, but with lsan disabled so that if there is
   // a real leak we do not report it twice.
   __lsan_disable();
-  RunOneAndUpdateCorpus(Data, Size);
+  RunOne(Data, Size);
   __lsan_enable();
   if (!HasMoreMallocsThanFrees) return;  // a leak is unlikely.
   if (NumberOfLeakDetectionAttempts++ > 1000) {
@@ -692,11 +692,7 @@ void Fuzzer::MutateAndTestOne() {
 
   for (int i = 0; i < Options.MutateDepth; i++) {
     size_t NewSize = 0;
-    if (LLVMFuzzerCustomMutator)
-      NewSize = LLVMFuzzerCustomMutator(CurrentUnitData, Size,
-                                        Options.MaxLen, MD.GetRand().Rand());
-    else
-      NewSize = MD.Mutate(CurrentUnitData, Size, Options.MaxLen);
+    NewSize = MD.Mutate(CurrentUnitData, Size, Options.MaxLen);
     assert(NewSize > 0 && "Mutator returned empty unit");
     assert(NewSize <= Options.MaxLen &&
            "Mutator return overisized unit");
@@ -816,6 +812,6 @@ extern "C" {
 
 size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize) {
   assert(fuzzer::F);
-  return fuzzer::F->GetMD().Mutate(Data, Size, MaxSize);
+  return fuzzer::F->GetMD().DefaultMutate(Data, Size, MaxSize);
 }
 }  // extern "C"

@@ -35,6 +35,11 @@ typedef long long __v2di __attribute__ ((__vector_size__ (16)));
 typedef short __v8hi __attribute__((__vector_size__(16)));
 typedef char __v16qi __attribute__((__vector_size__(16)));
 
+/* Unsigned types */
+typedef unsigned long long __v2du __attribute__ ((__vector_size__ (16)));
+typedef unsigned short __v8hu __attribute__((__vector_size__(16)));
+typedef unsigned char __v16qu __attribute__((__vector_size__(16)));
+
 /* We need an explicitly signed variant for char. Note that this shouldn't
  * appear in the interface though. */
 typedef signed char __v16qs __attribute__((__vector_size__(16)));
@@ -136,25 +141,25 @@ _mm_max_pd(__m128d __a, __m128d __b)
 static __inline__ __m128d __DEFAULT_FN_ATTRS
 _mm_and_pd(__m128d __a, __m128d __b)
 {
-  return (__m128d)((__v4si)__a & (__v4si)__b);
+  return (__m128d)((__v4su)__a & (__v4su)__b);
 }
 
 static __inline__ __m128d __DEFAULT_FN_ATTRS
 _mm_andnot_pd(__m128d __a, __m128d __b)
 {
-  return (__m128d)(~(__v4si)__a & (__v4si)__b);
+  return (__m128d)(~(__v4su)__a & (__v4su)__b);
 }
 
 static __inline__ __m128d __DEFAULT_FN_ATTRS
 _mm_or_pd(__m128d __a, __m128d __b)
 {
-  return (__m128d)((__v4si)__a | (__v4si)__b);
+  return (__m128d)((__v4su)__a | (__v4su)__b);
 }
 
 static __inline__ __m128d __DEFAULT_FN_ATTRS
 _mm_xor_pd(__m128d __a, __m128d __b)
 {
-  return (__m128d)((__v4si)__a ^ (__v4si)__b);
+  return (__m128d)((__v4su)__a ^ (__v4su)__b);
 }
 
 static __inline__ __m128d __DEFAULT_FN_ATTRS
@@ -582,25 +587,31 @@ _mm_store_sd(double *__dp, __m128d __a)
 }
 
 static __inline__ void __DEFAULT_FN_ATTRS
-_mm_store1_pd(double *__dp, __m128d __a)
+_mm_store_pd(double *__dp, __m128d __a)
 {
-  struct __mm_store1_pd_struct {
-    double __u[2];
-  } __attribute__((__packed__, __may_alias__));
-  ((struct __mm_store1_pd_struct*)__dp)->__u[0] = __a[0];
-  ((struct __mm_store1_pd_struct*)__dp)->__u[1] = __a[0];
+  *(__m128d*)__dp = __a;
 }
 
 static __inline__ void __DEFAULT_FN_ATTRS
-_mm_store_pd(double *__dp, __m128d __a)
+_mm_store1_pd(double *__dp, __m128d __a)
 {
-  *(__m128d *)__dp = __a;
+  __a = __builtin_shufflevector((__v2df)__a, (__v2df)__a, 0, 0);
+  _mm_store_pd(__dp, __a);
+}
+
+static __inline__ void __DEFAULT_FN_ATTRS
+_mm_store_pd1(double *__dp, __m128d __a)
+{
+  return _mm_store1_pd(__dp, __a);
 }
 
 static __inline__ void __DEFAULT_FN_ATTRS
 _mm_storeu_pd(double *__dp, __m128d __a)
 {
-  __builtin_ia32_storeupd(__dp, (__v2df)__a);
+  struct __storeu_pd {
+    __m128d __v;
+  } __attribute__((__packed__, __may_alias__));
+  ((struct __storeu_pd*)__dp)->__v = __a;
 }
 
 static __inline__ void __DEFAULT_FN_ATTRS
@@ -631,19 +642,19 @@ _mm_storel_pd(double *__dp, __m128d __a)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_add_epi8(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v16qi)__a + (__v16qi)__b);
+  return (__m128i)((__v16qu)__a + (__v16qu)__b);
 }
 
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_add_epi16(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v8hi)__a + (__v8hi)__b);
+  return (__m128i)((__v8hu)__a + (__v8hu)__b);
 }
 
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_add_epi32(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v4si)__a + (__v4si)__b);
+  return (__m128i)((__v4su)__a + (__v4su)__b);
 }
 
 static __inline__ __m64 __DEFAULT_FN_ATTRS
@@ -655,7 +666,7 @@ _mm_add_si64(__m64 __a, __m64 __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_add_epi64(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v2di)__a + (__v2di)__b);
+  return (__m128i)((__v2du)__a + (__v2du)__b);
 }
 
 static __inline__ __m128i __DEFAULT_FN_ATTRS
@@ -752,7 +763,7 @@ _mm_mulhi_epu16(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_mullo_epi16(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v8hi)__a * (__v8hi)__b);
+  return (__m128i)((__v8hu)__a * (__v8hu)__b);
 }
 
 /// \brief Multiplies 32-bit unsigned integer values contained in the lower bits
@@ -830,7 +841,7 @@ _mm_sad_epu8(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_sub_epi8(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v16qi)__a - (__v16qi)__b);
+  return (__m128i)((__v16qu)__a - (__v16qu)__b);
 }
 
 /// \brief Subtracts the corresponding 16-bit integer values in the operands.
@@ -848,7 +859,7 @@ _mm_sub_epi8(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_sub_epi16(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v8hi)__a - (__v8hi)__b);
+  return (__m128i)((__v8hu)__a - (__v8hu)__b);
 }
 
 /// \brief Subtracts the corresponding 32-bit integer values in the operands.
@@ -866,7 +877,7 @@ _mm_sub_epi16(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_sub_epi32(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v4si)__a - (__v4si)__b);
+  return (__m128i)((__v4su)__a - (__v4su)__b);
 }
 
 /// \brief Subtracts signed or unsigned 64-bit integer values and writes the
@@ -903,7 +914,7 @@ _mm_sub_si64(__m64 __a, __m64 __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_sub_epi64(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v2di)__a - (__v2di)__b);
+  return (__m128i)((__v2du)__a - (__v2du)__b);
 }
 
 /// \brief Subtracts corresponding 8-bit signed integer values in the input and
@@ -1003,7 +1014,7 @@ _mm_subs_epu16(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_and_si128(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v2di)__a & (__v2di)__b);
+  return (__m128i)((__v2du)__a & (__v2du)__b);
 }
 
 /// \brief Performs a bitwise AND of two 128-bit integer vectors, using the
@@ -1023,7 +1034,7 @@ _mm_and_si128(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_andnot_si128(__m128i __a, __m128i __b)
 {
-  return (__m128i)(~(__v2di)__a & (__v2di)__b);
+  return (__m128i)(~(__v2du)__a & (__v2du)__b);
 }
 /// \brief Performs a bitwise OR of two 128-bit integer vectors.
 ///
@@ -1040,7 +1051,7 @@ _mm_andnot_si128(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_or_si128(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v2di)__a | (__v2di)__b);
+  return (__m128i)((__v2du)__a | (__v2du)__b);
 }
 
 /// \brief Performs a bitwise exclusive OR of two 128-bit integer vectors.
@@ -1058,7 +1069,7 @@ _mm_or_si128(__m128i __a, __m128i __b)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_xor_si128(__m128i __a, __m128i __b)
 {
-  return (__m128i)((__v2di)__a ^ (__v2di)__b);
+  return (__m128i)((__v2du)__a ^ (__v2du)__b);
 }
 
 /// \brief Left-shifts the 128-bit integer vector operand by the specified
@@ -1732,7 +1743,7 @@ _mm_cvtps_epi32(__m128 __a)
 static __inline__ __m128i __DEFAULT_FN_ATTRS
 _mm_cvttps_epi32(__m128 __a)
 {
-  return (__m128i)__builtin_ia32_cvttps2dq((__v4sf)__a);
+  return (__m128i)__builtin_convertvector((__v4sf)__a, __v4si);
 }
 
 /// \brief Returns a vector of [4 x i32] where the lowest element is the input
@@ -2171,7 +2182,10 @@ _mm_store_si128(__m128i *__p, __m128i __b)
 static __inline__ void __DEFAULT_FN_ATTRS
 _mm_storeu_si128(__m128i *__p, __m128i __b)
 {
-  __builtin_ia32_storedqu((char *)__p, (__v16qi)__b);
+  struct __storeu_si128 {
+    __m128i __v;
+  } __attribute__((__packed__, __may_alias__));
+  ((struct __storeu_si128*)__p)->__v = __b;
 }
 
 static __inline__ void __DEFAULT_FN_ATTRS
