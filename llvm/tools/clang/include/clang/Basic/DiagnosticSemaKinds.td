@@ -1223,6 +1223,8 @@ def err_distant_exception_spec : Error<
 def err_incomplete_in_exception_spec : Error<
   "%select{|pointer to |reference to }0incomplete type %1 is not allowed "
   "in exception specification">;
+def ext_incomplete_in_exception_spec : ExtWarn<err_incomplete_in_exception_spec.Text>,
+  InGroup<MicrosoftExceptionSpec>;
 def err_rref_in_exception_spec : Error<
   "rvalue reference type %0 is not allowed in exception specification">;
 def err_mismatched_exception_spec : Error<
@@ -5904,6 +5906,8 @@ def err_catch_incomplete_ref : Error<
   "cannot catch reference to incomplete type %0">;
 def err_catch_incomplete : Error<"cannot catch incomplete type %0">;
 def err_catch_rvalue_ref : Error<"cannot catch exceptions by rvalue reference">;
+def err_catch_variably_modified : Error<
+  "cannot catch variably modified type %0">;
 def err_qualified_catch_declarator : Error<
   "exception declarator cannot be qualified">;
 def err_early_catch_all : Error<"catch-all handler must come last">;

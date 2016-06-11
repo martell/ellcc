@@ -758,6 +758,10 @@ namespace llvm {
 
     bool isCheapToSpeculateCtlz() const override;
 
+    bool hasBitPreservingFPLogic(EVT VT) const override {
+      return VT == MVT::f32 || VT == MVT::f64 || VT.isVector();
+    }
+
     bool hasAndNotCompare(SDValue Y) const override;
 
     /// Return the value type to use for ISD::SETCC.
@@ -969,7 +973,10 @@ namespace llvm {
     /// returns the address of that location. Otherwise, returns nullptr.
     Value *getIRStackGuard(IRBuilder<> &IRB) const override;
 
+    bool useLoadStackGuardNode() const override;
     void insertSSPDeclarations(Module &M) const override;
+    Value *getSDagStackGuard(const Module &M) const override;
+    Value *getSSPStackGuardCheck(const Module &M) const override;
 
     /// Return true if the target stores SafeStack pointer at a fixed offset in
     /// some non-standard address space, and populates the address space and
@@ -981,7 +988,6 @@ namespace llvm {
 
     bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override;
 
-    bool useLoadStackGuardNode() const override;
     /// \brief Customize the preferred legalization strategy for certain types.
     LegalizeTypeAction getPreferredVectorAction(EVT VT) const override;
 

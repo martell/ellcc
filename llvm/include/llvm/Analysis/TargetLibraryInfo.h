@@ -325,7 +325,7 @@ private:
 
   StringMap<std::unique_ptr<TargetLibraryInfoImpl>> Impls;
 
-  TargetLibraryInfoImpl &lookupInfoImpl(Triple T);
+  TargetLibraryInfoImpl &lookupInfoImpl(const Triple &T);
 };
 
 class TargetLibraryInfoWrapperPass : public ImmutablePass {

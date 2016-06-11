@@ -14,12 +14,16 @@
 #define COMPILER_RT_ALIGNAS(x) __declspec(align(x))
 #define COMPILER_RT_VISIBILITY
 #define COMPILER_RT_WEAK __declspec(selectany)
+/* Need to include <windows.h> */
 #define COMPILER_RT_ALLOCA _alloca
+/* Need to include <stdio.h> and <io.h> */
+#define COMPILER_RT_FTRUNCATE(f,l) _chsize(_fileno(f),l)
 #elif __GNUC__
 #define COMPILER_RT_ALIGNAS(x) __attribute__((aligned(x)))
 #define COMPILER_RT_VISIBILITY __attribute__((visibility("hidden")))
 #define COMPILER_RT_WEAK __attribute__((weak))
 #define COMPILER_RT_ALLOCA __builtin_alloca
+#define COMPILER_RT_FTRUNCATE(f,l) ftruncate(fileno(f),l)
 #endif
 
 #if defined(__APPLE__)
@@ -84,6 +88,9 @@
 
 #define PROF_WARN(Format, ...)                                                 \
   fprintf(stderr, "LLVM Profile Warning: " Format, __VA_ARGS__);
+
+#define PROF_NOTE(Format, ...)                                                 \
+  fprintf(stderr, "LLVM Profile Note: " Format, __VA_ARGS__);
 
 #if defined(__FreeBSD__)
 

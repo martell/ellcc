@@ -179,10 +179,7 @@ template <class ELFT> static bool shouldMerge(const typename ELFT::Shdr &Sec) {
   if (Flags & SHF_STRINGS)
     return true;
 
-  if (Sec.sh_addralign > EntSize)
-    return false;
-
-  return true;
+  return Sec.sh_addralign <= EntSize;
 }
 
 template <class ELFT>
@@ -244,6 +241,11 @@ void elf::ObjectFile<ELFT>::initializeSections(
       }
       fatal("relocations pointing to SHF_MERGE are not supported");
     }
+    case SHT_ARM_ATTRIBUTES:
+      // FIXME: ARM meta-data section. At present attributes are ignored,
+      // they can be used to reason about object compatibility.
+      Sections[I] = &InputSection<ELFT>::Discarded;
+      break;
     default:
       Sections[I] = createInputSection(Sec);
     }
@@ -527,10 +529,13 @@ template <class ELFT> void SharedFile<ELFT>::parseRest() {
 
     if (Versym) {
       // Ignore local symbols and non-default versions.
-      if (VersymIndex == 0 || VersymIndex == 1 || (VersymIndex & VERSYM_HIDDEN))
+      if (VersymIndex == VER_NDX_LOCAL || (VersymIndex & VERSYM_HIDDEN))
         continue;
     }
-    elf::Symtab<ELFT>::X->addShared(this, Name, Sym, Verdefs[VersymIndex]);
+
+    const Elf_Verdef *V =
+        VersymIndex == VER_NDX_GLOBAL ? nullptr : Verdefs[VersymIndex];
+    elf::Symtab<ELFT>::X->addShared(this, Name, Sym, V);
   }
 }
 

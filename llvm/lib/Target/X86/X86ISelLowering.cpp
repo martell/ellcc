@@ -1974,8 +1974,39 @@ Value *X86TargetLowering::getIRStackGuard(IRBuilder<> &IRB) const {
 }
 
 void X86TargetLowering::insertSSPDeclarations(Module &M) const {
-  if (!Subtarget.isTargetGlibc())
-    TargetLowering::insertSSPDeclarations(M);
+  // MSVC CRT provides functionalities for stack protection.
+  if (Subtarget.getTargetTriple().isOSMSVCRT()) {
+    // MSVC CRT has a global variable holding security cookie.
+    M.getOrInsertGlobal("__security_cookie",
+                        Type::getInt8PtrTy(M.getContext()));
+
+    // MSVC CRT has a function to validate security cookie.
+    auto *SecurityCheckCookie = cast<Function>(
+        M.getOrInsertFunction("__security_check_cookie",
+                              Type::getVoidTy(M.getContext()),
+                              Type::getInt8PtrTy(M.getContext()), nullptr));
+    SecurityCheckCookie->setCallingConv(CallingConv::X86_FastCall);
+    SecurityCheckCookie->addAttribute(1, Attribute::AttrKind::InReg);
+    return;
+  }
+  // glibc has a special slot for the stack guard.
+  if (Subtarget.isTargetGlibc())
+    return;
+  TargetLowering::insertSSPDeclarations(M);
+}
+
+Value *X86TargetLowering::getSDagStackGuard(const Module &M) const {
+  // MSVC CRT has a global variable holding security cookie.
+  if (Subtarget.getTargetTriple().isOSMSVCRT())
+    return M.getGlobalVariable("__security_cookie");
+  return TargetLowering::getSDagStackGuard(M);
+}
+
+Value *X86TargetLowering::getSSPStackGuardCheck(const Module &M) const {
+  // MSVC CRT has a function to validate security cookie.
+  if (Subtarget.getTargetTriple().isOSMSVCRT())
+    return M.getFunction("__security_check_cookie");
+  return TargetLowering::getSSPStackGuardCheck(M);
 }
 
 Value *X86TargetLowering::getSafeStackPointerLocation(IRBuilder<> &IRB) const {
@@ -4733,7 +4764,7 @@ static bool getTargetShuffleMaskIndices(SDValue MaskNode,
     if (VT.getScalarSizeInBits() != MaskEltSizeInBits)
       return false;
     if (auto *CN = dyn_cast<ConstantSDNode>(MaskNode.getOperand(0))) {
-      APInt MaskElement = CN->getAPIntValue();
+      const APInt &MaskElement = CN->getAPIntValue();
       for (unsigned i = 0, e = VT.getVectorNumElements(); i != e; ++i) {
         APInt RawElt = MaskElement.getLoBits(MaskEltSizeInBits);
         RawMask.push_back(RawElt.getZExtValue());
@@ -7737,6 +7768,7 @@ static SDValue lowerVectorShuffleAsByteRotate(SDLoc DL, MVT VT, SDValue V1,
 /// [  1, 2, -1, -1, -1, -1, zz, zz]
 static SDValue lowerVectorShuffleAsShift(SDLoc DL, MVT VT, SDValue V1,
                                          SDValue V2, ArrayRef<int> Mask,
+                                         const X86Subtarget &Subtarget,
                                          SelectionDAG &DAG) {
   SmallBitVector Zeroable = computeZeroableShuffleElements(Mask, V1, V2);
 
@@ -7790,7 +7822,8 @@ static SDValue lowerVectorShuffleAsShift(SDLoc DL, MVT VT, SDValue V1,
   // their width within the elements of the larger integer vector. Test each
   // multiple to see if we can find a match with the moved element indices
   // and that the shifted in elements are all zeroable.
-  for (int Scale = 2; Scale * VT.getScalarSizeInBits() <= 128; Scale *= 2)
+  unsigned MaxWidth = (VT.is512BitVector() && !Subtarget.hasBWI() ? 64 : 128);
+  for (int Scale = 2; Scale * VT.getScalarSizeInBits() <= MaxWidth; Scale *= 2)
     for (int Shift = 1; Shift != Scale; ++Shift)
       for (bool Left : {true, false})
         if (CheckZeros(Shift, Scale, Left))
@@ -8651,11 +8684,10 @@ static SDValue lowerVectorShuffleAsPermuteAndUnpack(SDLoc DL, MVT VT,
 
   int Size = Mask.size();
 
-  int NumLoInputs = std::count_if(Mask.begin(), Mask.end(), [Size](int M) {
-    return M >= 0 && M % Size < Size / 2;
-  });
-  int NumHiInputs = std::count_if(
-      Mask.begin(), Mask.end(), [Size](int M) { return M % Size >= Size / 2; });
+  int NumLoInputs =
+      count_if(Mask, [Size](int M) { return M >= 0 && M % Size < Size / 2; });
+  int NumHiInputs =
+      count_if(Mask, [Size](int M) { return M % Size >= Size / 2; });
 
   bool UnpackLo = NumLoInputs >= NumHiInputs;
 
@@ -8886,8 +8918,8 @@ static SDValue lowerV2I64VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
                                                      : V2Pack.getOperand(1)));
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v2i64, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v2i64, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // When loading a scalar and then shuffling it into a vector we can often do
@@ -8967,8 +8999,7 @@ static SDValue lowerVectorShuffleWithSHUFPS(SDLoc DL, MVT VT,
   SDValue LowV = V1, HighV = V2;
   int NewMask[4] = {Mask[0], Mask[1], Mask[2], Mask[3]};
 
-  int NumV2Elements =
-      std::count_if(Mask.begin(), Mask.end(), [](int M) { return M >= 4; });
+  int NumV2Elements = count_if(Mask, [](int M) { return M >= 4; });
 
   if (NumV2Elements == 1) {
     int V2Index =
@@ -9062,8 +9093,7 @@ static SDValue lowerV4F32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   ArrayRef<int> Mask = SVOp->getMask();
   assert(Mask.size() == 4 && "Unexpected mask size for v4 shuffle!");
 
-  int NumV2Elements =
-      std::count_if(Mask.begin(), Mask.end(), [](int M) { return M >= 4; });
+  int NumV2Elements = count_if(Mask, [](int M) { return M >= 4; });
 
   if (NumV2Elements == 0) {
     // Check for being able to broadcast a single element.
@@ -9154,8 +9184,7 @@ static SDValue lowerV4I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
                                                          Mask, Subtarget, DAG))
     return ZExt;
 
-  int NumV2Elements =
-      std::count_if(Mask.begin(), Mask.end(), [](int M) { return M >= 4; });
+  int NumV2Elements = count_if(Mask, [](int M) { return M >= 4; });
 
   if (NumV2Elements == 0) {
     // Check for being able to broadcast a single element.
@@ -9180,8 +9209,8 @@ static SDValue lowerV4I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   }
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v4i32, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v4i32, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // There are special ways we can lower some single-element blends.
@@ -9683,11 +9712,9 @@ static SDValue lowerV8I16GeneralSingleInputVectorShuffle(
 
   // At this point, each half should contain all its inputs, and we can then
   // just shuffle them into their final position.
-  assert(std::count_if(LoMask.begin(), LoMask.end(),
-                       [](int M) { return M >= 4; }) == 0 &&
+  assert(count_if(LoMask, [](int M) { return M >= 4; }) == 0 &&
          "Failed to lift all the high half inputs to the low mask!");
-  assert(std::count_if(HiMask.begin(), HiMask.end(),
-                       [](int M) { return M >= 0 && M < 4; }) == 0 &&
+  assert(count_if(HiMask, [](int M) { return M >= 0 && M < 4; }) == 0 &&
          "Failed to lift all the low half inputs to the high mask!");
 
   // Do a half shuffle for the low mask.
@@ -9797,7 +9824,7 @@ static SDValue lowerV8I16VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   (void)isV1;
   auto isV2 = [](int M) { return M >= 8; };
 
-  int NumV2Inputs = std::count_if(Mask.begin(), Mask.end(), isV2);
+  int NumV2Inputs = count_if(Mask, isV2);
 
   if (NumV2Inputs == 0) {
     // Check for being able to broadcast a single element.
@@ -9806,8 +9833,8 @@ static SDValue lowerV8I16VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
       return Broadcast;
 
     // Try to use shift instructions.
-    if (SDValue Shift =
-            lowerVectorShuffleAsShift(DL, MVT::v8i16, V1, V1, Mask, DAG))
+    if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v8i16, V1, V1, Mask,
+                                                  Subtarget, DAG))
       return Shift;
 
     // Use dedicated unpack instructions for masks that match their pattern.
@@ -9829,8 +9856,8 @@ static SDValue lowerV8I16VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
          "shuffles.");
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v8i16, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v8i16, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // See if we can use SSE4A Extraction / Insertion.
@@ -9975,8 +10002,8 @@ static SDValue lowerV16I8VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   assert(Mask.size() == 16 && "Unexpected mask size for v16 shuffle!");
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v16i8, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v16i8, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // Try to use byte rotation instructions.
@@ -9994,8 +10021,7 @@ static SDValue lowerV16I8VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
     if (SDValue V = lowerVectorShuffleWithSSE4A(DL, MVT::v16i8, V1, V2, Mask, DAG))
       return V;
 
-  int NumV2Elements =
-      std::count_if(Mask.begin(), Mask.end(), [](int M) { return M >= 16; });
+  int NumV2Elements = count_if(Mask, [](int M) { return M >= 16; });
 
   // For single-input shuffles, there are some nicer lowering tricks we can use.
   if (NumV2Elements == 0) {
@@ -11186,8 +11212,8 @@ static SDValue lowerV4I64VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
                        getV4X86ShuffleImm8ForMask(Mask, DL, DAG));
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v4i64, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v4i64, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // Use dedicated unpack instructions for masks that match their pattern.
@@ -11354,8 +11380,8 @@ static SDValue lowerV8I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   }
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v8i32, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v8i32, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // Try to use byte rotation instructions.
@@ -11428,8 +11454,8 @@ static SDValue lowerV16I16VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
     return V;
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v16i16, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v16i16, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // Try to use byte rotation instructions.
@@ -11511,8 +11537,8 @@ static SDValue lowerV32I8VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
     return V;
 
   // Try to use shift instructions.
-  if (SDValue Shift =
-          lowerVectorShuffleAsShift(DL, MVT::v32i8, V1, V2, Mask, DAG))
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v32i8, V1, V2, Mask,
+                                                Subtarget, DAG))
     return Shift;
 
   // Try to use byte rotation instructions.
@@ -11562,9 +11588,7 @@ static SDValue lower256BitVectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   // If we have a single input to the zero element, insert that into V1 if we
   // can do so cheaply.
   int NumElts = VT.getVectorNumElements();
-  int NumV2Elements = std::count_if(Mask.begin(), Mask.end(), [NumElts](int M) {
-    return M >= NumElts;
-  });
+  int NumV2Elements = count_if(Mask, [NumElts](int M) { return M >= NumElts; });
 
   if (NumV2Elements == 1 && Mask[0] >= NumElts)
     if (SDValue Insertion = lowerVectorShuffleAsElementInsertion(
@@ -11630,7 +11654,7 @@ static SDValue lowerV4X128VectorShuffle(SDLoc DL, MVT VT,
 
   // To handle 256 bit vector requires VLX and most probably
   // function lowerV2X128VectorShuffle() is better solution.
-  assert(VT.is512BitVector() && "Unexpected vector size for 128bit shuffle.");
+  assert(VT.is512BitVector() && "Unexpected vector size for 512bit shuffle.");
 
   SmallVector<int, 4> WidenedMask;
   if (!canWidenShuffleElements(Mask, WidenedMask))
@@ -11740,6 +11764,11 @@ static SDValue lowerV8I64VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
           lowerV4X128VectorShuffle(DL, MVT::v8i64, Mask, V1, V2, DAG))
     return Shuf128;
 
+  // Try to use shift instructions.
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v8i64, V1, V2, Mask,
+                                                Subtarget, DAG))
+    return Shift;
+
   if (SDValue Unpck =
           lowerVectorShuffleWithUNPCK(DL, MVT::v8i64, Mask, V1, V2, DAG))
     return Unpck;
@@ -11758,6 +11787,11 @@ static SDValue lowerV16I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   ArrayRef<int> Mask = SVOp->getMask();
   assert(Mask.size() == 16 && "Unexpected mask size for v16 shuffle!");
 
+  // Try to use shift instructions.
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v16i32, V1, V2, Mask,
+                                                Subtarget, DAG))
+    return Shift;
+
   if (SDValue Unpck =
           lowerVectorShuffleWithUNPCK(DL, MVT::v16i32, Mask, V1, V2, DAG))
     return Unpck;
@@ -11765,7 +11799,7 @@ static SDValue lowerV16I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   // Try to use byte rotation instructions.
   if (Subtarget.hasBWI())
     if (SDValue Rotate = lowerVectorShuffleAsByteRotate(
-            DL, MVT::v32i16, V1, V2, Mask, Subtarget, DAG))
+            DL, MVT::v16i32, V1, V2, Mask, Subtarget, DAG))
       return Rotate;
 
   return lowerVectorShuffleWithPERMV(DL, MVT::v16i32, Mask, V1, V2, DAG);
@@ -11783,10 +11817,26 @@ static SDValue lowerV32I16VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   assert(Mask.size() == 32 && "Unexpected mask size for v32 shuffle!");
   assert(Subtarget.hasBWI() && "We can only lower v32i16 with AVX-512-BWI!");
 
+  // Try to use shift instructions.
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v32i16, V1, V2, Mask,
+                                                Subtarget, DAG))
+    return Shift;
+
   // Try to use byte rotation instructions.
   if (SDValue Rotate = lowerVectorShuffleAsByteRotate(
           DL, MVT::v32i16, V1, V2, Mask, Subtarget, DAG))
     return Rotate;
+
+  if (isSingleInputShuffleMask(Mask)) {
+    SmallVector<int, 8> RepeatedMask;
+    if (is128BitLaneRepeatedShuffleMask(MVT::v32i16, Mask, RepeatedMask)) {
+      // As this is a single-input shuffle, the repeated mask should be
+      // a strictly valid v8i16 mask that we can pass through to the v8i16
+      // lowering to handle even the v32 case.
+      return lowerV8I16GeneralSingleInputVectorShuffle(
+          DL, MVT::v32i16, V1, RepeatedMask, Subtarget, DAG);
+    }
+  }
 
   return lowerVectorShuffleWithPERMV(DL, MVT::v32i16, Mask, V1, V2, DAG);
 }
@@ -11802,6 +11852,11 @@ static SDValue lowerV64I8VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   ArrayRef<int> Mask = SVOp->getMask();
   assert(Mask.size() == 64 && "Unexpected mask size for v64 shuffle!");
   assert(Subtarget.hasBWI() && "We can only lower v64i8 with AVX-512-BWI!");
+
+  // Try to use shift instructions.
+  if (SDValue Shift = lowerVectorShuffleAsShift(DL, MVT::v64i8, V1, V2, Mask,
+                                                Subtarget, DAG))
+    return Shift;
 
   // Try to use byte rotation instructions.
   if (SDValue Rotate = lowerVectorShuffleAsByteRotate(
@@ -11845,20 +11900,13 @@ static SDValue lower512BitVectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   case MVT::v16i32:
     return lowerV16I32VectorShuffle(Op, V1, V2, Subtarget, DAG);
   case MVT::v32i16:
-    if (Subtarget.hasBWI())
-      return lowerV32I16VectorShuffle(Op, V1, V2, Subtarget, DAG);
-    break;
+    return lowerV32I16VectorShuffle(Op, V1, V2, Subtarget, DAG);
   case MVT::v64i8:
-    if (Subtarget.hasBWI())
-      return lowerV64I8VectorShuffle(Op, V1, V2, Subtarget, DAG);
-    break;
+    return lowerV64I8VectorShuffle(Op, V1, V2, Subtarget, DAG);
 
   default:
     llvm_unreachable("Not a valid 512-bit x86 vector type!");
   }
-
-  // Otherwise fall back on splitting.
-  return splitAndLowerVectorShuffle(DL, VT, V1, V2, Mask, DAG);
 }
 
 // Lower vXi1 vector shuffles.
@@ -17622,14 +17670,6 @@ static SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, const X86Subtarget &Subtarget
                                     Mask.getSimpleValueType().getSizeInBits());
       Mask = DAG.getBitcast(MaskVT, Mask);
       return DAG.getNode(IntrData->Opc0, dl, Op.getValueType(), Mask);
-    }
-    case BLEND: {
-      SDValue Mask = Op.getOperand(3);
-      MVT VT = Op.getSimpleValueType();
-      MVT MaskVT = MVT::getVectorVT(MVT::i1, VT.getVectorNumElements());
-      SDValue VMask = getMaskNode(Mask, MaskVT, Subtarget, DAG, dl);
-      return DAG.getNode(IntrData->Opc0, dl, VT, VMask, Op.getOperand(1),
-                         Op.getOperand(2));
     }
     case KUNPCK: {
       MVT VT = Op.getSimpleValueType();
@@ -24602,23 +24642,27 @@ static bool combineX86ShuffleChain(SDValue Input, SDValue Root,
   }
 
   // Attempt to blend with zero.
-  if (VT.getVectorNumElements() <= 8 &&
+  if (NumMaskElts <= 8 &&
       ((Subtarget.hasSSE41() && VT.is128BitVector()) ||
        (Subtarget.hasAVX() && VT.is256BitVector()))) {
     // Convert VT to a type compatible with X86ISD::BLENDI.
     // TODO - add 16i16 support (requires lane duplication).
-    MVT ShuffleVT = VT;
+    bool FloatDomain = VT.isFloatingPoint();
+    MVT ShuffleVT = FloatDomain ? MVT::getFloatingPointVT(MaskEltSizeInBits)
+                                : MVT::getIntegerVT(MaskEltSizeInBits);
+    ShuffleVT = MVT::getVectorVT(ShuffleVT, NumMaskElts);
+
     if (Subtarget.hasAVX2()) {
-      if (VT == MVT::v4i64)
+      if (ShuffleVT == MVT::v4i64)
         ShuffleVT = MVT::v8i32;
-      else if (VT == MVT::v2i64)
+      else if (ShuffleVT == MVT::v2i64)
         ShuffleVT = MVT::v4i32;
     } else {
-      if (VT == MVT::v2i64 || VT == MVT::v4i32)
+      if (ShuffleVT == MVT::v2i64 || ShuffleVT == MVT::v4i32)
         ShuffleVT = MVT::v8i16;
-      else if (VT == MVT::v4i64)
+      else if (ShuffleVT == MVT::v4i64)
         ShuffleVT = MVT::v4f64;
-      else if (VT == MVT::v8i32)
+      else if (ShuffleVT == MVT::v8i32)
         ShuffleVT = MVT::v8f32;
     }
 
@@ -26893,7 +26937,7 @@ static SDValue combineShiftLeft(SDNode *N, SelectionDAG &DAG) {
       N0.getOperand(1).getOpcode() == ISD::Constant) {
     SDValue N00 = N0.getOperand(0);
     APInt Mask = cast<ConstantSDNode>(N0.getOperand(1))->getAPIntValue();
-    APInt ShAmt = N1C->getAPIntValue();
+    const APInt &ShAmt = N1C->getAPIntValue();
     Mask = Mask.shl(ShAmt);
     bool MaskOK = false;
     // We can handle cases concerning bit-widening nodes containing setcc_c if
@@ -27009,7 +27053,7 @@ static SDValue performShiftToAllZeros(SDNode *N, SelectionDAG &DAG,
   SDLoc DL(N);
   if (auto *AmtBV = dyn_cast<BuildVectorSDNode>(Amt))
     if (auto *AmtSplat = AmtBV->getConstantSplatNode()) {
-      APInt ShiftAmt = AmtSplat->getAPIntValue();
+      const APInt &ShiftAmt = AmtSplat->getAPIntValue();
       unsigned MaxAmount =
         VT.getSimpleVT().getVectorElementType().getSizeInBits();
 
@@ -30295,7 +30339,7 @@ static bool clobbersFlagRegisters(const SmallVector<StringRef, 4> &AsmPieces) {
 bool X86TargetLowering::ExpandInlineAsm(CallInst *CI) const {
   InlineAsm *IA = cast<InlineAsm>(CI->getCalledValue());
 
-  std::string AsmStr = IA->getAsmString();
+  const std::string &AsmStr = IA->getAsmString();
 
   IntegerType *Ty = dyn_cast<IntegerType>(CI->getType());
   if (!Ty || Ty->getBitWidth() % 16 != 0)

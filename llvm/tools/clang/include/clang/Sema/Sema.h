@@ -2567,6 +2567,8 @@ public:
   resolveAddressOfOnlyViableOverloadCandidate(Expr *E,
                                               DeclAccessPair &FoundResult);
 
+  bool resolveAndFixAddressOfOnlyViableOverloadCandidate(ExprResult &SrcExpr);
+
   FunctionDecl *
   ResolveSingleFunctionTemplateSpecialization(OverloadExpr *ovl,
                                               bool Complain = false,
@@ -4276,6 +4278,17 @@ public:
   BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                         NamedDecl *FoundDecl,
                         CXXConstructorDecl *Constructor, MultiExprArg Exprs,
+                        bool HadMultipleCandidates, bool IsListInitialization,
+                        bool IsStdInitListInitialization,
+                        bool RequiresZeroInit, unsigned ConstructKind,
+                        SourceRange ParenRange);
+
+  /// Build a CXXConstructExpr whose constructor has already been resolved if
+  /// it denotes an inherited constructor.
+  ExprResult
+  BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
+                        CXXConstructorDecl *Constructor, bool Elidable,
+                        MultiExprArg Exprs,
                         bool HadMultipleCandidates, bool IsListInitialization,
                         bool IsStdInitListInitialization,
                         bool RequiresZeroInit, unsigned ConstructKind,

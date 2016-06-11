@@ -471,7 +471,7 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
       continue;
     }
 
-    // We found our guy.
+    // We found the right previous declaration.
     break;
   }
 
@@ -11495,8 +11495,6 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                                ConstructKind, ParenRange);
 }
 
-/// BuildCXXConstructExpr - Creates a complete call to a constructor,
-/// including handling of its default argument expressions.
 ExprResult
 Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                             NamedDecl *FoundDecl,
@@ -11509,9 +11507,28 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
                             bool RequiresZeroInit,
                             unsigned ConstructKind,
                             SourceRange ParenRange) {
+  return BuildCXXConstructExpr(
+      ConstructLoc, DeclInitType, Constructor, Elidable, ExprArgs,
+      HadMultipleCandidates, IsListInitialization, IsStdInitListInitialization,
+      RequiresZeroInit, ConstructKind, ParenRange);
+}
+
+/// BuildCXXConstructExpr - Creates a complete call to a constructor,
+/// including handling of its default argument expressions.
+ExprResult
+Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
+                            CXXConstructorDecl *Constructor,
+                            bool Elidable,
+                            MultiExprArg ExprArgs,
+                            bool HadMultipleCandidates,
+                            bool IsListInitialization,
+                            bool IsStdInitListInitialization,
+                            bool RequiresZeroInit,
+                            unsigned ConstructKind,
+                            SourceRange ParenRange) {
   MarkFunctionReferenced(ConstructLoc, Constructor);
   return CXXConstructExpr::Create(
-      Context, DeclInitType, ConstructLoc, FoundDecl, Constructor, Elidable,
+      Context, DeclInitType, ConstructLoc, Constructor, Elidable,
       ExprArgs, HadMultipleCandidates, IsListInitialization,
       IsStdInitListInitialization, RequiresZeroInit,
       static_cast<CXXConstructExpr::ConstructionKind>(ConstructKind),
@@ -12204,6 +12221,11 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
   // N2844 forbids rvalue references.
   if (!ExDeclType->isDependentType() && ExDeclType->isRValueReferenceType()) {
     Diag(Loc, diag::err_catch_rvalue_ref);
+    Invalid = true;
+  }
+
+  if (ExDeclType->isVariablyModifiedType()) {
+    Diag(Loc, diag::err_catch_variably_modified) << ExDeclType;
     Invalid = true;
   }
 

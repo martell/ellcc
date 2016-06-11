@@ -142,7 +142,10 @@ private:
       // static_assert, if and while usually contain expressions.
       Contexts.back().IsExpression = true;
     } else if (Style.Language == FormatStyle::LK_JavaScript && Left->Previous &&
-               Left->Previous->is(Keywords.kw_function)) {
+               (Left->Previous->is(Keywords.kw_function) ||
+                (Left->Previous->endsSequence(tok::identifier,
+                                              Keywords.kw_function)))) {
+      // function(...) or function f(...)
       Contexts.back().IsExpression = false;
     } else if (Left->Previous && Left->Previous->is(tok::r_square) &&
                Left->Previous->MatchingParen &&
@@ -1989,10 +1992,7 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
   if (Left.is(tok::l_square) && Right.is(tok::amp))
     return false;
   if (Right.is(TT_PointerOrReference))
-    return (Left.is(tok::r_paren) && Left.MatchingParen &&
-            (Left.MatchingParen->is(TT_OverloadedOperatorLParen) ||
-             (Left.MatchingParen->Previous &&
-              Left.MatchingParen->Previous->is(TT_FunctionDeclarationName)))) ||
+    return (Left.is(tok::r_paren) && Line.MightBeFunctionDecl) ||
            (Left.Tok.isLiteral() ||
             (!Left.isOneOf(TT_PointerOrReference, tok::l_paren) &&
              (Style.PointerAlignment != FormatStyle::PAS_Left ||

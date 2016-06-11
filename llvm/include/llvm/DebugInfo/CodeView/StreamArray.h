@@ -97,6 +97,8 @@ public:
 
   const Extractor &getExtractor() const { return E; }
 
+  StreamRef getUnderlyingStream() const { return Stream; }
+
 private:
   StreamRef Stream;
   Extractor E;
@@ -223,6 +225,8 @@ public:
   FixedStreamArrayIterator<T> end() const {
     return FixedStreamArrayIterator<T>(*this, size());
   }
+
+  StreamRef getUnderlyingStream() const { return Stream; }
 
 private:
   StreamRef Stream;
