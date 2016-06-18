@@ -85,7 +85,7 @@ insertNoop(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI) const {
 
 void MBlazeInstrInfo::
 copyPhysReg(MachineBasicBlock &MBB,
-            MachineBasicBlock::iterator I, DebugLoc DL,
+            MachineBasicBlock::iterator I, const DebugLoc &DL,
             unsigned DestReg, unsigned SrcReg,
             bool KillSrc) const {
   llvm::BuildMI(MBB, I, DL, get(MBlaze::ADDK), DestReg)
@@ -189,7 +189,7 @@ bool MBlazeInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 unsigned MBlazeInstrInfo::
 InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
              MachineBasicBlock *FBB,
-             ArrayRef<MachineOperand> Cond, DebugLoc DL) const {
+             ArrayRef<MachineOperand> Cond, const DebugLoc &DL) const {
   // Shouldn't be a fall through.
   assert(TBB && "InsertBranch must not be told to insert a fallthrough");
   assert((Cond.size() == 2 || Cond.size() == 0) &&

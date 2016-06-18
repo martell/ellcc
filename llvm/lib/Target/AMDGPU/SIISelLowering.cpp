@@ -200,6 +200,7 @@ SITargetLowering::SITargetLowering(TargetMachine &TM,
 
   // On SI this is s_memtime and s_memrealtime on VI.
   setOperationAction(ISD::READCYCLECOUNTER, MVT::i64, Legal);
+  setOperationAction(ISD::TRAP, MVT::Other, Custom);
 
   setOperationAction(ISD::FMINNUM, MVT::f64, Legal);
   setOperationAction(ISD::FMAXNUM, MVT::f64, Legal);
@@ -536,7 +537,7 @@ bool SITargetLowering::isTypeDesirableForOp(unsigned Op, EVT VT) const {
 }
 
 SDValue SITargetLowering::LowerParameter(SelectionDAG &DAG, EVT VT, EVT MemVT,
-                                         SDLoc SL, SDValue Chain,
+                                         const SDLoc &SL, SDValue Chain,
                                          unsigned Offset, bool Signed) const {
   const DataLayout &DL = DAG.getDataLayout();
   MachineFunction &MF = DAG.getMachineFunction();
@@ -572,8 +573,8 @@ SDValue SITargetLowering::LowerParameter(SelectionDAG &DAG, EVT VT, EVT MemVT,
 
 SDValue SITargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
-    const SmallVectorImpl<ISD::InputArg> &Ins, SDLoc DL, SelectionDAG &DAG,
-    SmallVectorImpl<SDValue> &InVals) const {
+    const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
+    SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
   const SIRegisterInfo *TRI =
       static_cast<const SIRegisterInfo *>(Subtarget->getRegisterInfo());
 
@@ -916,12 +917,12 @@ SDValue SITargetLowering::LowerFormalArguments(
   return DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Chains);
 }
 
-SDValue SITargetLowering::LowerReturn(SDValue Chain,
-                                      CallingConv::ID CallConv,
-                                      bool isVarArg,
-                                      const SmallVectorImpl<ISD::OutputArg> &Outs,
-                                      const SmallVectorImpl<SDValue> &OutVals,
-                                      SDLoc DL, SelectionDAG &DAG) const {
+SDValue
+SITargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
+                              bool isVarArg,
+                              const SmallVectorImpl<ISD::OutputArg> &Outs,
+                              const SmallVectorImpl<SDValue> &OutVals,
+                              const SDLoc &DL, SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
   SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
 
@@ -1178,6 +1179,7 @@ SDValue SITargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::INTRINSIC_W_CHAIN: return LowerINTRINSIC_W_CHAIN(Op, DAG);
   case ISD::INTRINSIC_VOID: return LowerINTRINSIC_VOID(Op, DAG);
   case ISD::ADDRSPACECAST: return lowerADDRSPACECAST(Op, DAG);
+  case ISD::TRAP: return lowerTRAP(Op, DAG);
   }
   return SDValue();
 }
@@ -1416,8 +1418,59 @@ SDValue SITargetLowering::lowerADDRSPACECAST(SDValue Op,
   return DAG.getUNDEF(ASC->getValueType(0));
 }
 
-SDValue SITargetLowering::copyToM0(SelectionDAG &DAG, SDValue Chain, SDLoc DL,
-                                   SDValue V) const {
+SDValue SITargetLowering::LowerGlobalAddress(AMDGPUMachineFunction *MFI,
+                                             SDValue Op,
+                                             SelectionDAG &DAG) const {
+  GlobalAddressSDNode *GSD = cast<GlobalAddressSDNode>(Op);
+
+  if (GSD->getAddressSpace() != AMDGPUAS::CONSTANT_ADDRESS)
+    return AMDGPUTargetLowering::LowerGlobalAddress(MFI, Op, DAG);
+
+  SDLoc DL(GSD);
+  const GlobalValue *GV = GSD->getGlobal();
+  EVT PtrVT = Op.getValueType();
+
+  // In order to support pc-relative addressing, the PC_ADD_REL_OFFSET SDNode is
+  // lowered to the following code sequence:
+  // s_getpc_b64 s[0:1]
+  // s_add_u32 s0, s0, $symbol
+  // s_addc_u32 s1, s1, 0
+  //
+  // s_getpc_b64 returns the address of the s_add_u32 instruction and then
+  // a fixup or relocation is emitted to replace $symbol with a literal
+  // constant, which is a pc-relative offset from the encoding of the $symbol
+  // operand to the global variable.
+  //
+  // What we want here is an offset from the value returned by s_getpc
+  // (which is the address of the s_add_u32 instruction) to the global
+  // variable, but since the encoding of $symbol starts 4 bytes after the start
+  // of the s_add_u32 instruction, we end up with an offset that is 4 bytes too
+  // small. This requires us to add 4 to the global variable offset in order to
+  // compute the correct address.
+  SDValue GA = DAG.getTargetGlobalAddress(GV, DL, MVT::i32,
+                                          GSD->getOffset() + 4);
+  return DAG.getNode(AMDGPUISD::PC_ADD_REL_OFFSET, DL, PtrVT, GA);
+}
+
+SDValue SITargetLowering::lowerTRAP(SDValue Op,
+                                    SelectionDAG &DAG) const {
+  const MachineFunction &MF = DAG.getMachineFunction();
+  DiagnosticInfoUnsupported NoTrap(*MF.getFunction(),
+                                   "trap handler not supported",
+                                   Op.getDebugLoc(),
+                                   DS_Warning);
+  DAG.getContext()->diagnose(NoTrap);
+
+  // Emit s_endpgm.
+
+  // FIXME: This should really be selected to s_trap, but that requires
+  // setting up the trap handler for it o do anything.
+  return DAG.getNode(AMDGPUISD::RET_FLAG, SDLoc(Op), MVT::Other, Op.
+                     getOperand(0));
+}
+
+SDValue SITargetLowering::copyToM0(SelectionDAG &DAG, SDValue Chain,
+                                   const SDLoc &DL, SDValue V) const {
   // We can't use S_MOV_B32 directly, because there is no way to specify m0 as
   // the destination register.
   //
@@ -2575,11 +2628,8 @@ static unsigned minMaxOpcToMin3Max3Opc(unsigned Opc) {
   }
 }
 
-static SDValue performIntMed3ImmCombine(SelectionDAG &DAG,
-                                        SDLoc SL,
-                                        SDValue Op0,
-                                        SDValue Op1,
-                                        bool Signed) {
+static SDValue performIntMed3ImmCombine(SelectionDAG &DAG, const SDLoc &SL,
+                                        SDValue Op0, SDValue Op1, bool Signed) {
   ConstantSDNode *K1 = dyn_cast<ConstantSDNode>(Op1);
   if (!K1)
     return SDValue();
@@ -2609,10 +2659,8 @@ static bool isKnownNeverSNan(SelectionDAG &DAG, SDValue Op) {
   return DAG.isKnownNeverNaN(Op);
 }
 
-static SDValue performFPMed3ImmCombine(SelectionDAG &DAG,
-                                       SDLoc SL,
-                                       SDValue Op0,
-                                       SDValue Op1) {
+static SDValue performFPMed3ImmCombine(SelectionDAG &DAG, const SDLoc &SL,
+                                       SDValue Op0, SDValue Op1) {
   ConstantFPSDNode *K1 = dyn_cast<ConstantFPSDNode>(Op1);
   if (!K1)
     return SDValue();
@@ -3166,13 +3214,14 @@ void SITargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
   }
 }
 
-static SDValue buildSMovImm32(SelectionDAG &DAG, SDLoc DL, uint64_t Val) {
+static SDValue buildSMovImm32(SelectionDAG &DAG, const SDLoc &DL,
+                              uint64_t Val) {
   SDValue K = DAG.getTargetConstant(Val, DL, MVT::i32);
   return SDValue(DAG.getMachineNode(AMDGPU::S_MOV_B32, DL, MVT::i32, K), 0);
 }
 
 MachineSDNode *SITargetLowering::wrapAddr64Rsrc(SelectionDAG &DAG,
-                                                SDLoc DL,
+                                                const SDLoc &DL,
                                                 SDValue Ptr) const {
   const SIInstrInfo *TII =
     static_cast<const SIInstrInfo *>(Subtarget->getInstrInfo());
@@ -3207,10 +3256,8 @@ MachineSDNode *SITargetLowering::wrapAddr64Rsrc(SelectionDAG &DAG,
 ///        The TID (Thread ID) is multiplied by the stride value (bits [61:48]
 ///        of the resource descriptor) to create an offset, which is added to
 ///        the resource pointer.
-MachineSDNode *SITargetLowering::buildRSRC(SelectionDAG &DAG,
-                                           SDLoc DL,
-                                           SDValue Ptr,
-                                           uint32_t RsrcDword1,
+MachineSDNode *SITargetLowering::buildRSRC(SelectionDAG &DAG, const SDLoc &DL,
+                                           SDValue Ptr, uint32_t RsrcDword1,
                                            uint64_t RsrcDword2And3) const {
   SDValue PtrLo = DAG.getTargetExtractSubreg(AMDGPU::sub0, DL, MVT::i32, Ptr);
   SDValue PtrHi = DAG.getTargetExtractSubreg(AMDGPU::sub1, DL, MVT::i32, Ptr);

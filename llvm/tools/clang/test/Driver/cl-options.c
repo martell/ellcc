@@ -59,6 +59,16 @@
 // RUN: %clang_cl /GR- -### -- %s 2>&1 | FileCheck -check-prefix=GR_ %s
 // GR_: -fno-rtti
 
+// Security Buffer Check is on by default.
+// RUN: %clang_cl -### -- %s 2>&1 | FileCheck -check-prefix=GS-default %s
+// GS-default: "-stack-protector" "2"
+
+// RUN: %clang_cl /GS -### -- %s 2>&1 | FileCheck -check-prefix=GS %s
+// GS: "-stack-protector" "2"
+
+// RUN: %clang_cl /GS- -### -- %s 2>&1 | FileCheck -check-prefix=GS_ %s
+// GS_-NOT: -stack-protector
+
 // RUN: %clang_cl /Gy -### -- %s 2>&1 | FileCheck -check-prefix=Gy %s
 // Gy: -ffunction-sections
 
@@ -464,6 +474,7 @@
 // RUN:     -fms-extensions \
 // RUN:     -fno-ms-extensions \
 // RUN:     -mllvm -disable-llvm-optzns \
+// RUN:     -resource-dir \
 // RUN:     -Wunused-variable \
 // RUN:     -fmacro-backtrace-limit=0 \
 // RUN:     -Werror /Zs -- %s 2>&1

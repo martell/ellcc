@@ -5100,10 +5100,9 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
   if (!New)
     return nullptr;
 
-  // If this has an identifier and is not an invalid redeclaration or
-  // function template specialization, add it to the scope stack.
-  if (New->getDeclName() && AddToScope &&
-       !(D.isRedeclaration() && New->isInvalidDecl())) {
+  // If this has an identifier and is not a function template specialization,
+  // add it to the scope stack.
+  if (New->getDeclName() && AddToScope) {
     // Only make a locally-scoped extern declaration visible if it is the first
     // declaration of this entity. Qualified lookup for such an entity should
     // only find this declaration if there is no visible declaration of it.
@@ -11177,7 +11176,7 @@ static void RebuildLambdaScopeInfo(CXXMethodDecl *CallOperator,
 
     } else if (C.capturesThis()) {
       LSI->addThisCapture(/*Nested*/ false, C.getLocation(),
-                              S.getCurrentThisType(), /*Expr*/ nullptr,
+                              /*Expr*/ nullptr,
                               C.getCaptureKind() == LCK_StarThis);
     } else {
       LSI->addVLATypeCapture(C.getLocation(), I->getType());
@@ -11385,7 +11384,7 @@ Decl *Sema::ActOnSkippedFunctionBody(Decl *Decl) {
     FD->setHasSkippedBody();
   else if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(Decl))
     MD->setHasSkippedBody();
-  return ActOnFinishFunctionBody(Decl, nullptr);
+  return Decl;
 }
 
 Decl *Sema::ActOnFinishFunctionBody(Decl *D, Stmt *BodyArg) {

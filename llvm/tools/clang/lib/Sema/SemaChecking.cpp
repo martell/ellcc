@@ -1566,9 +1566,6 @@ bool Sema::CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_fpclasspd512_mask:
   case X86::BI__builtin_ia32_fpclasssd_mask:
   case X86::BI__builtin_ia32_fpclassss_mask:
-  case X86::BI__builtin_ia32_pshufd512_mask:
-  case X86::BI__builtin_ia32_pshufd256_mask:
-  case X86::BI__builtin_ia32_pshufd128_mask:
     i = 1; l = 0; u = 255;
     break;
   case X86::BI__builtin_ia32_palignr:
@@ -3988,12 +3985,11 @@ public:
   void HandleNullChar(const char *nullCharacter) override;
 
   template <typename Range>
-  static void EmitFormatDiagnostic(Sema &S, bool inFunctionCall,
-                                   const Expr *ArgumentExpr,
-                                   PartialDiagnostic PDiag,
-                                   SourceLocation StringLoc,
-                                   bool IsStringLocation, Range StringRange,
-                                   ArrayRef<FixItHint> Fixit = None);
+  static void
+  EmitFormatDiagnostic(Sema &S, bool inFunctionCall, const Expr *ArgumentExpr,
+                       const PartialDiagnostic &PDiag, SourceLocation StringLoc,
+                       bool IsStringLocation, Range StringRange,
+                       ArrayRef<FixItHint> Fixit = None);
 
 protected:
   bool HandleInvalidConversionSpecifier(unsigned argIndex, SourceLocation Loc,
@@ -4350,14 +4346,11 @@ void CheckFormatHandler::EmitFormatDiagnostic(PartialDiagnostic PDiag,
 /// templated so it can accept either a CharSourceRange or a SourceRange.
 ///
 /// \param FixIt optional fix it hint for the format string.
-template<typename Range>
-void CheckFormatHandler::EmitFormatDiagnostic(Sema &S, bool InFunctionCall,
-                                              const Expr *ArgumentExpr,
-                                              PartialDiagnostic PDiag,
-                                              SourceLocation Loc,
-                                              bool IsStringLocation,
-                                              Range StringRange,
-                                              ArrayRef<FixItHint> FixIt) {
+template <typename Range>
+void CheckFormatHandler::EmitFormatDiagnostic(
+    Sema &S, bool InFunctionCall, const Expr *ArgumentExpr,
+    const PartialDiagnostic &PDiag, SourceLocation Loc, bool IsStringLocation,
+    Range StringRange, ArrayRef<FixItHint> FixIt) {
   if (InFunctionCall) {
     const Sema::SemaDiagnosticBuilder &D = S.Diag(Loc, PDiag);
     D << StringRange;
@@ -7228,9 +7221,8 @@ void CheckTrivialUnsignedComparison(Sema &S, BinaryOperator *E) {
   }
 }
 
-void DiagnoseOutOfRangeComparison(Sema &S, BinaryOperator *E,
-                                  Expr *Constant, Expr *Other,
-                                  llvm::APSInt Value,
+void DiagnoseOutOfRangeComparison(Sema &S, BinaryOperator *E, Expr *Constant,
+                                  Expr *Other, const llvm::APSInt &Value,
                                   bool RhsConstant) {
   // Disable warning in template instantiations.
   if (!S.ActiveTemplateInstantiations.empty())
@@ -8368,7 +8360,7 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
 // Helper function for Sema::DiagnoseAlwaysNonNullPointer.
 // Returns true when emitting a warning about taking the address of a reference.
 static bool CheckForReference(Sema &SemaRef, const Expr *E,
-                              PartialDiagnostic PD) {
+                              const PartialDiagnostic &PD) {
   E = E->IgnoreParenImpCasts();
 
   const FunctionDecl *FD = nullptr;
@@ -8463,7 +8455,8 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
     }
   }
 
-  auto ComplainAboutNonnullParamOrCall = [&](bool IsParam) {
+  auto ComplainAboutNonnullParamOrCall = [&](const Attr *NonnullAttr) {
+    bool IsParam = isa<NonNullAttr>(NonnullAttr);
     std::string Str;
     llvm::raw_string_ostream S(Str);
     E->printPretty(S, nullptr, getPrintingPolicy());
@@ -8471,13 +8464,14 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
                                 : diag::warn_cast_nonnull_to_bool;
     Diag(E->getExprLoc(), DiagID) << IsParam << S.str()
       << E->getSourceRange() << Range << IsEqual;
+    Diag(NonnullAttr->getLocation(), diag::note_declared_nonnull) << IsParam;
   };
 
   // If we have a CallExpr that is tagged with returns_nonnull, we can complain.
   if (auto *Call = dyn_cast<CallExpr>(E->IgnoreParenImpCasts())) {
     if (auto *Callee = Call->getDirectCallee()) {
-      if (Callee->hasAttr<ReturnsNonNullAttr>()) {
-        ComplainAboutNonnullParamOrCall(false);
+      if (const Attr *A = Callee->getAttr<ReturnsNonNullAttr>()) {
+        ComplainAboutNonnullParamOrCall(A);
         return;
       }
     }
@@ -8499,8 +8493,8 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
   if (const auto* PV = dyn_cast<ParmVarDecl>(D)) {
     if (getCurFunction() &&
         !getCurFunction()->ModifiedNonNullParams.count(PV)) {
-      if (PV->hasAttr<NonNullAttr>()) {
-        ComplainAboutNonnullParamOrCall(true);
+      if (const Attr *A = PV->getAttr<NonNullAttr>()) {
+        ComplainAboutNonnullParamOrCall(A);
         return;
       }
 
@@ -8511,13 +8505,13 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
 
         for (const auto *NonNull : FD->specific_attrs<NonNullAttr>()) {
           if (!NonNull->args_size()) {
-              ComplainAboutNonnullParamOrCall(true);
+              ComplainAboutNonnullParamOrCall(NonNull);
               return;
           }
 
           for (unsigned ArgNo : NonNull->args()) {
             if (ArgNo == ParamNo) {
-              ComplainAboutNonnullParamOrCall(true);
+              ComplainAboutNonnullParamOrCall(NonNull);
               return;
             }
           }
@@ -9321,7 +9315,7 @@ static const Type* getElementType(const Expr *BaseExpr) {
 ///
 /// We avoid emitting out-of-bounds access warnings for such arrays as they are
 /// commonly used to emulate flexible arrays in C89 code.
-static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
+static bool IsTailPaddedMemberArray(Sema &S, const llvm::APInt &Size,
                                     const NamedDecl *ND) {
   if (Size != 1 || !ND) return false;
 

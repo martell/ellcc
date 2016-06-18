@@ -65,6 +65,12 @@ static void initialize(TargetLibraryInfoImpl &TLI, const Triple &T,
     TLI.setUnavailable(LibFunc::ldexp);
     TLI.setUnavailable(LibFunc::ldexpf);
     TLI.setUnavailable(LibFunc::ldexpl);
+    TLI.setUnavailable(LibFunc::exp10);
+    TLI.setUnavailable(LibFunc::exp10f);
+    TLI.setUnavailable(LibFunc::exp10l);
+    TLI.setUnavailable(LibFunc::log10);
+    TLI.setUnavailable(LibFunc::log10f);
+    TLI.setUnavailable(LibFunc::log10l);
   }
 
   // There are no library implementations of mempcy and memset for AMD gpus and
@@ -891,6 +897,9 @@ bool TargetLibraryInfoImpl::isValidProtoForLibFunc(const FunctionType &FTy,
   case LibFunc::cos:
   case LibFunc::cosf:
   case LibFunc::cosl:
+  case LibFunc::tan:
+  case LibFunc::tanf:
+  case LibFunc::tanl:
   case LibFunc::exp:
   case LibFunc::expf:
   case LibFunc::expl:
@@ -1118,14 +1127,16 @@ StringRef TargetLibraryInfoImpl::getScalarizedFunction(StringRef F,
   return I->ScalarFnName;
 }
 
-TargetLibraryInfo TargetLibraryAnalysis::run(Module &M) {
+TargetLibraryInfo TargetLibraryAnalysis::run(Module &M,
+                                             ModuleAnalysisManager &) {
   if (PresetInfoImpl)
     return TargetLibraryInfo(*PresetInfoImpl);
 
   return TargetLibraryInfo(lookupInfoImpl(Triple(M.getTargetTriple())));
 }
 
-TargetLibraryInfo TargetLibraryAnalysis::run(Function &F) {
+TargetLibraryInfo TargetLibraryAnalysis::run(Function &F,
+                                             FunctionAnalysisManager &) {
   if (PresetInfoImpl)
     return TargetLibraryInfo(*PresetInfoImpl);
 

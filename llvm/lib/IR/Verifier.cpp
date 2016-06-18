@@ -452,8 +452,7 @@ private:
                             bool isReturnValue, const Value *V);
   void verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
                            const Value *V);
-  void verifyFunctionMetadata(
-      const SmallVector<std::pair<unsigned, MDNode *>, 4> MDs);
+  void verifyFunctionMetadata(ArrayRef<std::pair<unsigned, MDNode *>> MDs);
 
   void visitConstantExprsRecursively(const Constant *EntryC);
   void visitConstantExpr(const ConstantExpr *CE);
@@ -1536,7 +1535,7 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
   if (Attrs.hasAttribute(AttributeSet::FunctionIndex,
                          Attribute::JumpTable)) {
     const GlobalValue *GV = cast<GlobalValue>(V);
-    Assert(GV->hasUnnamedAddr(),
+    Assert(GV->hasGlobalUnnamedAddr(),
            "Attribute 'jumptable' requires 'unnamed_addr'", V);
   }
 
@@ -1569,10 +1568,7 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
 }
 
 void Verifier::verifyFunctionMetadata(
-    const SmallVector<std::pair<unsigned, MDNode *>, 4> MDs) {
-  if (MDs.empty())
-    return;
-
+    ArrayRef<std::pair<unsigned, MDNode *>> MDs) {
   for (const auto &Pair : MDs) {
     if (Pair.first == LLVMContext::MD_prof) {
       MDNode *MD = Pair.second;
@@ -1980,7 +1976,7 @@ void Verifier::visitFunction(const Function &F) {
              "blockaddress may not be used with the entry block!", Entry);
     }
 
-    unsigned NumDebugAttachments = 0;
+    unsigned NumDebugAttachments = 0, NumProfAttachments = 0;
     // Visit metadata attachments.
     for (const auto &I : MDs) {
       // Verify that the attachment is legal.
@@ -1993,6 +1989,11 @@ void Verifier::visitFunction(const Function &F) {
                  "function must have a single !dbg attachment", &F, I.second);
         AssertDI(isa<DISubprogram>(I.second),
                  "function !dbg attachment must be a subprogram", &F, I.second);
+        break;
+      case LLVMContext::MD_prof:
+        ++NumProfAttachments;
+        Assert(NumProfAttachments == 1,
+               "function must have a single !prof attachment", &F, I.second);
         break;
       }
 
@@ -4511,13 +4512,15 @@ FunctionPass *llvm::createVerifierPass(bool FatalErrors) {
 }
 
 char VerifierAnalysis::PassID;
-VerifierAnalysis::Result VerifierAnalysis::run(Module &M) {
+VerifierAnalysis::Result VerifierAnalysis::run(Module &M,
+                                               ModuleAnalysisManager &) {
   Result Res;
   Res.IRBroken = llvm::verifyModule(M, &dbgs(), &Res.DebugInfoBroken);
   return Res;
 }
 
-VerifierAnalysis::Result VerifierAnalysis::run(Function &F) {
+VerifierAnalysis::Result VerifierAnalysis::run(Function &F,
+                                               FunctionAnalysisManager &) {
   return { llvm::verifyFunction(F, &dbgs()), false };
 }
 

@@ -5494,6 +5494,7 @@ TEST_F(FormatTest, UnderstandsTemplateParameters) {
 
 TEST_F(FormatTest, UnderstandsBinaryOperators) {
   verifyFormat("COMPARE(a, ==, b);");
+  verifyFormat("auto s = sizeof...(Ts) - 1;");
 }
 
 TEST_F(FormatTest, UnderstandsPointersToMembers) {
@@ -5626,6 +5627,7 @@ TEST_F(FormatTest, UnderstandsFunctionRefQualification) {
   verifyFormat("SomeType MemberFunction(const Deleted &) && {}");
   verifyFormat("SomeType MemberFunction(const Deleted &) && final {}");
   verifyFormat("SomeType MemberFunction(const Deleted &) && override {}");
+  verifyFormat("SomeType MemberFunction(const Deleted &) const &;");
 
   FormatStyle AlignLeft = getLLVMStyle();
   AlignLeft.PointerAlignment = FormatStyle::PAS_Left;
@@ -5639,6 +5641,7 @@ TEST_F(FormatTest, UnderstandsFunctionRefQualification) {
   verifyFormat("auto Function(T... t) & -> void {}", AlignLeft);
   verifyFormat("auto Function(T) & -> void {}", AlignLeft);
   verifyFormat("auto Function(T) & -> void;", AlignLeft);
+  verifyFormat("SomeType MemberFunction(const Deleted&) const &;", AlignLeft);
 
   FormatStyle Spaces = getLLVMStyle();
   Spaces.SpacesInCStyleCastParentheses = true;
@@ -5752,6 +5755,7 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
       "    aaaaaaaaaaaaaaaaaaaaaaaaaaaa, *aaaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
 
+  verifyGoogleFormat("int const* a = &b;");
   verifyGoogleFormat("**outparam = 1;");
   verifyGoogleFormat("*outparam = a * b;");
   verifyGoogleFormat("int main(int argc, char** argv) {}");
@@ -6094,6 +6098,7 @@ TEST_F(FormatTest, FormatsFunctionTypes) {
   verifyFormat("some_var = function(*some_pointer_var)[0];");
   verifyFormat("void f() { function(*some_pointer_var)[0] = 10; }");
   verifyFormat("int x = f(&h)();");
+  verifyFormat("returnsFunction(&param1, &param2)(param);");
 }
 
 TEST_F(FormatTest, FormatsPointersToArrayTypes) {
@@ -10997,6 +11002,10 @@ TEST_F(FormatTest, FormatsLambdas) {
       "      return aaaaaaaaaaaaaaaaa;\n"
       "    });",
       getLLVMStyleWithColumns(70));
+  verifyFormat("[]() //\n"
+               "    -> int {\n"
+               "  return 1; //\n"
+               "};");
 
   // Multiple lambdas in the same parentheses change indentation rules.
   verifyFormat("SomeFunction(\n"

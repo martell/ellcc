@@ -17,6 +17,7 @@
 #include "interception/interception.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_libc.h"
+#include "sanitizer_common/sanitizer_linux.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
 
 using namespace __esan; // NOLINT
@@ -337,6 +338,12 @@ INTERCEPTOR(int, rmdir, char *path) {
 
 INTERCEPTOR(void *, mmap, void *addr, SIZE_T sz, int prot, int flags,
                  int fd, OFF_T off) {
+  if (UNLIKELY(REAL(mmap) == nullptr)) {
+    // With esan init during interceptor init and a static libc preventing
+    // our early-calloc from triggering, we can end up here before our
+    // REAL pointer is set up.
+    return (void *)internal_mmap(addr, sz, prot, flags, fd, off);
+  }
   void *ctx;
   COMMON_INTERCEPTOR_ENTER(ctx, mmap, addr, sz, prot, flags, fd, off);
   if (!fixMmapAddr(&addr, sz, flags))
@@ -397,6 +404,11 @@ INTERCEPTOR(int, sigaction, int signum, const struct sigaction *act,
 // This is required to properly use internal_sigaction.
 namespace __sanitizer {
 int real_sigaction(int signum, const void *act, void *oldact) {
+  if (REAL(sigaction) == nullptr) {
+    // With an instrumented allocator, this is called during interceptor init
+    // and we need a raw syscall solution.
+    return internal_sigaction_syscall(signum, act, oldact);
+  }
   return REAL(sigaction)(signum, (const struct sigaction *)act,
                          (struct sigaction *)oldact);
 }

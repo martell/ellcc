@@ -1277,6 +1277,9 @@ def isysroot : JoinedOrSeparate<["-"], "isysroot">, Group<clang_i_Group>, Flags<
 def isystem : JoinedOrSeparate<["-"], "isystem">, Group<clang_i_Group>,
   Flags<[CC1Option]>,
   HelpText<"Add directory to SYSTEM include search path">, MetaVarName<"<directory>">;
+def isystem_after : JoinedOrSeparate<["-"], "isystem-after">,
+  Group<clang_i_Group>, Flags<[DriverOption]>, MetaVarName<"<directory>">,
+  HelpText<"Add directory to end of the SYSTEM include search path">;
 def iwithprefixbefore : JoinedOrSeparate<["-"], "iwithprefixbefore">, Group<clang_i_Group>,
   HelpText<"Set directory to include search path with prefix">, MetaVarName<"<dir>">,
   Flags<[CC1Option]>;
@@ -1776,7 +1779,7 @@ def rewrite_legacy_objc : Flag<["-"], "rewrite-legacy-objc">, Flags<[DriverOptio
   HelpText<"Rewrite Legacy Objective-C source to C++">;
 def rdynamic : Flag<["-"], "rdynamic">;
 def resource_dir : Separate<["-"], "resource-dir">,
-  Flags<[DriverOption, CC1Option, HelpHidden]>,
+  Flags<[DriverOption, CC1Option, CoreOption, HelpHidden]>,
   HelpText<"The directory which holds the compiler resource files">;
 def resource_dir_EQ : Joined<["-"], "resource-dir=">, Flags<[DriverOption]>,
   Alias<resource_dir>;

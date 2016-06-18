@@ -75,26 +75,63 @@ public:
   VersionScriptParser(StringRef S) : ScriptParserBase(S) {}
 
   void run();
+
+private:
+  void parseVersion();
+  void parseLocal();
+  void parseVersionSymbols();
 };
 
-void VersionScriptParser::run() {
+void VersionScriptParser::parseVersion() {
   expect("{");
   if (peek() == "global:") {
     next();
-    while (!Error) {
-      Config->VersionScriptGlobals.push_back(next());
-      expect(";");
-      if (peek() == "local:")
-        break;
-    }
+    parseVersionSymbols();
   }
+  if (peek() == "local:")
+    parseLocal();
+  else
+    parseVersionSymbols();
+
+  expect("}");
+  expect(";");
+}
+
+void VersionScriptParser::parseLocal() {
   expect("local:");
   expect("*");
   expect(";");
-  expect("}");
-  expect(";");
-  if (!atEOF())
-    setError("expected EOF");
+  Config->VersionScriptGlobalByDefault = false;
+}
+
+void VersionScriptParser::parseVersionSymbols() {
+  for (;;) {
+    StringRef Cur = peek();
+    if (Cur == "}" || Cur == "local:")
+      return;
+    next();
+    Config->VersionScriptGlobals.push_back(Cur);
+    expect(";");
+  }
+}
+
+void VersionScriptParser::run() {
+  StringRef Msg = "anonymous version definition is used in "
+                  "combination with other version definitions";
+  if (peek() == "{") {
+    parseVersion();
+    if (!atEOF())
+      setError(Msg);
+    return;
+  }
+
+  while (!atEOF() && !Error) {
+    if (next() == "{") {
+      setError(Msg);
+      return;
+    }
+    parseVersion();
+  }
 }
 
 void elf::parseVersionScript(MemoryBufferRef MB) {

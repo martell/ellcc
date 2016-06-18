@@ -184,30 +184,24 @@ StringRef CGDebugInfo::getFunctionName(const FunctionDecl *FD) {
   FunctionTemplateSpecializationInfo *Info =
       FD->getTemplateSpecializationInfo();
 
-  if (!Info && FII && !CGM.getCodeGenOpts().EmitCodeView)
+  if (!Info && FII)
     return FII->getName();
 
   // Otherwise construct human readable name for debug info.
   SmallString<128> NS;
   llvm::raw_svector_ostream OS(NS);
   PrintingPolicy Policy(CGM.getLangOpts());
+  Policy.MSVCFormatting = CGM.getCodeGenOpts().EmitCodeView;
 
-  if (CGM.getCodeGenOpts().EmitCodeView) {
-    // Print a fully qualified name like MSVC would.
-    Policy.MSVCFormatting = true;
-    FD->printQualifiedName(OS, Policy);
-  } else {
-    // Print the unqualified name with some template arguments. This is what
-    // DWARF-based debuggers expect.
-    FD->printName(OS);
-    // Add any template specialization args.
-    if (Info) {
-      const TemplateArgumentList *TArgs = Info->TemplateArguments;
-      const TemplateArgument *Args = TArgs->data();
-      unsigned NumArgs = TArgs->size();
-      TemplateSpecializationType::PrintTemplateArgumentList(OS, Args, NumArgs,
-                                                            Policy);
-    }
+  // Print the unqualified name with some template arguments.
+  FD->printName(OS);
+  // Add any template specialization args.
+  if (Info) {
+    const TemplateArgumentList *TArgs = Info->TemplateArguments;
+    const TemplateArgument *Args = TArgs->data();
+    unsigned NumArgs = TArgs->size();
+    TemplateSpecializationType::PrintTemplateArgumentList(OS, Args, NumArgs,
+                                                          Policy);
   }
 
   // Copy this name on the side and use its reference.
@@ -647,10 +641,6 @@ static SmallString<256> getUniqueTagTypeName(const TagType *Ty,
   const TagDecl *TD = Ty->getDecl();
 
   if (!hasCXXMangling(TD, TheCU) || !TD->isExternallyVisible())
-    return FullName;
-
-  // Microsoft Mangler does not have support for mangleCXXRTTIName yet.
-  if (CGM.getTarget().getCXXABI().isMicrosoft())
     return FullName;
 
   // TODO: This is using the RTTI name. Is there a better way to get
@@ -1182,6 +1172,7 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
   llvm::DIType *ContainingType = nullptr;
   unsigned Virtuality = 0;
   unsigned VIndex = 0;
+  unsigned Flags = 0;
 
   if (Method->isVirtual()) {
     if (Method->isPure())
@@ -1189,18 +1180,26 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
     else
       Virtuality = llvm::dwarf::DW_VIRTUALITY_virtual;
 
-    // It doesn't make sense to give a virtual destructor a vtable index,
-    // since a single destructor has two entries in the vtable.
-    // FIXME: Add proper support for debug info for virtual calls in
-    // the Microsoft ABI, where we may use multiple vptrs to make a vftable
-    // lookup if we have multiple or virtual inheritance.
-    if (!isa<CXXDestructorDecl>(Method) &&
-        !CGM.getTarget().getCXXABI().isMicrosoft())
-      VIndex = CGM.getItaniumVTableContext().getMethodVTableIndex(Method);
+    if (CGM.getTarget().getCXXABI().isItaniumFamily()) {
+      // It doesn't make sense to give a virtual destructor a vtable index,
+      // since a single destructor has two entries in the vtable.
+      if (!isa<CXXDestructorDecl>(Method))
+        VIndex = CGM.getItaniumVTableContext().getMethodVTableIndex(Method);
+    } else {
+      // Emit MS ABI vftable information.  There is only one entry for the
+      // deleting dtor.
+      const auto *DD = dyn_cast<CXXDestructorDecl>(Method);
+      GlobalDecl GD = DD ? GlobalDecl(DD, Dtor_Deleting) : GlobalDecl(Method);
+      MicrosoftVTableContext::MethodVFTableLocation ML =
+          CGM.getMicrosoftVTableContext().getMethodVFTableLocation(GD);
+      VIndex = ML.Index;
+      // FIXME: Pass down ML.VFPtrOffset and ML.VBTableIndex. The debugger needs
+      // these to synthesize a call to a virtual method in a complex inheritance
+      // hierarchy.
+    }
     ContainingType = RecordTy;
   }
 
-  unsigned Flags = 0;
   if (Method->isImplicit())
     Flags |= llvm::DINode::FlagArtificial;
   Flags |= getAccessFlag(Method->getAccess(), Method->getParent());
@@ -2050,12 +2049,35 @@ llvm::DIType *CGDebugInfo::CreateType(const RValueReferenceType *Ty,
 
 llvm::DIType *CGDebugInfo::CreateType(const MemberPointerType *Ty,
                                       llvm::DIFile *U) {
-  uint64_t Size =
-      !Ty->isIncompleteType() ? CGM.getContext().getTypeSize(Ty) : 0;
+  unsigned Flags = 0;
+  uint64_t Size = 0;
+
+  if (!Ty->isIncompleteType()) {
+    Size = CGM.getContext().getTypeSize(Ty);
+
+    // Set the MS inheritance model. There is no flag for the unspecified model.
+    if (CGM.getTarget().getCXXABI().isMicrosoft()) {
+      switch (Ty->getMostRecentCXXRecordDecl()->getMSInheritanceModel()) {
+      case MSInheritanceAttr::Keyword_single_inheritance:
+        Flags |= llvm::DINode::FlagSingleInheritance;
+        break;
+      case MSInheritanceAttr::Keyword_multiple_inheritance:
+        Flags |= llvm::DINode::FlagMultipleInheritance;
+        break;
+      case MSInheritanceAttr::Keyword_virtual_inheritance:
+        Flags |= llvm::DINode::FlagVirtualInheritance;
+        break;
+      case MSInheritanceAttr::Keyword_unspecified_inheritance:
+        break;
+      }
+    }
+  }
+
   llvm::DIType *ClassType = getOrCreateType(QualType(Ty->getClass(), 0), U);
   if (Ty->isMemberDataPointerType())
     return DBuilder.createMemberPointerType(
-        getOrCreateType(Ty->getPointeeType(), U), ClassType, Size);
+        getOrCreateType(Ty->getPointeeType(), U), ClassType, Size, /*Align=*/0,
+        Flags);
 
   const FunctionProtoType *FPT =
       Ty->getPointeeType()->getAs<FunctionProtoType>();
@@ -2063,7 +2085,7 @@ llvm::DIType *CGDebugInfo::CreateType(const MemberPointerType *Ty,
       getOrCreateInstanceMethodType(CGM.getContext().getPointerType(QualType(
                                         Ty->getClass(), FPT->getTypeQuals())),
                                     FPT, U),
-      ClassType, Size);
+      ClassType, Size, /*Align=*/0, Flags);
 }
 
 llvm::DIType *CGDebugInfo::CreateType(const AtomicType *Ty, llvm::DIFile *U) {
@@ -3019,6 +3041,8 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, llvm::Value *Storage,
                               CGBuilderTy &Builder) {
   assert(DebugKind >= codegenoptions::LimitedDebugInfo);
   assert(!LexicalBlockStack.empty() && "Region stack mismatch, stack empty!");
+  if (VD->hasAttr<NoDebugAttr>())
+    return;
 
   bool Unwritten =
       VD->isImplicit() || (isa<Decl>(VD->getDeclContext()) &&
@@ -3162,6 +3186,8 @@ void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
   assert(!LexicalBlockStack.empty() && "Region stack mismatch, stack empty!");
 
   if (Builder.GetInsertBlock() == nullptr)
+    return;
+  if (VD->hasAttr<NoDebugAttr>())
     return;
 
   bool isByRef = VD->hasAttr<BlocksAttr>();

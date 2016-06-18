@@ -144,19 +144,33 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
   /// always looked up in the normal TypeIndices map.
   DenseMap<const DICompositeType *, codeview::TypeIndex> CompleteTypeIndices;
 
+  const DISubprogram *CurrentSubprogram = nullptr;
+
+  // The UDTs we have seen while processing types; each entry is a pair of type
+  // index and type name.
+  std::vector<std::pair<std::string, codeview::TypeIndex>> LocalUDTs,
+      GlobalUDTs;
+
   typedef std::map<const DIFile *, std::string> FileToFilepathMapTy;
   FileToFilepathMapTy FileToFilepathMap;
   StringRef getFullFilepath(const DIFile *S);
 
   unsigned maybeRecordFile(const DIFile *F);
 
-  void maybeRecordLocation(DebugLoc DL, const MachineFunction *MF);
+  void maybeRecordLocation(const DebugLoc &DL, const MachineFunction *MF);
 
   void clear() {
     assert(CurFn == nullptr);
     FileIdMap.clear();
     FnDebugInfo.clear();
     FileToFilepathMap.clear();
+    LocalUDTs.clear();
+    GlobalUDTs.clear();
+  }
+
+  void setCurrentSubprogram(const DISubprogram *SP) {
+    CurrentSubprogram = SP;
+    LocalUDTs.clear();
   }
 
   /// Emit the magic version number at the start of a CodeView type or symbol
@@ -170,6 +184,9 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
   void emitDebugInfoForFunction(const Function *GV, FunctionInfo &FI);
 
   void emitDebugInfoForGlobals();
+
+  void emitDebugInfoForUDTs(
+      ArrayRef<std::pair<std::string, codeview::TypeIndex>> UDTs);
 
   void emitDebugInfoForGlobal(const DIGlobalVariable *DIGV, MCSymbol *GVSym);
 
@@ -207,6 +224,7 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
   codeview::TypeIndex lowerTypeMemberPointer(const DIDerivedType *Ty);
   codeview::TypeIndex lowerTypeModifier(const DIDerivedType *Ty);
   codeview::TypeIndex lowerTypeFunction(const DISubroutineType *Ty);
+  codeview::TypeIndex lowerTypeEnum(const DICompositeType *Ty);
   codeview::TypeIndex lowerTypeClass(const DICompositeType *Ty);
   codeview::TypeIndex lowerTypeUnion(const DICompositeType *Ty);
 

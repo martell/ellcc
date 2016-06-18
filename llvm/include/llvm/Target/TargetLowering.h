@@ -1136,6 +1136,15 @@ public:
     return MaxAtomicSizeInBitsSupported;
   }
 
+  /// Returns the size of the smallest cmpxchg or ll/sc instruction
+  /// the backend supports.  Any smaller operations are widened in
+  /// AtomicExpandPass.
+  ///
+  /// Note that *unlike* operations above the maximum size, atomic ops
+  /// are still natively supported below the minimum; they just
+  /// require a more complex expansion.
+  unsigned getMinCmpXchgSizeInBits() const { return MinCmpXchgSizeInBits; }
+
   /// Whether AtomicExpandPass should automatically insert fences and reduce
   /// ordering for this atomic. This should be true for most architectures with
   /// weak memory ordering. Defaults to false.
@@ -1552,6 +1561,11 @@ protected:
     MaxAtomicSizeInBitsSupported = SizeInBits;
   }
 
+  // Sets the minimum cmpxchg or ll/sc size supported by the backend.
+  void setMinCmpXchgSizeInBits(unsigned SizeInBits) {
+    MinCmpXchgSizeInBits = SizeInBits;
+  }
+
 public:
   //===--------------------------------------------------------------------===//
   // Addressing mode description hooks (used by LSR etc).
@@ -1965,6 +1979,10 @@ private:
   /// Accesses larger than this will be expanded by AtomicExpandPass.
   unsigned MaxAtomicSizeInBitsSupported;
 
+  /// Size in bits of the minimum cmpxchg or ll/sc operation the
+  /// backend supports.
+  unsigned MinCmpXchgSizeInBits;
+
   /// If set to a physical register, this specifies the register that
   /// llvm.savestack/llvm.restorestack should save and restore.
   unsigned StackPointerRegisterToSaveRestore;
@@ -2207,15 +2225,15 @@ public:
   bool isInTailCallPosition(SelectionDAG &DAG, SDNode *Node,
                             SDValue &Chain) const;
 
-  void softenSetCCOperands(SelectionDAG &DAG, EVT VT,
-                           SDValue &NewLHS, SDValue &NewRHS,
-                           ISD::CondCode &CCCode, SDLoc DL) const;
+  void softenSetCCOperands(SelectionDAG &DAG, EVT VT, SDValue &NewLHS,
+                           SDValue &NewRHS, ISD::CondCode &CCCode,
+                           const SDLoc &DL) const;
 
   /// Returns a pair of (return value, chain).
   /// It is an error to pass RTLIB::UNKNOWN_LIBCALL as \p LC.
   std::pair<SDValue, SDValue> makeLibCall(SelectionDAG &DAG, RTLIB::Libcall LC,
                                           EVT RetVT, ArrayRef<SDValue> Ops,
-                                          bool isSigned, SDLoc dl,
+                                          bool isSigned, const SDLoc &dl,
                                           bool doesNotReturn = false,
                                           bool isReturnValueUsed = true) const;
 
@@ -2264,7 +2282,7 @@ public:
     /// uses isZExtFree and ZERO_EXTEND for the widening cast, but it could be
     /// generalized for targets with other types of implicit widening casts.
     bool ShrinkDemandedOp(SDValue Op, unsigned BitWidth, const APInt &Demanded,
-                          SDLoc dl);
+                          const SDLoc &dl);
   };
 
   /// Look at Op.  At this point, we know that only the DemandedMask bits of the
@@ -2332,9 +2350,9 @@ public:
 
   /// Try to simplify a setcc built with the specified operands and cc. If it is
   /// unable to simplify it, return a null SDValue.
-  SDValue SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
-                          ISD::CondCode Cond, bool foldBooleans,
-                          DAGCombinerInfo &DCI, SDLoc dl) const;
+  SDValue SimplifySetCC(EVT VT, SDValue N0, SDValue N1, ISD::CondCode Cond,
+                        bool foldBooleans, DAGCombinerInfo &DCI,
+                        const SDLoc &dl) const;
 
   /// Returns true (and the GlobalValue and the offset) if the node is a
   /// GlobalAddress + offset.
@@ -2434,12 +2452,10 @@ public:
   /// should fill in the InVals array with legal-type argument values, and
   /// return the resulting token chain value.
   ///
-  virtual SDValue
-    LowerFormalArguments(SDValue /*Chain*/, CallingConv::ID /*CallConv*/,
-                         bool /*isVarArg*/,
-                         const SmallVectorImpl<ISD::InputArg> &/*Ins*/,
-                         SDLoc /*dl*/, SelectionDAG &/*DAG*/,
-                         SmallVectorImpl<SDValue> &/*InVals*/) const {
+  virtual SDValue LowerFormalArguments(
+      SDValue /*Chain*/, CallingConv::ID /*CallConv*/, bool /*isVarArg*/,
+      const SmallVectorImpl<ISD::InputArg> & /*Ins*/, const SDLoc & /*dl*/,
+      SelectionDAG & /*DAG*/, SmallVectorImpl<SDValue> & /*InVals*/) const {
     llvm_unreachable("Not Implemented");
   }
 
@@ -2506,7 +2522,7 @@ public:
           CallConv(CallingConv::C), DAG(DAG), CS(nullptr), IsPatchPoint(false) {
     }
 
-    CallLoweringInfo &setDebugLoc(SDLoc dl) {
+    CallLoweringInfo &setDebugLoc(const SDLoc &dl) {
       DL = dl;
       return *this;
     }
@@ -2640,12 +2656,12 @@ public:
   /// This hook must be implemented to lower outgoing return values, described
   /// by the Outs array, into the specified DAG. The implementation should
   /// return the resulting token chain value.
-  virtual SDValue
-    LowerReturn(SDValue /*Chain*/, CallingConv::ID /*CallConv*/,
-                bool /*isVarArg*/,
-                const SmallVectorImpl<ISD::OutputArg> &/*Outs*/,
-                const SmallVectorImpl<SDValue> &/*OutVals*/,
-                SDLoc /*dl*/, SelectionDAG &/*DAG*/) const {
+  virtual SDValue LowerReturn(SDValue /*Chain*/, CallingConv::ID /*CallConv*/,
+                              bool /*isVarArg*/,
+                              const SmallVectorImpl<ISD::OutputArg> & /*Outs*/,
+                              const SmallVectorImpl<SDValue> & /*OutVals*/,
+                              const SDLoc & /*dl*/,
+                              SelectionDAG & /*DAG*/) const {
     llvm_unreachable("Not Implemented");
   }
 
@@ -2713,7 +2729,7 @@ public:
   /// which allows a CPU to reuse the result of a previous load indefinitely,
   /// even if a cache-coherent store is performed by another CPU.  The default
   /// implementation does nothing.
-  virtual SDValue prepareVolatileOrAtomicLoad(SDValue Chain, SDLoc DL,
+  virtual SDValue prepareVolatileOrAtomicLoad(SDValue Chain, const SDLoc &DL,
                                               SelectionDAG &DAG) const {
     return Chain;
   }
@@ -3040,7 +3056,7 @@ public:
 private:
   SDValue simplifySetCCWithAnd(EVT VT, SDValue N0, SDValue N1,
                                ISD::CondCode Cond, DAGCombinerInfo &DCI,
-                               SDLoc DL) const;
+                               const SDLoc &DL) const;
 };
 
 /// Given an LLVM IR type and return type attributes, compute the return value

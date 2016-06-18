@@ -182,6 +182,7 @@ public:
     EABI,
     EABIHF,
     Android,
+    Musl,
 
     MSVC,
     Itanium,

@@ -2933,6 +2933,8 @@ def warn_attribute_nonnull_no_pointers : Warning<
 def warn_attribute_nonnull_parm_no_args : Warning<
   "'nonnull' attribute when used on parameters takes no arguments">,
   InGroup<IgnoredAttributes>;
+def note_declared_nonnull : Note<
+  "declared %select{'returns_nonnull'|'nonnull'}0 here">;
 def warn_attribute_sentinel_named_arguments : Warning<
   "'sentinel' attribute requires named arguments">,
   InGroup<IgnoredAttributes>;
@@ -3107,6 +3109,7 @@ def err_use_of_default_argument_to_function_declared_later : Error<
   "use of default argument to function %0 that is declared later in class %1">;
 def note_default_argument_declared_here : Note<
   "default argument declared here">;
+def err_recursive_default_argument : Error<"recursive evaluation of default argument">;
 
 def ext_param_promoted_not_compatible_with_prototype : ExtWarn<
   "%diff{promoted type $ of K&R function parameter is not compatible with the "
@@ -7348,7 +7351,7 @@ def err_generic_sel_multi_match : Error<
 
 // Blocks
 def err_blocks_disable : Error<"blocks support disabled - compile with -fblocks"
-  " or pick a deployment target that supports them">;
+  " or %select{pick a deployment target that supports them|for OpenCL 2.0 or above}0">;
 def err_block_returning_array_function : Error<
   "block cannot return %select{array|function}0 type %1">;
 

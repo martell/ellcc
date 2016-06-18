@@ -178,8 +178,8 @@ private:
       Left->Type = TT_ObjCMethodExpr;
     }
 
-    bool MightBeFunctionType = CurrentToken->isOneOf(tok::star, tok::amp) &&
-                               !Contexts[Contexts.size() - 2].IsExpression;
+    bool MightBeFunctionType = !Contexts[Contexts.size() - 2].IsExpression;
+    bool ProbablyFunctionType = CurrentToken->isOneOf(tok::star, tok::amp);
     bool HasMultipleLines = false;
     bool HasMultipleParametersOnALine = false;
     bool MightBeObjCForRangeLoop =
@@ -206,14 +206,15 @@ private:
       if (CurrentToken->Previous->is(TT_PointerOrReference) &&
           CurrentToken->Previous->Previous->isOneOf(tok::l_paren,
                                                     tok::coloncolon))
-        MightBeFunctionType = true;
+        ProbablyFunctionType = true;
+      if (CurrentToken->is(tok::comma))
+        MightBeFunctionType = false;
       if (CurrentToken->Previous->is(TT_BinaryOperator))
         Contexts.back().IsExpression = true;
       if (CurrentToken->is(tok::r_paren)) {
-        if (MightBeFunctionType && CurrentToken->Next &&
+        if (MightBeFunctionType && ProbablyFunctionType && CurrentToken->Next &&
             (CurrentToken->Next->is(tok::l_paren) ||
-             (CurrentToken->Next->is(tok::l_square) &&
-              Line.MustBeDeclaration)))
+             (CurrentToken->Next->is(tok::l_square) && Line.MustBeDeclaration)))
           Left->Type = TT_FunctionTypeLParen;
         Left->MatchingParen = CurrentToken;
         CurrentToken->MatchingParen = Left;
@@ -318,9 +319,9 @@ private:
         Left->Type = TT_JsComputedPropertyName;
       } else if (Style.Language == FormatStyle::LK_Proto ||
                  (Parent &&
-                  Parent->isOneOf(TT_BinaryOperator, tok::at, tok::comma,
-                                  tok::l_paren, tok::l_square, tok::question,
-                                  tok::colon, tok::kw_return,
+                  Parent->isOneOf(TT_BinaryOperator, TT_TemplateCloser, tok::at,
+                                  tok::comma, tok::l_paren, tok::l_square,
+                                  tok::question, tok::colon, tok::kw_return,
                                   // Should only be relevant to JavaScript:
                                   tok::kw_default))) {
         Left->Type = TT_ArrayInitializerLSquare;
@@ -784,13 +785,14 @@ public:
         return LT_ImportStatement;
     }
 
+    bool KeywordVirtualFound = false;
+    bool ImportStatement = false;
+
     // import {...} from '...';
     if (Style.Language == FormatStyle::LK_JavaScript &&
         CurrentToken->is(Keywords.kw_import))
-      return LT_ImportStatement;
+      ImportStatement = true;
 
-    bool KeywordVirtualFound = false;
-    bool ImportStatement = false;
     while (CurrentToken) {
       if (CurrentToken->is(tok::kw_virtual))
         KeywordVirtualFound = true;
@@ -1140,7 +1142,7 @@ private:
 
     FormatToken *LeftOfParens = Tok.MatchingParen->getPreviousNonComment();
     if (LeftOfParens) {
-      // If there is an opening parenthesis left of the current parentheses,
+      // If there is a closing parenthesis left of the current parentheses,
       // look past it as these might be chained casts.
       if (LeftOfParens->is(tok::r_paren)) {
         if (!LeftOfParens->MatchingParen ||
@@ -1159,7 +1161,7 @@ private:
       // Certain other tokens right before the parentheses are also signals that
       // this cannot be a cast.
       if (LeftOfParens->isOneOf(tok::at, tok::r_square, TT_OverloadedOperator,
-                                TT_TemplateCloser))
+                                TT_TemplateCloser, tok::ellipsis))
         return false;
     }
 
@@ -1459,7 +1461,8 @@ private:
         return Current->getPrecedence();
       if (Current->isOneOf(tok::period, tok::arrow))
         return PrecedenceArrowAndPeriod;
-      if (Style.Language == FormatStyle::LK_Java &&
+      if ((Style.Language == FormatStyle::LK_Java ||
+           Style.Language == FormatStyle::LK_JavaScript) &&
           Current->isOneOf(Keywords.kw_extends, Keywords.kw_implements,
                            Keywords.kw_throws))
         return 0;
@@ -1993,7 +1996,8 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     return false;
   if (Right.is(TT_PointerOrReference))
     return (Left.is(tok::r_paren) && Line.MightBeFunctionDecl) ||
-           (Left.Tok.isLiteral() ||
+           (Left.Tok.isLiteral() || (Left.is(tok::kw_const) && Left.Previous &&
+                                     Left.Previous->is(tok::r_paren)) ||
             (!Left.isOneOf(TT_PointerOrReference, tok::l_paren) &&
              (Style.PointerAlignment != FormatStyle::PAS_Left ||
               Line.IsMultiVariableDeclStmt)));
@@ -2125,6 +2129,11 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
       // Type assertions ('<type>expr') are not followed by whitespace. Other
       // locations that should have whitespace following are identified by the
       // above set of follower tokens.
+      return false;
+    // Postfix non-null assertion operator, as in `foo!.bar()`.
+    if (Right.is(tok::exclaim) && (Left.isOneOf(tok::identifier, tok::r_paren,
+                                                tok::r_square, tok::r_brace) ||
+                                   Left.Tok.isLiteral()))
       return false;
   } else if (Style.Language == FormatStyle::LK_Java) {
     if (Left.is(tok::r_square) && Right.is(tok::l_brace))

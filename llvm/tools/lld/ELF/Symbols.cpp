@@ -162,7 +162,7 @@ template <class ELFT> typename ELFT::uint SymbolBody::getGotPltOffset() const {
 }
 
 template <class ELFT> typename ELFT::uint SymbolBody::getPltVA() const {
-  return Out<ELFT>::Plt->getVA() + Target->PltZeroSize +
+  return Out<ELFT>::Plt->getVA() + Target->PltHeaderSize +
          PltIndex * Target->PltEntrySize;
 }
 
@@ -221,16 +221,19 @@ std::unique_ptr<InputFile> Lazy::getFile() {
 }
 
 std::unique_ptr<InputFile> LazyArchive::getFile() {
-  MemoryBufferRef MBRef = File->getMember(&Sym);
+  MemoryBufferRef MBRef = File.getMember(&Sym);
 
   // getMember returns an empty buffer if the member was already
   // read from the library.
   if (MBRef.getBuffer().empty())
     return std::unique_ptr<InputFile>(nullptr);
-  return createObjectFile(MBRef, File->getName());
+  return createObjectFile(MBRef, File.getName());
 }
 
 std::unique_ptr<InputFile> LazyObject::getFile() {
+  MemoryBufferRef MBRef = File.getBuffer();
+  if (MBRef.getBuffer().empty())
+    return std::unique_ptr<InputFile>(nullptr);
   return createObjectFile(MBRef);
 }
 

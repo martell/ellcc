@@ -35,6 +35,7 @@
 #endif
 
 /* Make a nice name for the standard version */
+#ifndef TEST_STD_VER
 #if  __cplusplus <= 199711L
 # define TEST_STD_VER 3
 #elif __cplusplus <= 201103L
@@ -43,6 +44,7 @@
 # define TEST_STD_VER 14
 #else
 # define TEST_STD_VER 99    // greater than current standard
+#endif
 #endif
 
 /* Features that were introduced in C++14 */
@@ -90,5 +92,22 @@
 #define LIBCPP_ASSERT(...) ((void)0)
 #define LIBCPP_STATIC_ASSERT(...) ((void)0)
 #endif
+
+#define ASSERT_NOEXCEPT(...) \
+    static_assert(noexcept(__VA_ARGS__), "Operation must be noexcept")
+
+#define ASSERT_NOT_NOEXCEPT(...) \
+    static_assert(!noexcept(__VA_ARGS__), "Operation must NOT be noexcept")
+
+namespace test_macros_detail {
+template <class T, class U>
+struct is_same { enum { value = 0};} ;
+template <class T>
+struct is_same<T, T> { enum {value = 1}; };
+} // namespace test_macros_detail
+
+#define ASSERT_SAME_TYPE(...) \
+    static_assert(test_macros_detail::is_same<__VA_ARGS__>::value, \
+                 "Types differ uexpectedly")
 
 #endif // SUPPORT_TEST_MACROS_HPP

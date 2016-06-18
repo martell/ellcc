@@ -203,14 +203,14 @@ public:
                      bool AllowModify) const override;
   unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                         MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
-                        DebugLoc DL) const override;
+                        const DebugLoc &DL) const override;
   unsigned RemoveBranch(MachineBasicBlock &MBB) const override;
 
   bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond)
     const override;
 
   void copyPhysReg(MachineBasicBlock &MBB,
-                   MachineBasicBlock::iterator I, DebugLoc DL,
+                   MachineBasicBlock::iterator I, const DebugLoc &DL,
                    unsigned DestReg, unsigned SrcReg,
                    bool KillSrc) const override;
   void storeRegToStackSlot(MachineBasicBlock &MBB,

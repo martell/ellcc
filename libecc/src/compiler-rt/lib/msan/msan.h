@@ -309,16 +309,22 @@ void MsanTSDDtor(void *tsd);
 
 }  // namespace __msan
 
-#define MSAN_MALLOC_HOOK(ptr, size)     \
-  if (&__sanitizer_malloc_hook) {       \
-    UnpoisonParam(2);                   \
-    __sanitizer_malloc_hook(ptr, size); \
-  }
-#define MSAN_FREE_HOOK(ptr)     \
-  if (&__sanitizer_free_hook) { \
-    UnpoisonParam(1);           \
-    __sanitizer_free_hook(ptr); \
-  }
+#define MSAN_MALLOC_HOOK(ptr, size)       \
+  do {                                    \
+    if (&__sanitizer_malloc_hook) {       \
+      UnpoisonParam(2);                   \
+      __sanitizer_malloc_hook(ptr, size); \
+    }                                     \
+    RunMallocHooks(ptr, size);            \
+  } while (false)
+#define MSAN_FREE_HOOK(ptr)       \
+  do {                            \
+    if (&__sanitizer_free_hook) { \
+      UnpoisonParam(1);           \
+      __sanitizer_free_hook(ptr); \
+    }                             \
+    RunFreeHooks(ptr);            \
+  } while (false)
 
 struct MsanStackBounds {
   uptr stack_addr, stack_size;
