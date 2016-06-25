@@ -185,6 +185,9 @@ set(DEFAULT_SYSROOT "" CACHE PATH
 
 set(ENABLE_LINKER_BUILD_ID OFF CACHE BOOL "pass --build-id to ld")
 
+set(ENABLE_X86_RELAX_RELOCATIONS OFF CACHE BOOL
+    "enable x86 relax relocations by default")
+
 set(CLANG_DEFAULT_CXX_STDLIB "" CACHE STRING
   "Default C++ stdlib to use (empty for architecture default, \"libstdc++\" or \"libc++\"")
 if (NOT(CLANG_DEFAULT_CXX_STDLIB STREQUAL "" OR
@@ -209,19 +212,6 @@ set(CLANG_REPOSITORY_STRING "" CACHE STRING
 
 if(CLANG_REPOSITORY_STRING)
   add_definitions(-DCLANG_REPOSITORY_STRING="${CLANG_REPOSITORY_STRING}")
-endif()
-
-option(CLANG_APPEND_VC_REV
-  "Append the version control system revision id to clang version spew" OFF)
-if(CLANG_APPEND_VC_REV)
-  if(NOT SVN_REVISION)
-    # This macro will set SVN_REVISION in the parent scope
-    add_version_info_from_vcs(VERSION_VAR)
-  endif()
-
-  if(SVN_REVISION)
-    add_definitions(-DSVN_REVISION="${SVN_REVISION}")
-  endif()
 endif()
 
 set(CLANG_VENDOR_UTI "org.llvm.clang" CACHE STRING

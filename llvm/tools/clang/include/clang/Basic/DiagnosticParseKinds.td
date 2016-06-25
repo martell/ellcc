@@ -512,6 +512,11 @@ def err_function_is_not_record : Error<
   "unexpected %0 in function call; perhaps remove the %0?">;
 def err_super_in_using_declaration : Error<
   "'__super' cannot be used with a using declaration">;
+def ext_constexpr_if : ExtWarn<
+  "constexpr if is a C++1z extension">, InGroup<CXX1z>;
+def warn_cxx14_compat_constexpr_if : Warning<
+  "constexpr if is incompatible with C++ standards before C++1z">,
+  DefaultIgnore, InGroup<CXXPre1zCompat>;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
@@ -555,6 +560,14 @@ def err_cxx11_attribute_forbids_ellipsis : Error<
   "attribute '%0' cannot be used as an attribute pack">;
 def err_cxx11_attribute_repeated : Error<
   "attribute %0 cannot appear multiple times in an attribute specifier">;
+def warn_cxx14_compat_using_attribute_ns : Warning<
+  "default scope specifier for attributes is incompatible with C++ standards "
+  "before C++1z">, InGroup<CXXPre1zCompat>, DefaultIgnore;
+def ext_using_attribute_ns : ExtWarn<
+  "default scope specifier for attributes is a C++1z extension">,
+  InGroup<CXX1z>;
+def err_using_attribute_ns_conflict : Error<
+  "attribute with scope specifier cannot follow default scope specifier">;
 def err_attributes_not_allowed : Error<"an attribute list cannot appear here">;
 def err_l_square_l_square_not_attribute : Error<
   "C++11 only allows consecutive left square brackets when "

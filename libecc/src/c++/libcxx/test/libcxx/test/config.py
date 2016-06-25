@@ -439,11 +439,13 @@ class Configuration(object):
         self.config.available_features.add('c++filesystem')
         static_env = os.path.join(self.libcxx_src_root, 'test', 'std',
                                   'experimental', 'filesystem', 'Inputs', 'static_test_env')
+        static_env = os.path.realpath(static_env)
         assert os.path.isdir(static_env)
         self.cxx.compile_flags += ['-DLIBCXX_FILESYSTEM_STATIC_TEST_ROOT="%s"' % static_env]
 
         dynamic_env = os.path.join(self.libcxx_obj_root, 'test',
                                    'filesystem', 'Output', 'dynamic_env')
+        dynamic_env = os.path.realpath(dynamic_env)
         if not os.path.isdir(dynamic_env):
             os.makedirs(dynamic_env)
         self.cxx.compile_flags += ['-DLIBCXX_FILESYSTEM_DYNAMIC_TEST_ROOT="%s"' % dynamic_env]
@@ -617,9 +619,12 @@ class Configuration(object):
                 self.config.available_features.add('msan')
                 self.config.available_features.add('sanitizer-new-delete')
             elif san == 'Undefined':
+                blacklist = os.path.join(self.libcxx_src_root,
+                                         'test/ubsan_blacklist.txt')
                 self.cxx.flags += ['-fsanitize=undefined',
-                                   '-fno-sanitize=vptr,function',
-                                   '-fno-sanitize-recover']
+                                   '-fno-sanitize=vptr,function,float-divide-by-zero',
+                                   '-fno-sanitize-recover=all',
+                                   '-fsanitize-blacklist=' + blacklist]
                 self.cxx.compile_flags += ['-O3']
                 self.env['UBSAN_OPTIONS'] = 'print_stacktrace=1'
                 self.config.available_features.add('ubsan')

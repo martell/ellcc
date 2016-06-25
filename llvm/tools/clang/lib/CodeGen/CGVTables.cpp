@@ -284,7 +284,7 @@ void CodeGenFunction::EmitCallAndReturnForThunk(llvm::Value *Callee,
     CGM.getCXXABI().adjustCallArgsForDestructorThunk(*this, CurGD, CallArgs);
 
   // Add the rest of the arguments.
-  for (const ParmVarDecl *PD : MD->params())
+  for (const ParmVarDecl *PD : MD->parameters())
     EmitDelegateCallArg(CallArgs, PD, PD->getLocStart());
 
   const FunctionProtoType *FPT = MD->getType()->getAs<FunctionProtoType>();
@@ -709,7 +709,7 @@ CodeGenVTables::GenerateConstructionVTable(const CXXRecordDecl *RD,
       VTLayout->getNumVTableThunks(), RTTI);
   VTable->setInitializer(Init);
   
-  CGM.EmitVTableBitSetEntries(VTable, *VTLayout.get());
+  CGM.EmitVTableTypeMetadata(VTable, *VTLayout.get());
 
   return VTable;
 }
@@ -933,8 +933,8 @@ bool CodeGenModule::HasHiddenLTOVisibility(const CXXRecordDecl *RD) {
   return true;
 }
 
-void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
-                                            const VTableLayout &VTLayout) {
+void CodeGenModule::EmitVTableTypeMetadata(llvm::GlobalVariable *VTable,
+                                           const VTableLayout &VTLayout) {
   if (!getCodeGenOpts().PrepareForLTO)
     return;
 
@@ -973,10 +973,7 @@ void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
     return E1.second < E2.second;
   });
 
-  llvm::NamedMDNode *BitsetsMD =
-      getModule().getOrInsertNamedMetadata("llvm.bitsets");
   for (auto BitsetEntry : BitsetEntries)
-    CreateVTableBitSetEntry(BitsetsMD, VTable,
-                            PointerWidth * BitsetEntry.second,
-                            BitsetEntry.first);
+    AddVTableTypeMetadata(VTable, PointerWidth * BitsetEntry.second,
+                          BitsetEntry.first);
 }

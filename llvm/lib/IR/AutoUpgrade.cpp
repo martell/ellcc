@@ -174,6 +174,8 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         Name.startswith("x86.sse2.pcmpgt.") ||
         Name.startswith("x86.avx2.pcmpeq.") ||
         Name.startswith("x86.avx2.pcmpgt.") ||
+        Name.startswith("x86.avx512.mask.pcmpeq.") ||
+        Name.startswith("x86.avx512.mask.pcmpgt.") ||
         Name == "x86.sse41.pmaxsb" ||
         Name == "x86.sse2.pmaxs.w" ||
         Name == "x86.sse41.pmaxsd" ||
@@ -195,6 +197,10 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         Name.startswith("x86.avx512.mask.pshuf.d.") ||
         Name.startswith("x86.avx512.mask.pshufl.w.") ||
         Name.startswith("x86.avx512.mask.pshufh.w.") ||
+        Name.startswith("x86.avx512.mask.punpckl") ||
+        Name.startswith("x86.avx512.mask.punpckh") ||
+        Name.startswith("x86.avx512.mask.unpckl.") ||
+        Name.startswith("x86.avx512.mask.unpckh.") ||
         Name.startswith("x86.sse41.pmovsx") ||
         Name.startswith("x86.sse41.pmovzx") ||
         Name.startswith("x86.avx2.pmovsx") ||
@@ -541,6 +547,30 @@ static Value *upgradeIntMinMax(IRBuilder<> &Builder, CallInst &CI,
   return Builder.CreateSelect(Cmp, Op0, Op1);
 }
 
+static Value *upgradeMaskedCompare(IRBuilder<> &Builder, CallInst &CI,
+                                   ICmpInst::Predicate Pred) {
+  Value *Op0 = CI.getArgOperand(0);
+  unsigned NumElts = Op0->getType()->getVectorNumElements();
+  Value *Cmp = Builder.CreateICmp(Pred, Op0, CI.getArgOperand(1));
+
+  Value *Mask = CI.getArgOperand(2);
+  const auto *C = dyn_cast<Constant>(Mask);
+  if (!C || !C->isAllOnesValue())
+    Cmp = Builder.CreateAnd(Cmp, getX86MaskVec(Builder, Mask, NumElts));
+
+  if (NumElts < 8) {
+    uint32_t Indices[8];
+    for (unsigned i = 0; i != NumElts; ++i)
+      Indices[i] = i;
+    for (unsigned i = NumElts; i != 8; ++i)
+      Indices[i] = NumElts;
+    Cmp = Builder.CreateShuffleVector(Cmp, UndefValue::get(Cmp->getType()),
+                                      Indices);
+  }
+  return Builder.CreateBitCast(Cmp, IntegerType::get(CI.getContext(),
+                                                     std::max(NumElts, 8U)));
+}
+
 /// Upgrade a call to an old intrinsic. All argument and return casting must be
 /// provided to seamlessly integrate with existing context.
 void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
@@ -567,6 +597,10 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Rep = Builder.CreateICmpSGT(CI->getArgOperand(0), CI->getArgOperand(1),
                                   "pcmpgt");
       Rep = Builder.CreateSExt(Rep, CI->getType(), "");
+    } else if (Name.startswith("llvm.x86.avx512.mask.pcmpeq.")) {
+      Rep = upgradeMaskedCompare(Builder, *CI, ICmpInst::ICMP_EQ);
+    } else if (Name.startswith("llvm.x86.avx512.mask.pcmpgt.")) {
+      Rep = upgradeMaskedCompare(Builder, *CI, ICmpInst::ICMP_SGT);
     } else if (Name == "llvm.x86.sse41.pmaxsb" ||
                Name == "llvm.x86.sse2.pmaxs.w" ||
                Name == "llvm.x86.sse41.pmaxsd" ||
@@ -1004,6 +1038,38 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       if (CI->getNumArgOperands() == 4)
         Rep = EmitX86Select(Builder, CI->getArgOperand(3), Rep,
                             CI->getArgOperand(2));
+    } else if (Name.startswith("llvm.x86.avx512.mask.punpckl") ||
+               Name.startswith("llvm.x86.avx512.mask.unpckl.")) {
+      Value *Op0 = CI->getArgOperand(0);
+      Value *Op1 = CI->getArgOperand(1);
+      int NumElts = CI->getType()->getVectorNumElements();
+      int NumLaneElts = 128/CI->getType()->getScalarSizeInBits();
+
+      SmallVector<uint32_t, 64> Idxs(NumElts);
+      for (int l = 0; l != NumElts; l += NumLaneElts)
+        for (int i = 0; i != NumLaneElts; ++i)
+          Idxs[i + l] = l + (i / 2) + NumElts * (i % 2);
+
+      Rep = Builder.CreateShuffleVector(Op0, Op1, Idxs);
+
+      Rep = EmitX86Select(Builder, CI->getArgOperand(3), Rep,
+                          CI->getArgOperand(2));
+    } else if (Name.startswith("llvm.x86.avx512.mask.punpckh") ||
+               Name.startswith("llvm.x86.avx512.mask.unpckh.")) {
+      Value *Op0 = CI->getArgOperand(0);
+      Value *Op1 = CI->getArgOperand(1);
+      int NumElts = CI->getType()->getVectorNumElements();
+      int NumLaneElts = 128/CI->getType()->getScalarSizeInBits();
+
+      SmallVector<uint32_t, 64> Idxs(NumElts);
+      for (int l = 0; l != NumElts; l += NumLaneElts)
+        for (int i = 0; i != NumLaneElts; ++i)
+          Idxs[i + l] = (NumLaneElts / 2) + l + (i / 2) + NumElts * (i % 2);
+
+      Rep = Builder.CreateShuffleVector(Op0, Op1, Idxs);
+
+      Rep = EmitX86Select(Builder, CI->getArgOperand(3), Rep,
+                          CI->getArgOperand(2));
     } else {
       llvm_unreachable("Unknown function for CallInst upgrade.");
     }

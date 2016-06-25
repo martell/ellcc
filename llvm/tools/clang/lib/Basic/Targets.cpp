@@ -5020,6 +5020,8 @@ public:
       case llvm::Triple::Android:
       case llvm::Triple::GNUEABI:
       case llvm::Triple::GNUEABIHF:
+      case llvm::Triple::MuslEABI:
+      case llvm::Triple::MuslEABIHF:
         setABI("aapcs-linux");
         break;
       case llvm::Triple::EABIHF:
@@ -6140,7 +6142,7 @@ class AArch64leTargetInfo : public AArch64TargetInfo {
     if (getTriple().isOSBinFormatMachO())
       resetDataLayout("e-m:o-i64:64-i128:128-n32:64-S128");
     else
-      resetDataLayout("e-m:e-i64:64-i128:128-n32:64-S128");
+      resetDataLayout("e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128");
   }
 
 public:
@@ -6158,7 +6160,7 @@ public:
 class AArch64beTargetInfo : public AArch64TargetInfo {
   void setDataLayout() override {
     assert(!getTriple().isOSBinFormatMachO());
-    resetDataLayout("E-m:e-i64:64-i128:128-n32:64-S128");
+    resetDataLayout("E-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128");
   }
 
 public:

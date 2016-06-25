@@ -28,8 +28,10 @@ enum RelExpr {
   R_GOT_PAGE_PC,
   R_GOT_PC,
   R_HINT,
-  R_MIPS_GOT_LOCAL,
   R_MIPS_GOT_LOCAL_PAGE,
+  R_MIPS_GOT_OFF,
+  R_MIPS_TLSGD,
+  R_MIPS_TLSLD,
   R_NEG_TLS,
   R_PAGE_PC,
   R_PC,
@@ -60,9 +62,10 @@ enum RelExpr {
   R_TLSLD_PC
 };
 
-struct Relocation {
+template <class ELFT> struct Relocation {
   RelExpr Expr;
   uint32_t Type;
+  InputSectionBase<ELFT> *InputSec;
   uint64_t Offset;
   uint64_t Addend;
   SymbolBody *Sym;

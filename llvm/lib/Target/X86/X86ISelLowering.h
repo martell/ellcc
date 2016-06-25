@@ -310,6 +310,11 @@ namespace llvm {
       // Vector shift elements
       VSHL, VSRL, VSRA,
 
+      // Vector variable shift right arithmetic.
+      // Unlike ISD::SRA, in case shift count greater then element size
+      // use sign bit to fill destination data element.
+      VSRAV,
+
       // Vector shift elements by immediate
       VSHLI, VSRLI, VSRAI,
 
@@ -510,8 +515,6 @@ namespace llvm {
       // Memory barriers.
       MEMBARRIER,
       MFENCE,
-      SFENCE,
-      LFENCE,
 
       // Store FP status word into i16 register.
       FNSTSW16r,

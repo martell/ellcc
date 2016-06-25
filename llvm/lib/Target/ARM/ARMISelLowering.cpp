@@ -255,7 +255,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   // RTLIB
   if (Subtarget->isAAPCS_ABI() &&
       (Subtarget->isTargetAEABI() || Subtarget->isTargetGNUAEABI() ||
-       Subtarget->isTargetAndroid())) {
+       Subtarget->isTargetMuslAEABI() || Subtarget->isTargetAndroid())) {
     static const struct {
       const RTLIB::Libcall Op;
       const char * const Name;
@@ -407,17 +407,19 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setLibcallName(RTLIB::UDIVREM_I32, "__udivmodsi4");
   }
 
-  // The half <-> float conversion functions are always soft-float, but are
-  // needed for some targets which use a hard-float calling convention by
-  // default.
-  if (Subtarget->isAAPCS_ABI()) {
-    setLibcallCallingConv(RTLIB::FPROUND_F32_F16, CallingConv::ARM_AAPCS);
-    setLibcallCallingConv(RTLIB::FPROUND_F64_F16, CallingConv::ARM_AAPCS);
-    setLibcallCallingConv(RTLIB::FPEXT_F16_F32, CallingConv::ARM_AAPCS);
-  } else {
-    setLibcallCallingConv(RTLIB::FPROUND_F32_F16, CallingConv::ARM_APCS);
-    setLibcallCallingConv(RTLIB::FPROUND_F64_F16, CallingConv::ARM_APCS);
-    setLibcallCallingConv(RTLIB::FPEXT_F16_F32, CallingConv::ARM_APCS);
+  // The half <-> float conversion functions are always soft-float on
+  // non-watchos platforms, but are needed for some targets which use a
+  // hard-float calling convention by default.
+  if (!Subtarget->isTargetWatchABI()) {
+    if (Subtarget->isAAPCS_ABI()) {
+      setLibcallCallingConv(RTLIB::FPROUND_F32_F16, CallingConv::ARM_AAPCS);
+      setLibcallCallingConv(RTLIB::FPROUND_F64_F16, CallingConv::ARM_AAPCS);
+      setLibcallCallingConv(RTLIB::FPEXT_F16_F32, CallingConv::ARM_AAPCS);
+    } else {
+      setLibcallCallingConv(RTLIB::FPROUND_F32_F16, CallingConv::ARM_APCS);
+      setLibcallCallingConv(RTLIB::FPROUND_F64_F16, CallingConv::ARM_APCS);
+      setLibcallCallingConv(RTLIB::FPEXT_F16_F32, CallingConv::ARM_APCS);
+    }
   }
 
   // In EABI, these functions have an __aeabi_ prefix, but in GNUEABI they have
@@ -791,7 +793,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::UREM,  MVT::i32, Expand);
   // Register based DivRem for AEABI (RTABI 4.2)
   if (Subtarget->isTargetAEABI() || Subtarget->isTargetAndroid() ||
-      Subtarget->isTargetGNUAEABI()) {
+      Subtarget->isTargetGNUAEABI() || Subtarget->isTargetMuslAEABI()) {
     setOperationAction(ISD::SREM, MVT::i64, Custom);
     setOperationAction(ISD::UREM, MVT::i64, Custom);
 
@@ -1136,6 +1138,8 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
 
   case ARMISD::CMOV:          return "ARMISD::CMOV";
 
+  case ARMISD::SSAT:          return "ARMISD::SSAT";
+
   case ARMISD::SRL_FLAG:      return "ARMISD::SRL_FLAG";
   case ARMISD::SRA_FLAG:      return "ARMISD::SRA_FLAG";
   case ARMISD::RRX:           return "ARMISD::RRX";
@@ -1212,6 +1216,7 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::VTBL2:         return "ARMISD::VTBL2";
   case ARMISD::VMULLs:        return "ARMISD::VMULLs";
   case ARMISD::VMULLu:        return "ARMISD::VMULLu";
+  case ARMISD::UMAAL:         return "ARMISD::UMAAL";
   case ARMISD::UMLAL:         return "ARMISD::UMLAL";
   case ARMISD::SMLAL:         return "ARMISD::SMLAL";
   case ARMISD::BUILD_VECTOR:  return "ARMISD::BUILD_VECTOR";
@@ -1564,6 +1569,10 @@ void ARMTargetLowering::PassF64ArgInRegs(const SDLoc &dl, SelectionDAG &DAG,
   }
 }
 
+bool ARMTargetLowering::isPositionIndependent() const {
+  return getTargetMachine().getRelocationModel() == Reloc::PIC_;
+}
+
 /// LowerCall - Lowering a call into a callseq_start <-
 /// ARMISD:CALL <- callseq_end chain. Also add input and output parameter
 /// nodes.
@@ -1813,9 +1822,8 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   auto PtrVt = getPointerTy(DAG.getDataLayout());
 
   if (Subtarget->genLongCalls()) {
-    assert((Subtarget->isTargetWindows() ||
-            RM == Reloc::Static) &&
-           "long-calls with non-static relocation model!");
+    assert(!isPositionIndependent() &&
+           "long-calls codegen is not position independent!");
     // Handle a global address or an external symbol. If it's not one of
     // those, the target's already in a register, so we don't need to do
     // anything extra.
@@ -2516,9 +2524,9 @@ SDValue ARMTargetLowering::LowerBlockAddress(SDValue Op,
   SDLoc DL(Op);
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
   const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
-  Reloc::Model RelocM = getTargetMachine().getRelocationModel();
   SDValue CPAddr;
-  if (RelocM == Reloc::Static) {
+  bool IsPositionIndependent = isPositionIndependent();
+  if (!IsPositionIndependent) {
     CPAddr = DAG.getTargetConstantPool(BA, PtrVT, 4);
   } else {
     unsigned PCAdj = Subtarget->isThumb() ? 4 : 8;
@@ -2533,7 +2541,7 @@ SDValue ARMTargetLowering::LowerBlockAddress(SDValue Op,
       DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), CPAddr,
                   MachinePointerInfo::getConstantPool(DAG.getMachineFunction()),
                   false, false, false, 0);
-  if (RelocM == Reloc::Static)
+  if (!IsPositionIndependent)
     return Result;
   SDValue PICLabel = DAG.getConstant(ARMPCLabelIndex, DL, MVT::i32);
   return DAG.getNode(ARMISD::PIC_ADD, DL, PtrVT, Result, PICLabel);
@@ -2699,8 +2707,7 @@ ARMTargetLowering::LowerToTLSGeneralDynamicModel(GlobalAddressSDNode *GA,
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(Chain)
     .setCallee(CallingConv::C, Type::getInt32Ty(*DAG.getContext()),
-               DAG.getExternalSymbol("__tls_get_addr", PtrVT), std::move(Args),
-               0);
+               DAG.getExternalSymbol("__tls_get_addr", PtrVT), std::move(Args));
 
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
   return CallResult.first;
@@ -2798,7 +2805,7 @@ SDValue ARMTargetLowering::LowerGlobalAddressELF(SDValue Op,
   const TargetMachine &TM = getTargetMachine();
   Reloc::Model RM = TM.getRelocationModel();
   const Triple &TargetTriple = TM.getTargetTriple();
-  if (RM == Reloc::PIC_) {
+  if (isPositionIndependent()) {
     bool UseGOT_PREL =
         !shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV);
 
@@ -2851,7 +2858,6 @@ SDValue ARMTargetLowering::LowerGlobalAddressDarwin(SDValue Op,
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
   SDLoc dl(Op);
   const GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
-  Reloc::Model RelocM = getTargetMachine().getRelocationModel();
 
   if (Subtarget->useMovt(DAG.getMachineFunction()))
     ++NumMovwMovt;
@@ -2859,11 +2865,12 @@ SDValue ARMTargetLowering::LowerGlobalAddressDarwin(SDValue Op,
   // FIXME: Once remat is capable of dealing with instructions with register
   // operands, expand this into multiple nodes
   unsigned Wrapper =
-      RelocM == Reloc::PIC_ ? ARMISD::WrapperPIC : ARMISD::Wrapper;
+      isPositionIndependent() ? ARMISD::WrapperPIC : ARMISD::Wrapper;
 
   SDValue G = DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, ARMII::MO_NONLAZY);
   SDValue Result = DAG.getNode(Wrapper, dl, PtrVT, G);
 
+  Reloc::Model RelocM = getTargetMachine().getRelocationModel();
   if (Subtarget->GVIsIndirectSymbol(GV, RelocM))
     Result = DAG.getLoad(PtrVT, dl, DAG.getEntryNode(), Result,
                          MachinePointerInfo::getGOT(DAG.getMachineFunction()),
@@ -2942,10 +2949,9 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
     ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
     unsigned ARMPCLabelIndex = AFI->createPICLabelUId();
     EVT PtrVT = getPointerTy(DAG.getDataLayout());
-    Reloc::Model RelocM = getTargetMachine().getRelocationModel();
     SDValue CPAddr;
-    unsigned PCAdj = (RelocM != Reloc::PIC_)
-      ? 0 : (Subtarget->isThumb() ? 4 : 8);
+    bool IsPositionIndependent = isPositionIndependent();
+    unsigned PCAdj = IsPositionIndependent ? (Subtarget->isThumb() ? 4 : 8) : 0;
     ARMConstantPoolValue *CPV =
       ARMConstantPoolConstant::Create(MF.getFunction(), ARMPCLabelIndex,
                                       ARMCP::CPLSDA, PCAdj);
@@ -2956,7 +2962,7 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
         MachinePointerInfo::getConstantPool(DAG.getMachineFunction()), false,
         false, false, 0);
 
-    if (RelocM == Reloc::PIC_) {
+    if (IsPositionIndependent) {
       SDValue PICLabel = DAG.getConstant(ARMPCLabelIndex, dl, MVT::i32);
       Result = DAG.getNode(ARMISD::PIC_ADD, dl, PtrVT, Result, PICLabel);
     }
@@ -3022,7 +3028,8 @@ static SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG &DAG,
   if (Subtarget->isMClass()) {
     // Only a full system barrier exists in the M-class architectures.
     Domain = ARM_MB::SY;
-  } else if (Subtarget->isSwift() && Ord == AtomicOrdering::Release) {
+  } else if (Subtarget->preferISHSTBarriers() &&
+             Ord == AtomicOrdering::Release) {
     // Swift happens to implement ISHST barriers in a way that's compatible with
     // Release semantics but weaker than ISH so we'd be fools not to use
     // it. Beware: other processors probably don't!
@@ -3725,14 +3732,144 @@ SDValue ARMTargetLowering::getCMOV(const SDLoc &dl, EVT VT, SDValue FalseVal,
   }
 }
 
+bool isGTorGE(ISD::CondCode CC) { return CC == ISD::SETGT || CC == ISD::SETGE; }
+
+bool isLTorLE(ISD::CondCode CC) { return CC == ISD::SETLT || CC == ISD::SETLE; }
+
+// See if a conditional (LHS CC RHS ? TrueVal : FalseVal) is lower-saturating.
+// All of these conditions (and their <= and >= counterparts) will do:
+//          x < k ? k : x
+//          x > k ? x : k
+//          k < x ? x : k
+//          k > x ? k : x
+bool isLowerSaturate(const SDValue LHS, const SDValue RHS,
+                     const SDValue TrueVal, const SDValue FalseVal,
+                     const ISD::CondCode CC, const SDValue K) {
+  return (isGTorGE(CC) &&
+          ((K == LHS && K == TrueVal) || (K == RHS && K == FalseVal))) ||
+         (isLTorLE(CC) &&
+          ((K == RHS && K == TrueVal) || (K == LHS && K == FalseVal)));
+}
+
+// Similar to isLowerSaturate(), but checks for upper-saturating conditions.
+bool isUpperSaturate(const SDValue LHS, const SDValue RHS,
+                     const SDValue TrueVal, const SDValue FalseVal,
+                     const ISD::CondCode CC, const SDValue K) {
+  return (isGTorGE(CC) &&
+          ((K == RHS && K == TrueVal) || (K == LHS && K == FalseVal))) ||
+         (isLTorLE(CC) &&
+          ((K == LHS && K == TrueVal) || (K == RHS && K == FalseVal)));
+}
+
+// Check if two chained conditionals could be converted into SSAT.
+//
+// SSAT can replace a set of two conditional selectors that bound a number to an
+// interval of type [k, ~k] when k + 1 is a power of 2. Here are some examples:
+//
+//     x < -k ? -k : (x > k ? k : x)
+//     x < -k ? -k : (x < k ? x : k)
+//     x > -k ? (x > k ? k : x) : -k
+//     x < k ? (x < -k ? -k : x) : k
+//     etc.
+//
+// It returns true if the conversion can be done, false otherwise.
+// Additionally, the variable is returned in parameter V and the constant in K.
+bool isSaturatingConditional(const SDValue &Op, SDValue &V, uint64_t &K) {
+
+  SDValue LHS1 = Op.getOperand(0);
+  SDValue RHS1 = Op.getOperand(1);
+  SDValue TrueVal1 = Op.getOperand(2);
+  SDValue FalseVal1 = Op.getOperand(3);
+  ISD::CondCode CC1 = cast<CondCodeSDNode>(Op.getOperand(4))->get();
+
+  const SDValue Op2 = isa<ConstantSDNode>(TrueVal1) ? FalseVal1 : TrueVal1;
+  if (Op2.getOpcode() != ISD::SELECT_CC)
+    return false;
+
+  SDValue LHS2 = Op2.getOperand(0);
+  SDValue RHS2 = Op2.getOperand(1);
+  SDValue TrueVal2 = Op2.getOperand(2);
+  SDValue FalseVal2 = Op2.getOperand(3);
+  ISD::CondCode CC2 = cast<CondCodeSDNode>(Op2.getOperand(4))->get();
+
+  // Find out which are the constants and which are the variables
+  // in each conditional
+  SDValue *K1 = isa<ConstantSDNode>(LHS1) ? &LHS1 : isa<ConstantSDNode>(RHS1)
+                                                        ? &RHS1
+                                                        : NULL;
+  SDValue *K2 = isa<ConstantSDNode>(LHS2) ? &LHS2 : isa<ConstantSDNode>(RHS2)
+                                                        ? &RHS2
+                                                        : NULL;
+  SDValue K2Tmp = isa<ConstantSDNode>(TrueVal2) ? TrueVal2 : FalseVal2;
+  SDValue V1Tmp = (K1 && *K1 == LHS1) ? RHS1 : LHS1;
+  SDValue V2Tmp = (K2 && *K2 == LHS2) ? RHS2 : LHS2;
+  SDValue V2 = (K2Tmp == TrueVal2) ? FalseVal2 : TrueVal2;
+
+  // We must detect cases where the original operations worked with 16- or
+  // 8-bit values. In such case, V2Tmp != V2 because the comparison operations
+  // must work with sign-extended values but the select operations return
+  // the original non-extended value.
+  SDValue V2TmpReg = V2Tmp;
+  if (V2Tmp->getOpcode() == ISD::SIGN_EXTEND_INREG)
+    V2TmpReg = V2Tmp->getOperand(0);
+
+  // Check that the registers and the constants have the correct values
+  // in both conditionals
+  if (!K1 || !K2 || *K1 == Op2 || *K2 != K2Tmp || V1Tmp != V2Tmp ||
+      V2TmpReg != V2)
+    return false;
+
+  // Figure out which conditional is saturating the lower/upper bound.
+  const SDValue *LowerCheckOp =
+      isLowerSaturate(LHS1, RHS1, TrueVal1, FalseVal1, CC1, *K1)
+          ? &Op
+          : isLowerSaturate(LHS2, RHS2, TrueVal2, FalseVal2, CC2, *K2) ? &Op2
+                                                                       : NULL;
+  const SDValue *UpperCheckOp =
+      isUpperSaturate(LHS1, RHS1, TrueVal1, FalseVal1, CC1, *K1)
+          ? &Op
+          : isUpperSaturate(LHS2, RHS2, TrueVal2, FalseVal2, CC2, *K2) ? &Op2
+                                                                       : NULL;
+
+  if (!UpperCheckOp || !LowerCheckOp || LowerCheckOp == UpperCheckOp)
+    return false;
+
+  // Check that the constant in the lower-bound check is
+  // the opposite of the constant in the upper-bound check
+  // in 1's complement.
+  int64_t Val1 = cast<ConstantSDNode>(*K1)->getSExtValue();
+  int64_t Val2 = cast<ConstantSDNode>(*K2)->getSExtValue();
+  int64_t PosVal = std::max(Val1, Val2);
+
+  if (((Val1 > Val2 && UpperCheckOp == &Op) ||
+       (Val1 < Val2 && UpperCheckOp == &Op2)) &&
+      Val1 == ~Val2 && isPowerOf2_64(PosVal + 1)) {
+
+    V = V2;
+    K = (uint64_t)PosVal; // At this point, PosVal is guaranteed to be positive
+    return true;
+  }
+
+  return false;
+}
+
 SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
+
   EVT VT = Op.getValueType();
+  SDLoc dl(Op);
+
+  // Try to convert two saturating conditional selects into a single SSAT
+  SDValue SatValue;
+  uint64_t SatConstant;
+  if (isSaturatingConditional(Op, SatValue, SatConstant))
+    return DAG.getNode(ARMISD::SSAT, dl, VT, SatValue,
+                       DAG.getConstant(countTrailingOnes(SatConstant), dl, VT));
+
   SDValue LHS = Op.getOperand(0);
   SDValue RHS = Op.getOperand(1);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
   SDValue TrueVal = Op.getOperand(2);
   SDValue FalseVal = Op.getOperand(3);
-  SDLoc dl(Op);
 
   if (Subtarget->isFPOnlySP() && LHS.getValueType() == MVT::f64) {
     DAG.getTargetLoweringInfo().softenSetCCOperands(DAG, MVT::f64, LHS, RHS, CC,
@@ -4001,7 +4138,7 @@ SDValue ARMTargetLowering::LowerBR_JT(SDValue Op, SelectionDAG &DAG) const {
     return DAG.getNode(ARMISD::BR2_JT, dl, MVT::Other, Chain,
                        Addr, Op.getOperand(2), JTI);
   }
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+  if (isPositionIndependent()) {
     Addr =
         DAG.getLoad((EVT)MVT::i32, dl, Chain, Addr,
                     MachinePointerInfo::getJumpTable(DAG.getMachineFunction()),
@@ -6834,7 +6971,7 @@ SDValue ARMTargetLowering::LowerFSINCOS(SDValue Op, SelectionDAG &DAG) const {
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl)
       .setChain(DAG.getEntryNode())
-      .setCallee(CC, RetTy, Callee, std::move(Args), 0)
+      .setCallee(CC, RetTy, Callee, std::move(Args))
       .setDiscardResult(ShouldUseSRet);
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
 
@@ -6887,7 +7024,7 @@ SDValue ARMTargetLowering::LowerWindowsDIVLibCall(SDValue Op, SelectionDAG &DAG,
   CLI.setDebugLoc(dl)
     .setChain(Chain)
     .setCallee(CallingConv::ARM_AAPCS_VFP, VT.getTypeForEVT(*DAG.getContext()),
-               ES, std::move(Args), 0);
+               ES, std::move(Args));
 
   return LowerCallTo(CLI).first;
 }
@@ -7325,7 +7462,6 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
   MachineJumpTableInfo *JTI =
     MF->getOrCreateJumpTableInfo(MachineJumpTableInfo::EK_Inline);
   unsigned MJTI = JTI->createJumpTableIndex(LPadList);
-  Reloc::Model RelocM = getTargetMachine().getRelocationModel();
 
   // Create the MBBs for the dispatch code.
 
@@ -7369,6 +7505,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
   // registers being marked as clobbered.
   MIB.addRegMask(RI.getNoPreservedMask());
 
+  bool IsPositionIndependent = isPositionIndependent();
   unsigned NumLPads = LPadList.size();
   if (Subtarget->isThumb2()) {
     unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
@@ -7482,7 +7619,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
                    .addMemOperand(JTMMOLd));
 
     unsigned NewVReg6 = NewVReg5;
-    if (RelocM == Reloc::PIC_) {
+    if (IsPositionIndependent) {
       NewVReg6 = MRI->createVirtualRegister(TRC);
       AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tADDrr), NewVReg6)
                      .addReg(ARM::CPSR, RegState::Define)
@@ -7565,7 +7702,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
       .addImm(0)
       .addMemOperand(JTMMOLd));
 
-    if (RelocM == Reloc::PIC_) {
+    if (IsPositionIndependent) {
       BuildMI(DispContBB, dl, TII->get(ARM::BR_JTadd))
         .addReg(NewVReg5, RegState::Kill)
         .addReg(NewVReg4)
@@ -8684,11 +8821,6 @@ static SDValue AddCombineTo64bitMLAL(SDNode *AddcNode,
                                      TargetLowering::DAGCombinerInfo &DCI,
                                      const ARMSubtarget *Subtarget) {
 
-  if (Subtarget->isThumb1Only()) return SDValue();
-
-  // Only perform the checks after legalize when the pattern is available.
-  if (DCI.isBeforeLegalize()) return SDValue();
-
   // Look for multiply add opportunities.
   // The pattern is a ISD::UMUL_LOHI followed by two add nodes, where
   // each add nodes consumes a value from ISD::UMUL_LOHI and there is
@@ -8816,14 +8948,97 @@ static SDValue AddCombineTo64bitMLAL(SDNode *AddcNode,
   return resNode;
 }
 
+static SDValue AddCombineTo64bitUMAAL(SDNode *AddcNode,
+                                      TargetLowering::DAGCombinerInfo &DCI,
+                                      const ARMSubtarget *Subtarget) {
+  // UMAAL is similar to UMLAL except that it adds two unsigned values.
+  // While trying to combine for the other MLAL nodes, first search for the
+  // chance to use UMAAL. Check if Addc uses another addc node which can first
+  // be combined into a UMLAL. The other pattern is AddcNode being combined
+  // into an UMLAL and then using another addc is handled in ISelDAGToDAG.
+
+  if (!Subtarget->hasV6Ops())
+    return AddCombineTo64bitMLAL(AddcNode, DCI, Subtarget);
+
+  SDNode *PrevAddc = nullptr;
+  if (AddcNode->getOperand(0).getOpcode() == ISD::ADDC)
+    PrevAddc = AddcNode->getOperand(0).getNode();
+  else if (AddcNode->getOperand(1).getOpcode() == ISD::ADDC)
+    PrevAddc = AddcNode->getOperand(1).getNode();
+
+  // If there's no addc chains, just return a search for any MLAL.
+  if (PrevAddc == nullptr)
+    return AddCombineTo64bitMLAL(AddcNode, DCI, Subtarget);
+
+  // Try to convert the addc operand to an MLAL and if that fails try to
+  // combine AddcNode.
+  SDValue MLAL = AddCombineTo64bitMLAL(PrevAddc, DCI, Subtarget);
+  if (MLAL != SDValue(PrevAddc, 0))
+    return AddCombineTo64bitMLAL(AddcNode, DCI, Subtarget);
+
+  // Find the converted UMAAL or quit if it doesn't exist.
+  SDNode *UmlalNode = nullptr;
+  SDValue AddHi;
+  if (AddcNode->getOperand(0).getOpcode() == ARMISD::UMLAL) {
+    UmlalNode = AddcNode->getOperand(0).getNode();
+    AddHi = AddcNode->getOperand(1);
+  } else if (AddcNode->getOperand(1).getOpcode() == ARMISD::UMLAL) {
+    UmlalNode = AddcNode->getOperand(1).getNode();
+    AddHi = AddcNode->getOperand(0);
+  } else {
+    return SDValue();
+  }
+
+  // The ADDC should be glued to an ADDE node, which uses the same UMLAL as
+  // the ADDC as well as Zero.
+  auto *Zero = dyn_cast<ConstantSDNode>(UmlalNode->getOperand(3));
+
+  if (!Zero || Zero->getZExtValue() != 0)
+    return SDValue();
+
+  // Check that we have a glued ADDC node.
+  if (AddcNode->getValueType(1) != MVT::Glue)
+    return SDValue();
+
+  // Look for the glued ADDE.
+  SDNode* AddeNode = AddcNode->getGluedUser();
+  if (!AddeNode)
+    return SDValue();
+
+  if ((AddeNode->getOperand(0).getNode() == Zero &&
+       AddeNode->getOperand(1).getNode() == UmlalNode) ||
+      (AddeNode->getOperand(0).getNode() == UmlalNode &&
+       AddeNode->getOperand(1).getNode() == Zero)) {
+
+    SelectionDAG &DAG = DCI.DAG;
+    SDValue Ops[] = { UmlalNode->getOperand(0), UmlalNode->getOperand(1),
+                      UmlalNode->getOperand(2), AddHi };
+    SDValue UMAAL =  DAG.getNode(ARMISD::UMAAL, SDLoc(AddcNode),
+                                 DAG.getVTList(MVT::i32, MVT::i32), Ops);
+
+    // Replace the ADDs' nodes uses by the UMAAL node's values.
+    DAG.ReplaceAllUsesOfValueWith(SDValue(AddeNode, 0), SDValue(UMAAL.getNode(), 1));
+    DAG.ReplaceAllUsesOfValueWith(SDValue(AddcNode, 0), SDValue(UMAAL.getNode(), 0));
+
+    // Return original node to notify the driver to stop replacing.
+    return SDValue(AddcNode, 0);
+  }
+  return SDValue();
+}
+
 /// PerformADDCCombine - Target-specific dag combine transform from
-/// ISD::ADDC, ISD::ADDE, and ISD::MUL_LOHI to MLAL.
+/// ISD::ADDC, ISD::ADDE, and ISD::MUL_LOHI to MLAL or
+/// ISD::ADDC, ISD::ADDE and ARMISD::UMLAL to ARMISD::UMAAL
 static SDValue PerformADDCCombine(SDNode *N,
                                  TargetLowering::DAGCombinerInfo &DCI,
                                  const ARMSubtarget *Subtarget) {
 
-  return AddCombineTo64bitMLAL(N, DCI, Subtarget);
+  if (Subtarget->isThumb1Only()) return SDValue();
 
+  // Only perform the checks after legalize when the pattern is available.
+  if (DCI.isBeforeLegalize()) return SDValue();
+
+  return AddCombineTo64bitUMAAL(N, DCI, Subtarget);
 }
 
 /// PerformADDCombineWithOperands - Try DAG combinations for an ADD with
@@ -11833,7 +12048,7 @@ static TargetLowering::ArgListTy getDivRemArgList(
 
 SDValue ARMTargetLowering::LowerDivRem(SDValue Op, SelectionDAG &DAG) const {
   assert((Subtarget->isTargetAEABI() || Subtarget->isTargetAndroid() ||
-          Subtarget->isTargetGNUAEABI()) &&
+          Subtarget->isTargetGNUAEABI() || Subtarget->isTargetMuslAEABI()) &&
          "Register-based DivRem lowering only");
   unsigned Opcode = Op->getOpcode();
   assert((Opcode == ISD::SDIVREM || Opcode == ISD::UDIVREM) &&
@@ -11857,7 +12072,7 @@ SDValue ARMTargetLowering::LowerDivRem(SDValue Op, SelectionDAG &DAG) const {
   SDLoc dl(Op);
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(InChain)
-    .setCallee(getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
+    .setCallee(getLibcallCallingConv(LC), RetTy, Callee, std::move(Args))
     .setInRegister().setSExtResult(isSigned).setZExtResult(!isSigned);
 
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
@@ -11895,7 +12110,7 @@ SDValue ARMTargetLowering::LowerREM(SDNode *N, SelectionDAG &DAG) const {
   // Lower call
   CallLoweringInfo CLI(DAG);
   CLI.setChain(InChain)
-     .setCallee(CallingConv::ARM_AAPCS, RetTy, Callee, std::move(Args), 0)
+     .setCallee(CallingConv::ARM_AAPCS, RetTy, Callee, std::move(Args))
      .setSExtResult(isSigned).setZExtResult(!isSigned).setDebugLoc(SDLoc(N));
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
 
@@ -12156,7 +12371,7 @@ Instruction* ARMTargetLowering::emitLeadingFence(IRBuilder<> &Builder,
     /*FALLTHROUGH*/
   case AtomicOrdering::Release:
   case AtomicOrdering::AcquireRelease:
-    if (Subtarget->isSwift())
+    if (Subtarget->preferISHSTBarriers())
       return makeDMB(Builder, ARM_MB::ISHST);
     // FIXME: add a comment with a link to documentation justifying this.
     else

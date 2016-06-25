@@ -12,6 +12,7 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ELF.h"
 
 #include <vector>
@@ -32,6 +33,16 @@ enum ELFKind {
 
 enum class BuildIdKind { None, Fnv1, Md5, Sha1, Hexstring };
 
+// This struct contains symbols version definition that
+// can be found in version script if it is used for link.
+struct Version {
+  Version(llvm::StringRef Name) : Name(Name) {}
+  llvm::StringRef Name;
+  llvm::StringRef Parent;
+  std::vector<llvm::StringRef> Globals;
+  size_t NameOff; // Offset in string table.
+};
+
 // This struct contains the global configuration for the linker.
 // Most fields are direct mapping from the command line options
 // and such fields have the same name as the corresponding options.
@@ -49,7 +60,9 @@ struct Configuration {
   llvm::StringRef OutputFile;
   llvm::StringRef SoName;
   llvm::StringRef Sysroot;
+  llvm::StringSet<> TraceSymbol;
   std::string RPath;
+  std::vector<Version> SymbolVersions;
   std::vector<llvm::StringRef> DynamicList;
   std::vector<llvm::StringRef> SearchPaths;
   std::vector<llvm::StringRef> Undefined;

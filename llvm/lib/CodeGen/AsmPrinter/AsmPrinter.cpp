@@ -1173,17 +1173,11 @@ bool AsmPrinter::doFinalization(Module &M) {
     // to notice uses in operands (due to constant exprs etc).  This should
     // happen with the MC stuff eventually.
 
-    // Print out module-level global variables here.
-    for (const auto &G : M.globals()) {
-      if (!G.hasExternalWeakLinkage())
+    // Print out module-level global objects here.
+    for (const auto &GO : M.global_objects()) {
+      if (!GO.hasExternalWeakLinkage())
         continue;
-      OutStreamer->EmitSymbolAttribute(getSymbol(&G), MCSA_WeakReference);
-    }
-
-    for (const auto &F : M) {
-      if (!F.hasExternalWeakLinkage())
-        continue;
-      OutStreamer->EmitSymbolAttribute(getSymbol(&F), MCSA_WeakReference);
+      OutStreamer->EmitSymbolAttribute(getSymbol(&GO), MCSA_WeakReference);
     }
   }
 
@@ -1412,7 +1406,7 @@ void AsmPrinter::EmitJumpTableInfo() {
     // For the EK_LabelDifference32 entry, if using .set avoids a relocation,
     /// emit a .set directive for each unique entry.
     if (MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32 &&
-        MAI->doesSetDirectiveSuppressesReloc()) {
+        MAI->doesSetDirectiveSuppressReloc()) {
       SmallPtrSet<const MachineBasicBlock*, 16> EmittedSets;
       const TargetLowering *TLI = MF->getSubtarget().getTargetLowering();
       const MCExpr *Base = TLI->getPICJumpTableRelocBaseExpr(MF,JTI,OutContext);
@@ -1493,7 +1487,7 @@ void AsmPrinter::EmitJumpTableEntry(const MachineJumpTableInfo *MJTI,
     // If the .set directive avoids relocations, this is emitted as:
     //      .set L4_5_set_123, LBB123 - LJTI1_2
     //      .word L4_5_set_123
-    if (MAI->doesSetDirectiveSuppressesReloc()) {
+    if (MAI->doesSetDirectiveSuppressReloc()) {
       Value = MCSymbolRefExpr::create(GetJTSetSymbol(UID, MBB->getNumber()),
                                       OutContext);
       break;

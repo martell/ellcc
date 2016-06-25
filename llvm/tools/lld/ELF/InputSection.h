@@ -41,6 +41,9 @@ protected:
   // The file this section is from.
   ObjectFile<ELFT> *File;
 
+  // If a section is compressed, this vector has uncompressed section data.
+  SmallVector<char, 0> Uncompressed;
+
 public:
   enum Kind { Regular, EHFrame, Merge, MipsReginfo, MipsOptions };
   Kind SectionKind;
@@ -70,16 +73,20 @@ public:
   StringRef getSectionName() const;
   const Elf_Shdr *getSectionHdr() const { return Header; }
   ObjectFile<ELFT> *getFile() const { return File; }
-  uintX_t getOffset(const DefinedRegular<ELFT> &Sym);
+  uintX_t getOffset(const DefinedRegular<ELFT> &Sym) const;
 
   // Translate an offset in the input section to an offset in the output
   // section.
-  uintX_t getOffset(uintX_t Offset);
+  uintX_t getOffset(uintX_t Offset) const;
 
   ArrayRef<uint8_t> getSectionData() const;
 
+  void uncompress();
+
   void relocate(uint8_t *Buf, uint8_t *BufEnd);
-  std::vector<Relocation> Relocations;
+  std::vector<Relocation<ELFT>> Relocations;
+
+  bool Compressed;
 };
 
 template <class ELFT> InputSectionBase<ELFT> InputSectionBase<ELFT>::Discarded;
@@ -125,6 +132,7 @@ public:
 
   // Returns the SectionPiece at a given input section offset.
   SectionPiece *getSectionPiece(uintX_t Offset);
+  const SectionPiece *getSectionPiece(uintX_t Offset) const;
 };
 
 // This corresponds to a SHF_MERGE section of an input file.
@@ -143,7 +151,7 @@ public:
 
   // Translate an offset in the input section to an offset
   // in the output section.
-  uintX_t getOffset(uintX_t Offset);
+  uintX_t getOffset(uintX_t Offset) const;
 
   void finalizePieces();
 
@@ -163,7 +171,7 @@ public:
 
   // Translate an offset in the input section to an offset in the output
   // section.
-  uintX_t getOffset(uintX_t Offset);
+  uintX_t getOffset(uintX_t Offset) const;
 
   // Relocation section that refer to this one.
   const Elf_Shdr *RelocSection = nullptr;

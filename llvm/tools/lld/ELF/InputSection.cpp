@@ -15,6 +15,7 @@
 #include "OutputSections.h"
 #include "Target.h"
 
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/Endian.h"
 
 using namespace llvm;
@@ -29,7 +30,8 @@ template <class ELFT>
 InputSectionBase<ELFT>::InputSectionBase(elf::ObjectFile<ELFT> *File,
                                          const Elf_Shdr *Header,
                                          Kind SectionKind)
-    : Header(Header), File(File), SectionKind(SectionKind), Repl(this) {
+    : Header(Header), File(File), SectionKind(SectionKind), Repl(this),
+      Compressed(Header->sh_flags & SHF_COMPRESSED) {
   // The garbage collector sets sections' Live bits.
   // If GC is disabled, all sections are considered live by default.
   Live = !Config->GcSections;
@@ -52,11 +54,14 @@ template <class ELFT> StringRef InputSectionBase<ELFT>::getSectionName() const {
 
 template <class ELFT>
 ArrayRef<uint8_t> InputSectionBase<ELFT>::getSectionData() const {
+  if (Compressed)
+    return ArrayRef<uint8_t>((const uint8_t *)Uncompressed.data(),
+                             Uncompressed.size());
   return check(this->File->getObj().getSectionContents(this->Header));
 }
 
 template <class ELFT>
-typename ELFT::uint InputSectionBase<ELFT>::getOffset(uintX_t Offset) {
+typename ELFT::uint InputSectionBase<ELFT>::getOffset(uintX_t Offset) const {
   switch (SectionKind) {
   case Regular:
     return cast<InputSection<ELFT>>(this)->OutSecOff + Offset;
@@ -78,9 +83,30 @@ typename ELFT::uint InputSectionBase<ELFT>::getOffset(uintX_t Offset) {
   llvm_unreachable("invalid section kind");
 }
 
+template <class ELFT> void InputSectionBase<ELFT>::uncompress() {
+  typedef typename std::conditional<ELFT::Is64Bits, Elf64_Chdr,
+                                    Elf32_Chdr>::type Elf_Chdr;
+  const endianness E = ELFT::TargetEndianness;
+
+  if (!zlib::isAvailable())
+    fatal("build lld with zlib to enable compressed sections support");
+
+  ArrayRef<uint8_t> Data =
+      check(this->File->getObj().getSectionContents(this->Header));
+  if (read32<E>(Data.data()) != ELFCOMPRESS_ZLIB)
+    fatal("unsupported elf compression type");
+
+  size_t UncompressedSize =
+      reinterpret_cast<const Elf_Chdr *>(Data.data())->ch_size;
+  size_t HdrSize = sizeof(Elf_Chdr);
+  StringRef Buf((const char *)Data.data() + HdrSize, Data.size() - HdrSize);
+  if (zlib::uncompress(Buf, Uncompressed, UncompressedSize) != zlib::StatusOK)
+    fatal("error uncompressing section");
+}
+
 template <class ELFT>
 typename ELFT::uint
-InputSectionBase<ELFT>::getOffset(const DefinedRegular<ELFT> &Sym) {
+InputSectionBase<ELFT>::getOffset(const DefinedRegular<ELFT> &Sym) const {
   return getOffset(Sym.Value);
 }
 
@@ -215,13 +241,17 @@ getSymVA(uint32_t Type, typename ELFT::uint A, typename ELFT::uint P,
     // should be initialized by 'page address'. This address is high 16-bits
     // of sum the symbol's value and the addend.
     return Out<ELFT>::Got->getMipsLocalPageOffset(Body.getVA<ELFT>(A));
-  case R_MIPS_GOT_LOCAL:
-    // For non-local symbols GOT entries should contain their full
-    // addresses. But if such symbol cannot be preempted, we do not
-    // have to put them into the "global" part of GOT and use dynamic
-    // linker to determine their actual addresses. That is why we
-    // create GOT entries for them in the "local" part of GOT.
-    return Out<ELFT>::Got->getMipsLocalEntryOffset(Body.getVA<ELFT>(A));
+  case R_MIPS_GOT_OFF:
+    // In case of MIPS if a GOT relocation has non-zero addend this addend
+    // should be applied to the GOT entry content not to the GOT entry offset.
+    // That is why we use separate expression type.
+    return Out<ELFT>::Got->getMipsGotOffset(Body, A);
+  case R_MIPS_TLSGD:
+    return Out<ELFT>::Got->getGlobalDynOffset(Body) +
+           Out<ELFT>::Got->getMipsTlsOffset() - MipsGPOffset;
+  case R_MIPS_TLSLD:
+    return Out<ELFT>::Got->getTlsIndexOff() +
+           Out<ELFT>::Got->getMipsTlsOffset() - MipsGPOffset;
   case R_PPC_OPD: {
     uint64_t SymVA = Body.getVA<ELFT>(A);
     // If we have an undefined weak symbol, we might get here with a symbol
@@ -299,8 +329,8 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd) {
   }
 
   const unsigned Bits = sizeof(uintX_t) * 8;
-  for (const Relocation &Rel : Relocations) {
-    uintX_t Offset = Rel.Offset;
+  for (const Relocation<ELFT> &Rel : Relocations) {
+    uintX_t Offset = Rel.InputSec->getOffset(Rel.Offset);
     uint8_t *BufLoc = Buf + Offset;
     uint32_t Type = Rel.Type;
     uintX_t A = Rel.Addend;
@@ -424,13 +454,13 @@ void EhInputSection<ELFT>::split() {
 }
 
 template <class ELFT>
-typename ELFT::uint EhInputSection<ELFT>::getOffset(uintX_t Offset) {
+typename ELFT::uint EhInputSection<ELFT>::getOffset(uintX_t Offset) const {
   // The file crtbeginT.o has relocations pointing to the start of an empty
   // .eh_frame that is known to be the first in the link. It does that to
   // identify the start of the output .eh_frame. Handle this special case.
   if (this->getSectionHdr()->sh_size == 0)
     return Offset;
-  SectionPiece *Piece = this->getSectionPiece(Offset);
+  const SectionPiece *Piece = this->getSectionPiece(Offset);
   if (Piece->OutputOff == size_t(-1))
     return -1; // Not in the output
 
@@ -508,6 +538,13 @@ bool MergeInputSection<ELFT>::classof(const InputSectionBase<ELFT> *S) {
 // Do binary search to get a section piece at a given input offset.
 template <class ELFT>
 SectionPiece *SplitInputSection<ELFT>::getSectionPiece(uintX_t Offset) {
+  auto *This = static_cast<const SplitInputSection<ELFT> *>(this);
+  return const_cast<SectionPiece *>(This->getSectionPiece(Offset));
+}
+
+template <class ELFT>
+const SectionPiece *
+SplitInputSection<ELFT>::getSectionPiece(uintX_t Offset) const {
   ArrayRef<uint8_t> D = this->getSectionData();
   StringRef Data((const char *)D.data(), D.size());
   uintX_t Size = Data.size();
@@ -526,14 +563,14 @@ SectionPiece *SplitInputSection<ELFT>::getSectionPiece(uintX_t Offset) {
 // Because contents of a mergeable section is not contiguous in output,
 // it is not just an addition to a base output offset.
 template <class ELFT>
-typename ELFT::uint MergeInputSection<ELFT>::getOffset(uintX_t Offset) {
+typename ELFT::uint MergeInputSection<ELFT>::getOffset(uintX_t Offset) const {
   auto It = OffsetMap.find(Offset);
   if (It != OffsetMap.end())
     return It->second;
 
   // If Offset is not at beginning of a section piece, it is not in the map.
   // In that case we need to search from the original section piece vector.
-  SectionPiece &Piece = *this->getSectionPiece(Offset);
+  const SectionPiece &Piece = *this->getSectionPiece(Offset);
   assert(Piece.Live);
   uintX_t Addend = Offset - Piece.InputOff;
   return Piece.OutputOff + Addend;

@@ -3690,8 +3690,6 @@ def MFENCE : I<0xAE, MRM_F0, (outs), (ins),
                TB, Requires<[HasMFence]>;
 } // SchedRW
 
-def : Pat<(X86SFence), (SFENCE)>;
-def : Pat<(X86LFence), (LFENCE)>;
 def : Pat<(X86MFence), (MFENCE)>;
 
 //===----------------------------------------------------------------------===//
@@ -8764,6 +8762,8 @@ let Predicates = [HasAVX2, NoVLX] in {
   defm VPSRLVD : avx2_var_shift<0x45, "vpsrlvd", srl, v4i32, v8i32>;
   defm VPSRLVQ : avx2_var_shift<0x45, "vpsrlvq", srl, v2i64, v4i64>, VEX_W;
   defm VPSRAVD : avx2_var_shift<0x46, "vpsravd", sra, v4i32, v8i32>;
+  let isCodeGenOnly = 1 in
+    defm VPSRAVD_Int : avx2_var_shift<0x46, "vpsravd", X86vsrav, v4i32, v8i32>;
 }
 //===----------------------------------------------------------------------===//
 // VGATHER - GATHER Operations

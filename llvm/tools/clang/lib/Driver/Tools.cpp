@@ -804,10 +804,12 @@ arm::FloatABI arm::getARMFloatABI(const ToolChain &TC, const ArgList &Args) {
     default:
       switch (Triple.getEnvironment()) {
       case llvm::Triple::GNUEABIHF:
+      case llvm::Triple::MuslEABIHF:
       case llvm::Triple::EABIHF:
         ABI = FloatABI::Hard;
         break;
       case llvm::Triple::GNUEABI:
+      case llvm::Triple::MuslEABI:
       case llvm::Triple::EABI:
         // EABI is always AAPCS, and if it was not marked 'hard', it's softfp
         ABI = FloatABI::SoftFP;
@@ -1055,6 +1057,8 @@ void Clang::AddARMTargetArgs(const llvm::Triple &Triple, const ArgList &Args,
     case llvm::Triple::Android:
     case llvm::Triple::GNUEABI:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABI:
+    case llvm::Triple::MuslEABIHF:
       ABIName = "aapcs-linux";
       break;
     case llvm::Triple::EABIHF:
@@ -2315,10 +2319,12 @@ void Clang::AddX86TargetArgs(const ArgList &Args,
   }
 
   // Set flags to support MCU ABI.
-  if (Args.hasArg(options::OPT_miamcu)) {
-    CmdArgs.push_back("-mfloat-abi");
-    CmdArgs.push_back("soft");
-    CmdArgs.push_back("-mstack-alignment=4");
+  if (Arg *A = Args.getLastArg(options::OPT_miamcu, options::OPT_mno_iamcu)) {
+    if (A->getOption().matches(options::OPT_miamcu)) {
+      CmdArgs.push_back("-mfloat-abi");
+      CmdArgs.push_back("soft");
+      CmdArgs.push_back("-mstack-alignment=4");
+    }
   }
 }
 
@@ -2910,7 +2916,7 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
   // options.
   bool CompressDebugSections = false;
 
-  bool UseRelaxRelocations = false;
+  bool UseRelaxRelocations = ENABLE_X86_RELAX_RELOCATIONS;
   const char *MipsTargetFeature = nullptr;
   for (const Arg *A :
        Args.filtered(options::OPT_Wa_COMMA, options::OPT_Xassembler)) {
@@ -4087,10 +4093,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (PICLevel > 0) {
     CmdArgs.push_back("-pic-level");
     CmdArgs.push_back(PICLevel == 1 ? "1" : "2");
-    if (IsPIE) {
-      CmdArgs.push_back("-pie-level");
-      CmdArgs.push_back(PICLevel == 1 ? "1" : "2");
-    }
+    if (IsPIE)
+      CmdArgs.push_back("-pic-is-pie");
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_meabi)) {
@@ -5484,6 +5488,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-inline");
 
   if (Arg* InlineArg = Args.getLastArg(options::OPT_finline_functions,
+                                       options::OPT_finline_hint_functions,
                                        options::OPT_fno_inline_functions))
     InlineArg->render(Args, CmdArgs);
 

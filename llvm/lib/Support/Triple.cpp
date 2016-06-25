@@ -213,6 +213,8 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case EABIHF: return "eabihf";
   case Android: return "android";
   case Musl: return "musl";
+  case MuslEABI: return "musleabi";
+  case MuslEABIHF: return "musleabihf";
   case MSVC: return "msvc";
   case Itanium: return "itanium";
   case Cygnus: return "cygnus";
@@ -478,6 +480,8 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
     .StartsWith("code16", Triple::CODE16)
     .StartsWith("gnu", Triple::GNU)
     .StartsWith("android", Triple::Android)
+    .StartsWith("musleabihf", Triple::MuslEABIHF)
+    .StartsWith("musleabi", Triple::MuslEABI)
     .StartsWith("musl", Triple::Musl)
     .StartsWith("msvc", Triple::MSVC)
     .StartsWith("itanium", Triple::Itanium)
@@ -1479,6 +1483,7 @@ StringRef Triple::getARMCPUForArch(StringRef MArch) const {
     switch (getEnvironment()) {
     case llvm::Triple::EABIHF:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABIHF:
       return "arm1176jzf-s";
     default:
       return "arm7tdmi";

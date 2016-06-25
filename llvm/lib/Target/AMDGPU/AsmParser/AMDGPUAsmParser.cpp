@@ -301,7 +301,6 @@ public:
   bool isSWaitCnt() const;
   bool isHwreg() const;
   bool isSendMsg() const;
-  bool isMubufOffset() const;
   bool isSMRDOffset() const;
   bool isSMRDLiteralOffset() const;
   bool isDPPCtrl() const;
@@ -689,12 +688,10 @@ public:
 
   OperandMatchResultTy parseSendMsgOp(OperandVector &Operands);
   OperandMatchResultTy parseSOppBrTarget(OperandVector &Operands);
-  AMDGPUOperand::Ptr defaultHwreg() const;
 
   void cvtMubuf(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, false, false); }
   void cvtMubufAtomic(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, true, false); }
   void cvtMubufAtomicReturn(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, true, true); }
-  AMDGPUOperand::Ptr defaultMubufOffset() const;
   AMDGPUOperand::Ptr defaultGLC() const;
   AMDGPUOperand::Ptr defaultSLC() const;
   AMDGPUOperand::Ptr defaultTFE() const;
@@ -706,9 +703,6 @@ public:
   AMDGPUOperand::Ptr defaultLWE() const;
   AMDGPUOperand::Ptr defaultSMRDOffset() const;
   AMDGPUOperand::Ptr defaultSMRDLiteralOffset() const;
-
-  AMDGPUOperand::Ptr defaultClampSI() const;
-  AMDGPUOperand::Ptr defaultOModSI() const;
 
   OperandMatchResultTy parseOModOperand(OperandVector &Operands);
 
@@ -728,11 +722,6 @@ public:
   OperandMatchResultTy parseSDWASel(OperandVector &Operands, StringRef Prefix,
                                     AMDGPUOperand::ImmTy Type);
   OperandMatchResultTy parseSDWADstUnused(OperandVector &Operands);
-  AMDGPUOperand::Ptr defaultSDWASel(AMDGPUOperand::ImmTy Type) const;
-  AMDGPUOperand::Ptr defaultSDWADstSel() const;
-  AMDGPUOperand::Ptr defaultSDWASrc0Sel() const;
-  AMDGPUOperand::Ptr defaultSDWASrc1Sel() const;
-  AMDGPUOperand::Ptr defaultSDWADstUnused() const;
   void cvtSdwaVOP1(MCInst &Inst, const OperandVector &Operands);
   void cvtSdwaVOP2(MCInst &Inst, const OperandVector &Operands);
   void cvtSDWA(MCInst &Inst, const OperandVector &Operands, bool IsVOP1);
@@ -1288,7 +1277,7 @@ bool AMDGPUAsmParser::ParseAMDKernelCodeTValue(StringRef ID,
                                                amd_kernel_code_t &Header) {
   SmallString<40> ErrStr;
   raw_svector_ostream Err(ErrStr);
-  if (!parseAmdKernelCodeField(ID, getLexer(), Header, Err)) {
+  if (!parseAmdKernelCodeField(ID, getParser(), Header, Err)) {
     return TokError(Err.str());
   }
   Lex();
@@ -1301,9 +1290,6 @@ bool AMDGPUAsmParser::ParseDirectiveAMDKernelCodeT() {
   AMDGPU::initDefaultAMDKernelCodeT(Header, getSTI().getFeatureBits());
 
   while (true) {
-
-    if (getLexer().isNot(AsmToken::EndOfStatement))
-      return TokError("amd_kernel_code_t values must begin on a new line");
 
     // Lex EndOfStatement.  This is in a while loop, because lexing a comment
     // will set the current token to EndOfStatement.
@@ -1918,10 +1904,6 @@ bool AMDGPUOperand::isHwreg() const {
   return isImmTy(ImmTyHwreg);
 }
 
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultHwreg() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyHwreg);
-}
-
 bool AMDGPUAsmParser::parseSendMsgConstruct(OperandInfoTy &Msg, OperandInfoTy &Operation, int64_t &StreamId) {
   using namespace llvm::AMDGPU::SendMsg;
 
@@ -2131,14 +2113,6 @@ AMDGPUAsmParser::parseSOppBrTarget(OperandVector &Operands) {
 //===----------------------------------------------------------------------===//
 // mubuf
 //===----------------------------------------------------------------------===//
-
-bool AMDGPUOperand::isMubufOffset() const {
-  return isImmTy(ImmTyOffset) && isUInt<12>(getImm());
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultMubufOffset() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyOffset);
-}
 
 AMDGPUOperand::Ptr AMDGPUAsmParser::defaultGLC() const {
   return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyGLC);
@@ -2415,14 +2389,6 @@ AMDGPUAsmParser::OperandMatchResultTy AMDGPUAsmParser::parseOModOperand(OperandV
   } else {
     return MatchOperand_NoMatch;
   }
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultClampSI() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyClampSI);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultOModSI() const {
-  return AMDGPUOperand::CreateImm(1, SMLoc(), AMDGPUOperand::ImmTyOModSI);
 }
 
 void AMDGPUAsmParser::cvtId(MCInst &Inst, const OperandVector &Operands) {
@@ -2708,26 +2674,6 @@ AMDGPUAsmParser::parseSDWADstUnused(OperandVector &Operands) {
   Operands.push_back(AMDGPUOperand::CreateImm(Int, S,
                                               AMDGPUOperand::ImmTySdwaDstUnused));
   return MatchOperand_Success;
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASel(AMDGPUOperand::ImmTy Type) const {
-  return AMDGPUOperand::CreateImm(6, SMLoc(), Type);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWADstSel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaDstSel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASrc0Sel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaSrc0Sel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASrc1Sel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaSrc1Sel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWADstUnused() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTySdwaDstUnused);
 }
 
 void AMDGPUAsmParser::cvtSdwaVOP1(MCInst &Inst, const OperandVector &Operands) {

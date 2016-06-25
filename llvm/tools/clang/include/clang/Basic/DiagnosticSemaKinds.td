@@ -75,10 +75,12 @@ def err_typecheck_converted_constant_expression_indirect : Error<
   "conversion from %0 to %1 in converted constant expression would "
   "bind reference to a temporary">;
 def err_expr_not_cce : Error<
-  "%select{case value|enumerator value|non-type template argument|array size}0 "
+  "%select{case value|enumerator value|non-type template argument|"
+  "array size|constexpr if condition}0 "
   "is not a constant expression">;
 def ext_cce_narrowing : ExtWarn<
-  "%select{case value|enumerator value|non-type template argument|array size}0 "
+  "%select{case value|enumerator value|non-type template argument|"
+  "array size|constexpr if condition}0 "
   "%select{cannot be narrowed from type %2 to %3|"
   "evaluates to %2, which cannot be narrowed to type %3}1">,
   InGroup<CXX11Narrowing>, DefaultError, SFINAEFailure;
@@ -337,12 +339,16 @@ def err_language_linkage_spec_not_ascii : Error<
 def warn_use_out_of_scope_declaration : Warning<
   "use of out-of-scope declaration of %0">;
 def err_inline_non_function : Error<
-  "'inline' can only appear on functions">;
+  "'inline' can only appear on functions%select{| and non-local variables}0">;
 def err_noreturn_non_function : Error<
   "'_Noreturn' can only appear on functions">;
 def warn_qual_return_type : Warning< 
   "'%0' type qualifier%s1 on return type %plural{1:has|:have}1 no effect">,
   InGroup<IgnoredQualifiers>, DefaultIgnore;
+def warn_deprecated_redundant_constexpr_static_def : Warning<
+  "out-of-line definition of constexpr static data member is redundant "
+  "in C++17 and is deprecated">,
+  InGroup<Deprecated>, DefaultIgnore;
 
 def warn_decl_shadow :
   Warning<"declaration shadows a %select{"
@@ -1082,6 +1088,12 @@ def ext_static_assert_no_message : ExtWarn<
   "static_assert with no message is a C++1z extension">, InGroup<CXX1z>;
 def warn_cxx14_compat_static_assert_no_message : Warning<
   "static_assert with no message is incompatible with C++ standards before C++1z">,
+  DefaultIgnore, InGroup<CXXPre1zCompat>;
+
+def ext_inline_variable : ExtWarn<
+  "inline variables are a C++1z extension">, InGroup<CXX1z>;
+def warn_cxx14_compat_inline_variable : Warning<
+  "inline variables are incompatible with C++ standards before C++1z">,
   DefaultIgnore, InGroup<CXXPre1zCompat>;
 
 def warn_inline_namespace_reopened_noninline : Warning<
@@ -4303,6 +4315,7 @@ def warn_undefined_internal : Warning<
   InGroup<DiagGroup<"undefined-internal">>;
 def warn_undefined_inline : Warning<"inline function %q0 is not defined">,
   InGroup<DiagGroup<"undefined-inline">>;
+def err_undefined_inline_var : Error<"inline variable %q0 is not defined">;
 def note_used_here : Note<"used here">;
 
 def err_internal_linkage_redeclaration : Error<
@@ -4641,6 +4654,8 @@ def note_protected_by_vla_typedef : Note<
   "jump bypasses initialization of VLA typedef">;
 def note_protected_by_vla_type_alias : Note<
   "jump bypasses initialization of VLA type alias">;
+def note_protected_by_constexpr_if : Note<
+  "jump enters controlled statement of constexpr if">;
 def note_protected_by_vla : Note<
   "jump bypasses initialization of variable length array">;
 def note_protected_by_objc_try : Note<

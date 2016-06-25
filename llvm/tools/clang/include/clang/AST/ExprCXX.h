@@ -1758,12 +1758,12 @@ class CXXNewExpr : public Expr {
   SourceRange DirectInitRange;
 
   /// Was the usage ::new, i.e. is the global new to be used?
-  bool GlobalNew : 1;
+  unsigned GlobalNew : 1;
   /// Do we allocate an array? If so, the first SubExpr is the size expression.
-  bool Array : 1;
+  unsigned Array : 1;
   /// If this is an array allocation, does the usual deallocation
   /// function for the allocated type want to know the allocated size?
-  bool UsualArrayDeleteWantsSize : 1;
+  unsigned UsualArrayDeleteWantsSize : 1;
   /// The number of placement new arguments.
   unsigned NumPlacementArgs : 13;
   /// What kind of initializer do we have? Could be none, parens, or braces.
@@ -2362,7 +2362,7 @@ class ExpressionTraitExpr : public Expr {
   /// \brief The trait. A ExpressionTrait enum in MSVC compatible unsigned.
   unsigned ET : 31;
   /// \brief The value of the type trait. Unspecified if dependent.
-  bool Value : 1;
+  unsigned Value : 1;
 
   /// \brief The location of the type trait keyword.
   SourceLocation Loc;
@@ -2872,7 +2872,8 @@ private:
   Stmt *SubExpr;
 
   ExprWithCleanups(EmptyShell, unsigned NumObjects);
-  ExprWithCleanups(Expr *SubExpr, ArrayRef<CleanupObject> Objects);
+  ExprWithCleanups(Expr *SubExpr, bool CleanupsHaveSideEffects,
+                   ArrayRef<CleanupObject> Objects);
 
   friend TrailingObjects;
   friend class ASTStmtReader;
@@ -2882,6 +2883,7 @@ public:
                                   unsigned numObjects);
 
   static ExprWithCleanups *Create(const ASTContext &C, Expr *subexpr,
+                                  bool CleanupsHaveSideEffects,
                                   ArrayRef<CleanupObject> objects);
 
   ArrayRef<CleanupObject> getObjects() const {
@@ -2898,6 +2900,9 @@ public:
 
   Expr *getSubExpr() { return cast<Expr>(SubExpr); }
   const Expr *getSubExpr() const { return cast<Expr>(SubExpr); }
+  bool cleanupsHaveSideEffects() const {
+    return ExprWithCleanupsBits.CleanupsHaveSideEffects;
+  }
 
   /// As with any mutator of the AST, be very careful
   /// when modifying an existing AST to preserve its invariants.

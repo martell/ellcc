@@ -136,6 +136,7 @@ template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
   std::unique_ptr<StringTableSection<ELFT>> StrTab;
   std::unique_ptr<SymbolTableSection<ELFT>> SymTabSec;
   std::unique_ptr<OutputSection<ELFT>> MipsRldMap;
+  std::unique_ptr<VersionDefinitionSection<ELFT>> VerDef;
 
   if (Config->BuildId == BuildIdKind::Fnv1)
     BuildId.reset(new BuildIdFnv1<ELFT>);
@@ -170,6 +171,8 @@ template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
     MipsRldMap->setSize(sizeof(uintX_t));
     MipsRldMap->updateAlignment(sizeof(uintX_t));
   }
+  if (!Config->SymbolVersions.empty())
+    VerDef.reset(new VersionDefinitionSection<ELFT>());
 
   Out<ELFT>::Bss = &Bss;
   Out<ELFT>::BuildId = BuildId.get();
@@ -189,6 +192,7 @@ template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
   Out<ELFT>::ShStrTab = &ShStrTab;
   Out<ELFT>::StrTab = StrTab.get();
   Out<ELFT>::SymTab = SymTabSec.get();
+  Out<ELFT>::VerDef = VerDef.get();
   Out<ELFT>::VerSym = &VerSym;
   Out<ELFT>::VerNeed = &VerNeed;
   Out<ELFT>::MipsRldMap = MipsRldMap.get();
@@ -619,7 +623,7 @@ SectionKey<ELFT::Is64Bits>
 OutputSectionFactory<ELFT>::createKey(InputSectionBase<ELFT> *C,
                                       StringRef OutsecName) {
   const Elf_Shdr *H = C->getSectionHdr();
-  uintX_t Flags = H->sh_flags & ~SHF_GROUP;
+  uintX_t Flags = H->sh_flags & ~SHF_GROUP & ~SHF_COMPRESSED;
 
   // For SHF_MERGE we create different output sections for each alignment.
   // This makes each output section simple and keeps a single level mapping from
@@ -789,23 +793,23 @@ template <class ELFT> void Writer<ELFT>::createSections() {
 
   // Scan relocations. This must be done after every symbol is declared so that
   // we can correctly decide if a dynamic relocation is needed.
-  for (OutputSectionBase<ELFT> *Sec : OutputSections) {
-    Sec->forEachInputSection([&](InputSectionBase<ELFT> *S) {
-      if (auto *IS = dyn_cast<InputSection<ELFT>>(S)) {
-        // Set OutSecOff so that scanRelocations can use it.
-        uintX_t Off = alignTo(Sec->getSize(), S->Alignment);
-        IS->OutSecOff = Off;
-
-        scanRelocations(*IS);
-
-        // Now that scan relocs possibly changed the size, update the offset.
-        Sec->setSize(Off + S->getSize());
-      } else if (auto *EH = dyn_cast<EhInputSection<ELFT>>(S)) {
-        if (EH->RelocSection)
-          scanRelocations(*EH, *EH->RelocSection);
+  for (const std::unique_ptr<elf::ObjectFile<ELFT>> &F :
+       Symtab.getObjectFiles()) {
+    for (InputSectionBase<ELFT> *C : F->getSections()) {
+      if (isDiscarded(C))
+        continue;
+      if (auto *S = dyn_cast<InputSection<ELFT>>(C)) {
+        scanRelocations(*S);
+        continue;
       }
-    });
+      if (auto *S = dyn_cast<EhInputSection<ELFT>>(C))
+        if (S->RelocSection)
+          scanRelocations(*S, *S->RelocSection);
+    }
   }
+
+  for (OutputSectionBase<ELFT> *Sec : OutputSections)
+    Sec->assignOffsets();
 
   // Now that we have defined all possible symbols including linker-
   // synthesized ones. Visit all symbols to give the finishing touches.
@@ -904,10 +908,14 @@ template <class ELFT> void Writer<ELFT>::addPredefinedSections() {
   Add(Out<ELFT>::StrTab);
   if (isOutputDynamic()) {
     Add(Out<ELFT>::DynSymTab);
-    if (Out<ELFT>::VerNeed->getNeedNum() != 0) {
+
+    bool HasVerNeed = Out<ELFT>::VerNeed->getNeedNum() != 0;
+    if (Out<ELFT>::VerDef || HasVerNeed)
       Add(Out<ELFT>::VerSym);
+    Add(Out<ELFT>::VerDef);
+    if (HasVerNeed)
       Add(Out<ELFT>::VerNeed);
-    }
+
     Add(Out<ELFT>::GnuHashTab);
     Add(Out<ELFT>::HashTab);
     Add(Out<ELFT>::Dynamic);
@@ -1260,8 +1268,7 @@ static uint16_t getELFType() {
 // to each section. This function fixes some predefined absolute
 // symbol values that depend on section address and size.
 template <class ELFT> void Writer<ELFT>::fixAbsoluteSymbols() {
-  auto Set = [](DefinedRegular<ELFT> *&S1, DefinedRegular<ELFT> *&S2,
-                uintX_t V) {
+  auto Set = [](DefinedRegular<ELFT> *S1, DefinedRegular<ELFT> *S2, uintX_t V) {
     if (S1)
       S1->Value = V;
     if (S2)

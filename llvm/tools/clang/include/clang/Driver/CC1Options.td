@@ -546,8 +546,8 @@ def fencode_extended_block_signature : Flag<["-"], "fencode-extended-block-signa
   HelpText<"enable extended encoding of block type signature">;
 def pic_level : Separate<["-"], "pic-level">,
   HelpText<"Value for __PIC__">;
-def pie_level : Separate<["-"], "pie-level">,
-  HelpText<"Value for __PIE__">;
+def pic_is_pie : Flag<["-"], "pic-is-pie">,
+  HelpText<"File is for a position independent executable">;
 def fno_validate_pch : Flag<["-"], "fno-validate-pch">,
   HelpText<"Disable validation of precompiled headers">;
 def dump_deserialized_pch_decls : Flag<["-"], "dump-deserialized-decls">,
@@ -612,6 +612,8 @@ def fallow_half_arguments_and_returns : Flag<["-"], "fallow-half-arguments-and-r
   HelpText<"Allow function arguments and returns of type half">;
 def fdefault_calling_conv_EQ : Joined<["-"], "fdefault-calling-conv=">,
   HelpText<"Set default MS calling convention">;
+def finclude_default_header : Flag<["-"], "finclude-default-header">,
+  HelpText<"Include the default header file for OpenCL">;
 
 // C++ TSes.
 def fcoroutines : Flag<["-"], "fcoroutines">,

@@ -1824,6 +1824,19 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
     }
   }
 
+  if (Subtarget->fixAllFDIVSQRT()) {
+    // Promote FDIVS and FSQRTS to FDIVD and FSQRTD instructions instead as
+    // the former instructions generate errata on LEON processors.
+    setOperationAction(ISD::FDIV, MVT::f32, Promote);
+    setOperationAction(ISD::FSQRT, MVT::f32, Promote);
+  }
+
+  if (Subtarget->replaceFMULS()) {
+    // Promote FMULS to FMULD instructions instead as
+    // the former instructions generate errata on LEON processors.
+    setOperationAction(ISD::FMUL, MVT::f32, Promote);
+  }
+
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
 
   setMinFunctionAlignment(2);
@@ -2199,7 +2212,7 @@ SparcTargetLowering::LowerF128Op(SDValue Op, SelectionDAG &DAG,
   }
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(SDLoc(Op)).setChain(Chain)
-    .setCallee(CallingConv::C, RetTyABI, Callee, std::move(Args), 0);
+    .setCallee(CallingConv::C, RetTyABI, Callee, std::move(Args));
 
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
 
@@ -2254,7 +2267,7 @@ SDValue SparcTargetLowering::LowerF128Compare(SDValue LHS, SDValue RHS,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(DL).setChain(Chain)
-    .setCallee(CallingConv::C, RetTy, Callee, std::move(Args), 0);
+    .setCallee(CallingConv::C, RetTy, Callee, std::move(Args));
 
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
 

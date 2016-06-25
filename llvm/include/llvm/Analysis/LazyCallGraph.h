@@ -377,7 +377,23 @@ public:
     ///
     /// We use the name of the first function in the SCC to name the SCC for
     /// the purposes of debugging and logging.
-    StringRef getName() const { return begin()->getFunction().getName(); }
+    std::string getName() const {
+      std::string Name;
+      int i = 0;
+      for (Node &N : *this) {
+        if (i > 0)
+          Name += ", ";
+        // Elide the inner elements if there are too many.
+        if (i > 8) {
+          Name += "..., ";
+          Name += Nodes.back()->getFunction().getName().str();
+          break;
+        }
+        Name += N.getFunction().getName().str();
+        ++i;
+      }
+      return Name;
+    }
   };
 
   /// A RefSCC of the call graph.
@@ -925,6 +941,18 @@ public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
 };
 
+/// A pass which prints the call graph as a DOT file to a \c raw_ostream.
+///
+/// This is primarily useful for visualization purposes.
+class LazyCallGraphDOTPrinterPass
+    : public PassInfoMixin<LazyCallGraphDOTPrinterPass> {
+  raw_ostream &OS;
+
+public:
+  explicit LazyCallGraphDOTPrinterPass(raw_ostream &OS);
+
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
+};
 }
 
 #endif

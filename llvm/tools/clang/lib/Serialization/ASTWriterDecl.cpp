@@ -597,7 +597,7 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
   }
 
   Record.push_back(D->param_size());
-  for (auto P : D->params())
+  for (auto P : D->parameters())
     Record.AddDeclRef(P);
   Code = serialization::DECL_FUNCTION;
 }
@@ -637,7 +637,7 @@ void ASTDeclWriter::VisitObjCMethodDecl(ObjCMethodDecl *D) {
   Record.AddTypeSourceInfo(D->getReturnTypeSourceInfo());
   Record.AddSourceLocation(D->getLocEnd());
   Record.push_back(D->param_size());
-  for (const auto *P : D->params())
+  for (const auto *P : D->parameters())
     Record.AddDeclRef(P);
 
   Record.push_back(D->SelLocsKind);
@@ -895,6 +895,8 @@ void ASTDeclWriter::VisitVarDecl(VarDecl *D) {
     Record.push_back(D->isNRVOVariable());
     Record.push_back(D->isCXXForRangeDecl());
     Record.push_back(D->isARCPseudoStrong());
+    Record.push_back(D->isInline());
+    Record.push_back(D->isInlineSpecified());
     Record.push_back(D->isConstexpr());
     Record.push_back(D->isInitCapture());
     Record.push_back(D->isPreviousDeclInSameBlockScope());
@@ -941,6 +943,7 @@ void ASTDeclWriter::VisitVarDecl(VarDecl *D) {
       D->getInit() == nullptr &&
       !isa<ParmVarDecl>(D) &&
       !isa<VarTemplateSpecializationDecl>(D) &&
+      !D->isInline() &&
       !D->isConstexpr() &&
       !D->isInitCapture() &&
       !D->isPreviousDeclInSameBlockScope() &&
@@ -1019,9 +1022,8 @@ void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {
   Record.AddStmt(D->getBody());
   Record.AddTypeSourceInfo(D->getSignatureAsWritten());
   Record.push_back(D->param_size());
-  for (FunctionDecl::param_iterator P = D->param_begin(), PEnd = D->param_end();
-       P != PEnd; ++P)
-    Record.AddDeclRef(*P);
+  for (ParmVarDecl *P : D->parameters())
+    Record.AddDeclRef(P);
   Record.push_back(D->isVariadic());
   Record.push_back(D->blockMissingReturnType());
   Record.push_back(D->isConversionFromLambda());
@@ -1917,6 +1919,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // isNRVOVariable
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // isCXXForRangeDecl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // isARCPseudoStrong
+  Abv->Add(BitCodeAbbrevOp(0));                         // isInline
+  Abv->Add(BitCodeAbbrevOp(0));                         // isInlineSpecified
   Abv->Add(BitCodeAbbrevOp(0));                         // isConstexpr
   Abv->Add(BitCodeAbbrevOp(0));                         // isInitCapture
   Abv->Add(BitCodeAbbrevOp(0));                         // isPrevDeclInSameScope

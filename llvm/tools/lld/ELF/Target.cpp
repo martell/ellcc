@@ -190,6 +190,8 @@ public:
   RelExpr getRelExpr(uint32_t Type, const SymbolBody &S) const override;
   uint64_t getImplicitAddend(const uint8_t *Buf, uint32_t Type) const override;
   uint32_t getDynRel(uint32_t Type) const override;
+  bool isTlsLocalDynamicRel(uint32_t Type) const override;
+  bool isTlsGlobalDynamicRel(uint32_t Type) const override;
   void writeGotPlt(uint8_t *Buf, const SymbolBody &S) const override;
   void writePltHeader(uint8_t *Buf) const override;
   void writePlt(uint8_t *Buf, uint64_t GotEntryAddr, uint64_t PltEntryAddr,
@@ -475,34 +477,34 @@ void X86TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
   // be used with MOVL or ADDL instructions.
   // @indntpoff is similar to @gotntpoff, but for use in
   // position dependent code.
-  uint8_t *Inst = Loc - 2;
-  uint8_t *Op = Loc - 1;
   uint8_t Reg = (Loc[-1] >> 3) & 7;
-  bool IsMov = *Inst == 0x8b;
+
   if (Type == R_386_TLS_IE) {
-    // For R_386_TLS_IE relocation we perform the next transformations:
-    // MOVL foo@INDNTPOFF,%EAX is transformed to MOVL $foo,%EAX
-    // MOVL foo@INDNTPOFF,%REG is transformed to MOVL $foo,%REG
-    // ADDL foo@INDNTPOFF,%REG is transformed to ADDL $foo,%REG
-    // First one is special because when EAX is used the sequence is 5 bytes
-    // long, otherwise it is 6 bytes.
-    if (*Op == 0xa1) {
-      *Op = 0xb8;
+    if (Loc[-1] == 0xa1) {
+      // "movl foo@indntpoff,%eax" -> "movl $foo,%eax"
+      // This case is different from the generic case below because
+      // this is a 5 byte instruction while below is 6 bytes.
+      Loc[-1] = 0xb8;
+    } else if (Loc[-2] == 0x8b) {
+      // "movl foo@indntpoff,%reg" -> "movl $foo,%reg"
+      Loc[-2] = 0xc7;
+      Loc[-1] = 0xc0 | Reg;
     } else {
-      *Inst = IsMov ? 0xc7 : 0x81;
-      *Op = 0xc0 | ((*Op >> 3) & 7);
+      // "addl foo@indntpoff,%reg" -> "addl $foo,%reg"
+      Loc[-2] = 0x81;
+      Loc[-1] = 0xc0 | Reg;
     }
   } else {
-    // R_386_TLS_GOTIE relocation can be optimized to
-    // R_386_TLS_LE so that it does not use GOT.
-    // "MOVL foo@GOTTPOFF(%RIP), %REG" is transformed to "MOVL $foo, %REG".
-    // "ADDL foo@GOTNTPOFF(%RIP), %REG" is transformed to "LEAL foo(%REG), %REG"
-    // Note: gold converts to ADDL instead of LEAL.
-    *Inst = IsMov ? 0xc7 : 0x8d;
-    if (IsMov)
-      *Op = 0xc0 | ((*Op >> 3) & 7);
-    else
-      *Op = 0x80 | Reg | (Reg << 3);
+    assert(Type == R_386_TLS_GOTIE);
+    if (Loc[-2] == 0x8b) {
+      // "movl foo@gottpoff(%rip),%reg" -> "movl $foo,%reg"
+      Loc[-2] = 0xc7;
+      Loc[-1] = 0xc0 | Reg;
+    } else {
+      // "addl foo@gotntpoff(%rip),%reg" -> "leal foo(%reg),%reg"
+      Loc[-2] = 0x8d;
+      Loc[-1] = 0x80 | (Reg << 3) | Reg;
+    }
   }
   relocateOne(Loc, R_386_TLS_LE, Val);
 }
@@ -677,34 +679,42 @@ void X86_64TargetInfo::relaxTlsGdToIe(uint8_t *Loc, uint32_t Type,
 // R_X86_64_TPOFF32 so that it does not use GOT.
 void X86_64TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
                                       uint64_t Val) const {
-  // Ulrich's document section 6.5 says that @gottpoff(%rip) must be
-  // used in MOVQ or ADDQ instructions only.
-  // "MOVQ foo@GOTTPOFF(%RIP), %REG" is transformed to "MOVQ $foo, %REG".
-  // "ADDQ foo@GOTTPOFF(%RIP), %REG" is transformed to "LEAQ foo(%REG), %REG"
-  // (if the register is not RSP/R12) or "ADDQ $foo, %RSP".
-  // Opcodes info can be found at http://ref.x86asm.net/coder64.html#x48.
-  uint8_t *Prefix = Loc - 3;
-  uint8_t *Inst = Loc - 2;
-  uint8_t *RegSlot = Loc - 1;
+  uint8_t *Inst = Loc - 3;
   uint8_t Reg = Loc[-1] >> 3;
-  bool IsMov = *Inst == 0x8b;
-  bool RspAdd = !IsMov && Reg == 4;
+  uint8_t *RegSlot = Loc - 1;
 
-  // r12 and rsp registers requires special handling.
-  // Problem is that for other registers, for example leaq 0xXXXXXXXX(%r11),%r11
-  // result out is 7 bytes: 4d 8d 9b XX XX XX XX,
-  // but leaq 0xXXXXXXXX(%r12),%r12 is 8 bytes: 4d 8d a4 24 XX XX XX XX.
-  // The same true for rsp. So we convert to addq for them, saving 1 byte that
-  // we dont have.
-  if (RspAdd)
-    *Inst = 0x81;
-  else
-    *Inst = IsMov ? 0xc7 : 0x8d;
-  if (*Prefix == 0x4c)
-    *Prefix = (IsMov || RspAdd) ? 0x49 : 0x4d;
-  *RegSlot = (IsMov || RspAdd) ? (0xc0 | Reg) : (0x80 | Reg | (Reg << 3));
-  // The original code used a pc relative relocation and so we have to
-  // compensate for the -4 in had in the addend.
+  // Note that ADD with RSP or R12 is converted to ADD instead of LEA
+  // because LEA with these registers needs 4 bytes to encode and thus
+  // wouldn't fit the space.
+
+  if (memcmp(Inst, "\x48\x03\x25", 3) == 0) {
+    // "addq foo@gottpoff(%rip),%rsp" -> "addq $foo,%rsp"
+    memcpy(Inst, "\x48\x81\xc4", 3);
+  } else if (memcmp(Inst, "\x4c\x03\x25", 3) == 0) {
+    // "addq foo@gottpoff(%rip),%r12" -> "addq $foo,%r12"
+    memcpy(Inst, "\x49\x81\xc4", 3);
+  } else if (memcmp(Inst, "\x4c\x03", 2) == 0) {
+    // "addq foo@gottpoff(%rip),%r[8-15]" -> "leaq foo(%r[8-15]),%r[8-15]"
+    memcpy(Inst, "\x4d\x8d", 2);
+    *RegSlot = 0x80 | (Reg << 3) | Reg;
+  } else if (memcmp(Inst, "\x48\x03", 2) == 0) {
+    // "addq foo@gottpoff(%rip),%reg -> "leaq foo(%reg),%reg"
+    memcpy(Inst, "\x48\x8d", 2);
+    *RegSlot = 0x80 | (Reg << 3) | Reg;
+  } else if (memcmp(Inst, "\x4c\x8b", 2) == 0) {
+    // "movq foo@gottpoff(%rip),%r[8-15]" -> "movq $foo,%r[8-15]"
+    memcpy(Inst, "\x49\xc7", 2);
+    *RegSlot = 0xc0 | Reg;
+  } else if (memcmp(Inst, "\x48\x8b", 2) == 0) {
+    // "movq foo@gottpoff(%rip),%reg" -> "movq $foo,%reg"
+    memcpy(Inst, "\x48\xc7", 2);
+    *RegSlot = 0xc0 | Reg;
+  } else {
+    fatal("R_X86_64_GOTTPOFF must be used in MOVQ or ADDQ instructions only");
+  }
+
+  // The original code used a PC relative relocation.
+  // Need to compensate for the -4 it had in the addend.
   relocateOne(Loc, R_X86_64_TPOFF32, Val + 4);
 }
 
@@ -1405,17 +1415,16 @@ void AArch64TargetInfo::relaxTlsIeToLe(uint8_t *Loc, uint32_t Type,
   llvm_unreachable("invalid relocation for TLS IE to LE relaxation");
 }
 
-// Implementing relocations for AMDGPU is low priority since most
-// programs don't use relocations now. Thus, this function is not
-// actually called (relocateOne is called for each relocation).
-// That's why the AMDGPU port works without implementing this function.
 void AMDGPUTargetInfo::relocateOne(uint8_t *Loc, uint32_t Type,
                                    uint64_t Val) const {
-  llvm_unreachable("not implemented");
+  assert(Type == R_AMDGPU_REL32);
+  write32le(Loc, Val);
 }
 
 RelExpr AMDGPUTargetInfo::getRelExpr(uint32_t Type, const SymbolBody &S) const {
-  llvm_unreachable("not implemented");
+  if (Type != R_AMDGPU_REL32)
+    error("do not know how to handle relocation");
+  return R_PC;
 }
 
 ARMTargetInfo::ARMTargetInfo() {
@@ -1699,10 +1708,17 @@ template <class ELFT> MipsTargetInfo<ELFT>::MipsTargetInfo() {
   ThunkSize = 16;
   CopyRel = R_MIPS_COPY;
   PltRel = R_MIPS_JUMP_SLOT;
-  if (ELFT::Is64Bits)
+  if (ELFT::Is64Bits) {
     RelativeRel = (R_MIPS_64 << 8) | R_MIPS_REL32;
-  else
+    TlsGotRel = R_MIPS_TLS_TPREL64;
+    TlsModuleIndexRel = R_MIPS_TLS_DTPMOD64;
+    TlsOffsetRel = R_MIPS_TLS_DTPREL64;
+  } else {
     RelativeRel = R_MIPS_REL32;
+    TlsGotRel = R_MIPS_TLS_TPREL32;
+    TlsModuleIndexRel = R_MIPS_TLS_DTPMOD32;
+    TlsOffsetRel = R_MIPS_TLS_DTPREL32;
+  }
 }
 
 template <class ELFT>
@@ -1745,11 +1761,14 @@ RelExpr MipsTargetInfo<ELFT>::getRelExpr(uint32_t Type,
   // fallthrough
   case R_MIPS_CALL16:
   case R_MIPS_GOT_DISP:
-    if (!S.isPreemptible())
-      return R_MIPS_GOT_LOCAL;
-    return R_GOT_OFF;
+  case R_MIPS_TLS_GOTTPREL:
+    return R_MIPS_GOT_OFF;
   case R_MIPS_GOT_PAGE:
     return R_MIPS_GOT_LOCAL_PAGE;
+  case R_MIPS_TLS_GD:
+    return R_MIPS_TLSGD;
+  case R_MIPS_TLS_LDM:
+    return R_MIPS_TLSLD;
   }
 }
 
@@ -1760,6 +1779,16 @@ uint32_t MipsTargetInfo<ELFT>::getDynRel(uint32_t Type) const {
   // Keep it going with a dummy value so that we can find more reloc errors.
   errorDynRel(Type);
   return R_MIPS_32;
+}
+
+template <class ELFT>
+bool MipsTargetInfo<ELFT>::isTlsLocalDynamicRel(uint32_t Type) const {
+  return Type == R_MIPS_TLS_LDM;
+}
+
+template <class ELFT>
+bool MipsTargetInfo<ELFT>::isTlsGlobalDynamicRel(uint32_t Type) const {
+  return Type == R_MIPS_TLS_GD;
 }
 
 template <class ELFT>
@@ -1834,12 +1863,11 @@ void MipsTargetInfo<ELFT>::writeThunk(uint8_t *Buf, uint64_t S) const {
   // Write MIPS LA25 thunk code to call PIC function from the non-PIC one.
   // See MipsTargetInfo::writeThunk for details.
   const endianness E = ELFT::TargetEndianness;
-  write32<E>(Buf, 0x3c190000);      // lui   $25, %hi(func)
-  write32<E>(Buf + 4, 0x08000000);  // j     func
-  write32<E>(Buf + 8, 0x27390000);  // addiu $25, $25, %lo(func)
-  write32<E>(Buf + 12, 0x00000000); // nop
+  write32<E>(Buf, 0x3c190000);                // lui   $25, %hi(func)
+  write32<E>(Buf + 4, 0x08000000 | (S >> 2)); // j     func
+  write32<E>(Buf + 8, 0x27390000);            // addiu $25, $25, %lo(func)
+  write32<E>(Buf + 12, 0x00000000);           // nop
   writeMipsHi16<E>(Buf, S);
-  write32<E>(Buf + 4, 0x08000000 | (S >> 2));
   writeMipsLo16<E>(Buf + 8, S);
 }
 
@@ -1957,6 +1985,8 @@ void MipsTargetInfo<ELFT>::relocateOne(uint8_t *Loc, uint32_t Type,
   case R_MIPS_GOT_PAGE:
   case R_MIPS_GOT16:
   case R_MIPS_GPREL16:
+  case R_MIPS_TLS_GD:
+  case R_MIPS_TLS_LDM:
     checkInt<16>(Val, Type);
   // fallthrough
   case R_MIPS_CALL16:
@@ -1964,6 +1994,7 @@ void MipsTargetInfo<ELFT>::relocateOne(uint8_t *Loc, uint32_t Type,
   case R_MIPS_LO16:
   case R_MIPS_PCLO16:
   case R_MIPS_TLS_DTPREL_LO16:
+  case R_MIPS_TLS_GOTTPREL:
   case R_MIPS_TLS_TPREL_LO16:
     writeMipsLo16<E>(Loc, Val);
     break;

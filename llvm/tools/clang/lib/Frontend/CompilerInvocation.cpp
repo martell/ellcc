@@ -442,10 +442,15 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   // -fno-inline-functions overrides OptimizationLevel > 1.
   Opts.NoInline = Args.hasArg(OPT_fno_inline);
   if (Arg* InlineArg = Args.getLastArg(options::OPT_finline_functions,
+                                       options::OPT_finline_hint_functions,
                                        options::OPT_fno_inline_functions)) {
-    Opts.setInlining(
-      InlineArg->getOption().matches(options::OPT_finline_functions) ?
-        CodeGenOptions::NormalInlining : CodeGenOptions::OnlyAlwaysInlining);
+    const Option& InlineOpt = InlineArg->getOption();
+    if (InlineOpt.matches(options::OPT_finline_functions))
+      Opts.setInlining(CodeGenOptions::NormalInlining);
+    else if (InlineOpt.matches(options::OPT_finline_hint_functions))
+      Opts.setInlining(CodeGenOptions::OnlyHintInlining);
+    else
+      Opts.setInlining(CodeGenOptions::OnlyAlwaysInlining);
   }
 
   if (Arg *A = Args.getLastArg(OPT_fveclib)) {
@@ -1459,6 +1464,7 @@ bool isOpenCL(LangStandard::Kind LangStd) {
 
 void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
                                          const llvm::Triple &T,
+                                         PreprocessorOptions &PPOpts,
                                          LangStandard::Kind LangStd) {
   // Set some properties which depend solely on the input kind; it would be nice
   // to move these to the language standard, and have the driver resolve the
@@ -1543,6 +1549,10 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     Opts.DefaultFPContract = 1;
     Opts.NativeHalfType = 1;
     Opts.NativeHalfArgsAndReturns = 1;
+    // Include default header file for OpenCL.
+    if (Opts.IncludeDefaultHeader) {
+      PPOpts.Includes.push_back("opencl-c.h");
+    }
   }
 
   Opts.CUDA = IK == IK_CUDA || IK == IK_PreprocessedCuda ||
@@ -1589,6 +1599,7 @@ static Visibility parseVisibility(Arg *arg, ArgList &args,
 
 static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                           const TargetOptions &TargetOpts,
+                          PreprocessorOptions &PPOpts,
                           DiagnosticsEngine &Diags) {
   // FIXME: Cleanup per-file based stuff.
   LangStandard::Kind LangStd = LangStandard::lang_unspecified;
@@ -1660,8 +1671,10 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       LangStd = OpenCLLangStd;
   }
 
+  Opts.IncludeDefaultHeader = Args.hasArg(OPT_finclude_default_header);
+
   llvm::Triple T(TargetOpts.Triple);
-  CompilerInvocation::setLangDefaults(Opts, IK, T, LangStd);
+  CompilerInvocation::setLangDefaults(Opts, IK, T, PPOpts, LangStd);
 
   // We abuse '-f[no-]gnu-keywords' to force overriding all GNU-extension
   // keywords. This behavior is provided by GCC's poorly named '-fasm' flag,
@@ -1891,7 +1904,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.MaxTypeAlign = getLastArgIntValue(Args, OPT_fmax_type_align_EQ, 0, Diags);
   Opts.AlignDouble = Args.hasArg(OPT_malign_double);
   Opts.PICLevel = getLastArgIntValue(Args, OPT_pic_level, 0, Diags);
-  Opts.PIELevel = getLastArgIntValue(Args, OPT_pie_level, 0, Diags);
+  Opts.PIE = Args.hasArg(OPT_pic_is_pie);
   Opts.Static = Args.hasArg(OPT_static_define);
   Opts.DumpRecordLayoutsSimple = Args.hasArg(OPT_fdump_record_layouts_simple);
   Opts.DumpRecordLayouts = Opts.DumpRecordLayoutsSimple
@@ -2326,12 +2339,13 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
     // PIClevel and PIELevel are needed during code generation and this should be
     // set regardless of the input type.
     LangOpts.PICLevel = getLastArgIntValue(Args, OPT_pic_level, 0, Diags);
-    LangOpts.PIELevel = getLastArgIntValue(Args, OPT_pie_level, 0, Diags);
+    LangOpts.PIE = Args.hasArg(OPT_pic_is_pie);
     parseSanitizerKinds("-fsanitize=", Args.getAllArgValues(OPT_fsanitize_EQ),
                         Diags, LangOpts.Sanitize);
   } else {
     // Other LangOpts are only initialzed when the input is not AST or LLVM IR.
-    ParseLangArgs(LangOpts, Args, DashX, Res.getTargetOpts(), Diags);
+    ParseLangArgs(LangOpts, Args, DashX, Res.getTargetOpts(),
+      Res.getPreprocessorOpts(), Diags);
     if (Res.getFrontendOpts().ProgramAction == frontend::RewriteObjC)
       LangOpts.ObjCExceptions = 1;
   }
@@ -2363,59 +2377,6 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   ParsePreprocessorOutputArgs(Res.getPreprocessorOutputOpts(), Args,
                               Res.getFrontendOpts().ProgramAction);
   return Success;
-}
-
-namespace {
-
-  class ModuleSignature {
-    SmallVector<uint64_t, 16> Data;
-    unsigned CurBit;
-    uint64_t CurValue;
-
-  public:
-    ModuleSignature() : CurBit(0), CurValue(0) { }
-
-    void add(uint64_t Value, unsigned Bits);
-    void add(StringRef Value);
-    void flush();
-
-    llvm::APInt getAsInteger() const;
-  };
-}
-
-void ModuleSignature::add(uint64_t Value, unsigned int NumBits) {
-  CurValue |= Value << CurBit;
-  if (CurBit + NumBits < 64) {
-    CurBit += NumBits;
-    return;
-  }
-
-  // Add the current word.
-  Data.push_back(CurValue);
-
-  if (CurBit)
-    CurValue = Value >> (64-CurBit);
-  else
-    CurValue = 0;
-  CurBit = (CurBit+NumBits) & 63;
-}
-
-void ModuleSignature::flush() {
-  if (CurBit == 0)
-    return;
-
-  Data.push_back(CurValue);
-  CurBit = 0;
-  CurValue = 0;
-}
-
-void ModuleSignature::add(StringRef Value) {
-  for (auto &c : Value)
-    add(c, 8);
-}
-
-llvm::APInt ModuleSignature::getAsInteger() const {
-  return llvm::APInt(Data.size() * 64, Data);
 }
 
 std::string CompilerInvocation::getModuleHash() const {

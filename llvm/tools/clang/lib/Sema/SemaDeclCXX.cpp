@@ -10092,10 +10092,10 @@ buildSingleCopyAssignRecursively(Sema &S, SourceLocation Loc, QualType T,
                                     SizeType, VK_LValue, OK_Ordinary, Loc);
 
   // Construct the loop that copies all elements of this array.
-  return S.ActOnForStmt(Loc, Loc, InitStmt, 
-                        S.MakeFullExpr(Comparison),
-                        nullptr, S.MakeFullDiscardedValueExpr(Increment),
-                        Loc, Copy.get());
+  return S.ActOnForStmt(
+      Loc, Loc, InitStmt,
+      S.ActOnCondition(nullptr, Loc, Comparison, Sema::ConditionKind::Boolean),
+      S.MakeFullDiscardedValueExpr(Increment), Loc, Copy.get());
 }
 
 static StmtResult
@@ -11823,7 +11823,7 @@ bool Sema::CheckOverloadedOperatorDeclaration(FunctionDecl *FnDecl) {
                   diag::err_operator_overload_static) << FnDecl->getDeclName();
   } else {
     bool ClassOrEnumParam = false;
-    for (auto Param : FnDecl->params()) {
+    for (auto Param : FnDecl->parameters()) {
       QualType ParamType = Param->getType().getNonReferenceType();
       if (ParamType->isDependentType() || ParamType->isRecordType() ||
           ParamType->isEnumeralType()) {
@@ -11845,7 +11845,7 @@ bool Sema::CheckOverloadedOperatorDeclaration(FunctionDecl *FnDecl) {
   // Only the function-call operator allows default arguments
   // (C++ [over.call]p1).
   if (Op != OO_Call) {
-    for (auto Param : FnDecl->params()) {
+    for (auto Param : FnDecl->parameters()) {
       if (Param->hasDefaultArg())
         return Diag(Param->getLocation(),
                     diag::err_operator_overload_default_arg)
@@ -12110,7 +12110,7 @@ bool Sema::CheckLiteralOperatorDeclaration(FunctionDecl *FnDecl) {
 
   // A parameter-declaration-clause containing a default argument is not
   // equivalent to any of the permitted forms.
-  for (auto Param : FnDecl->params()) {
+  for (auto Param : FnDecl->parameters()) {
     if (Param->hasDefaultArg()) {
       Diag(Param->getDefaultArgRange().getBegin(),
            diag::err_literal_operator_default_argument)
@@ -13995,6 +13995,9 @@ MSPropertyDecl *Sema::HandleMSProperty(Scope *S, RecordDecl *Record,
 
   DiagnoseFunctionSpecifiers(D.getDeclSpec());
 
+  if (D.getDeclSpec().isInlineSpecified())
+    Diag(D.getDeclSpec().getInlineSpecLoc(), diag::err_inline_non_function)
+        << getLangOpts().CPlusPlus1z;
   if (DeclSpec::TSCS TSCS = D.getDeclSpec().getThreadStorageClassSpec())
     Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
          diag::err_invalid_thread)

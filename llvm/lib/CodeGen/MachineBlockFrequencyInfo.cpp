@@ -20,43 +20,45 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "block-freq"
 
 #ifndef NDEBUG
-enum GVDAGType {
-  GVDT_None,
-  GVDT_Fraction,
-  GVDT_Integer
-};
+enum GVDAGType { GVDT_None, GVDT_Fraction, GVDT_Integer, GVDT_Count };
 
-static cl::opt<GVDAGType>
-ViewMachineBlockFreqPropagationDAG("view-machine-block-freq-propagation-dags",
-                                   cl::Hidden,
-          cl::desc("Pop up a window to show a dag displaying how machine block "
-                   "frequencies propagate through the CFG."),
-          cl::values(
-            clEnumValN(GVDT_None, "none",
-                       "do not display graphs."),
-            clEnumValN(GVDT_Fraction, "fraction", "display a graph using the "
-                       "fractional block frequency representation."),
-            clEnumValN(GVDT_Integer, "integer", "display a graph using the raw "
-                       "integer fractional block frequency representation."),
-            clEnumValEnd));
+static cl::opt<GVDAGType> ViewMachineBlockFreqPropagationDAG(
+    "view-machine-block-freq-propagation-dags", cl::Hidden,
+    cl::desc("Pop up a window to show a dag displaying how machine block "
+             "frequencies propagate through the CFG."),
+    cl::values(clEnumValN(GVDT_None, "none", "do not display graphs."),
+               clEnumValN(GVDT_Fraction, "fraction",
+                          "display a graph using the "
+                          "fractional block frequency representation."),
+               clEnumValN(GVDT_Integer, "integer",
+                          "display a graph using the raw "
+                          "integer fractional block frequency representation."),
+               clEnumValN(GVDT_Count, "count", "display a graph using the real "
+                                               "profile count if available."),
+
+               clEnumValEnd));
+
+static cl::opt<std::string> ViewMachineBlockFreqFuncName("view-mbfi-func-name",
+                                                         cl::Hidden);
 
 namespace llvm {
 
-template <>
-struct GraphTraits<MachineBlockFrequencyInfo *> {
+template <> struct GraphTraits<MachineBlockFrequencyInfo *> {
   typedef const MachineBasicBlock NodeType;
   typedef MachineBasicBlock::const_succ_iterator ChildIteratorType;
   typedef MachineFunction::const_iterator nodes_iterator;
 
-  static inline
-  const NodeType *getEntryNode(const MachineBlockFrequencyInfo *G) {
+  static inline const NodeType *
+  getEntryNode(const MachineBlockFrequencyInfo *G) {
     return &G->getFunction()->front();
   }
 
@@ -77,12 +79,13 @@ struct GraphTraits<MachineBlockFrequencyInfo *> {
   }
 };
 
-template<>
-struct DOTGraphTraits<MachineBlockFrequencyInfo*> :
-    public DefaultDOTGraphTraits {
-  explicit DOTGraphTraits(bool isSimple=false) :
-    DefaultDOTGraphTraits(isSimple) {}
+template <>
+struct DOTGraphTraits<MachineBlockFrequencyInfo *>
+    : public DefaultDOTGraphTraits {
+  explicit DOTGraphTraits(bool isSimple = false)
+      : DefaultDOTGraphTraits(isSimple) {}
 
+  typedef MachineBasicBlock::const_succ_iterator EdgeIter;
   static std::string getGraphName(const MachineBlockFrequencyInfo *G) {
     return G->getFunction()->getName();
   }
@@ -92,7 +95,7 @@ struct DOTGraphTraits<MachineBlockFrequencyInfo*> :
     std::string Result;
     raw_string_ostream OS(Result);
 
-    OS << Node->getName().str() << ":";
+    OS << Node->getName().str() << " : ";
     switch (ViewMachineBlockFreqPropagationDAG) {
     case GVDT_Fraction:
       Graph->printBlockFreq(OS, Node);
@@ -100,15 +103,36 @@ struct DOTGraphTraits<MachineBlockFrequencyInfo*> :
     case GVDT_Integer:
       OS << Graph->getBlockFreq(Node).getFrequency();
       break;
+    case GVDT_Count: {
+      auto Count = Graph->getBlockProfileCount(Node);
+      if (Count)
+        OS << Count.getValue();
+      else
+        OS << "Unknown";
+      break;
+    }
     case GVDT_None:
       llvm_unreachable("If we are not supposed to render a graph we should "
                        "never reach this point.");
     }
-
     return Result;
   }
+  static std::string getEdgeAttributes(const MachineBasicBlock *Node,
+                                       EdgeIter EI,
+                                       const MachineBlockFrequencyInfo *MBFI) {
+    MachineBranchProbabilityInfo &MBPI =
+        MBFI->getAnalysis<MachineBranchProbabilityInfo>();
+    BranchProbability BP = MBPI.getEdgeProbability(Node, EI);
+    uint32_t N = BP.getNumerator();
+    uint32_t D = BP.getDenominator();
+    double Percent = 100.0 * N / D;
+    std::string Str;
+    raw_string_ostream OS(Str);
+    OS << format("label=\"%.1f%%\"", Percent);
+    OS.flush();
+    return Str;
+  }
 };
-
 
 } // end namespace llvm
 #endif
@@ -122,9 +146,8 @@ INITIALIZE_PASS_END(MachineBlockFrequencyInfo, "machine-block-freq",
 
 char MachineBlockFrequencyInfo::ID = 0;
 
-
-MachineBlockFrequencyInfo::
-MachineBlockFrequencyInfo() :MachineFunctionPass(ID) {
+MachineBlockFrequencyInfo::MachineBlockFrequencyInfo()
+    : MachineFunctionPass(ID) {
   initializeMachineBlockFrequencyInfoPass(*PassRegistry::getPassRegistry());
 }
 
@@ -145,7 +168,9 @@ bool MachineBlockFrequencyInfo::runOnMachineFunction(MachineFunction &F) {
     MBFI.reset(new ImplType);
   MBFI->calculate(F, MBPI, MLI);
 #ifndef NDEBUG
-  if (ViewMachineBlockFreqPropagationDAG != GVDT_None) {
+  if (ViewMachineBlockFreqPropagationDAG != GVDT_None &&
+      (ViewMachineBlockFreqFuncName.empty() ||
+       F.getName().equals(ViewMachineBlockFreqFuncName))) {
     view();
   }
 #endif
@@ -163,13 +188,19 @@ void MachineBlockFrequencyInfo::view() const {
             "MachineBlockFrequencyDAGs");
 #else
   errs() << "MachineBlockFrequencyInfo::view is only available in debug builds "
-    "on systems with Graphviz or gv!\n";
+            "on systems with Graphviz or gv!\n";
 #endif // NDEBUG
 }
 
-BlockFrequency MachineBlockFrequencyInfo::
-getBlockFreq(const MachineBasicBlock *MBB) const {
+BlockFrequency
+MachineBlockFrequencyInfo::getBlockFreq(const MachineBasicBlock *MBB) const {
   return MBFI ? MBFI->getBlockFreq(MBB) : 0;
+}
+
+Optional<uint64_t> MachineBlockFrequencyInfo::getBlockProfileCount(
+    const MachineBasicBlock *MBB) const {
+  const Function *F = MBFI->getFunction()->getFunction();
+  return MBFI ? MBFI->getBlockProfileCount(*F, MBB) : None;
 }
 
 const MachineFunction *MachineBlockFrequencyInfo::getFunction() const {

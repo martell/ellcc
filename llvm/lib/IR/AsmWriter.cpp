@@ -2126,11 +2126,8 @@ AssemblyWriter::AssemblyWriter(formatted_raw_ostream &o, SlotTracker &Mac,
   if (!TheModule)
     return;
   TypePrinter.incorporateTypes(*TheModule);
-  for (const Function &F : *TheModule)
-    if (const Comdat *C = F.getComdat())
-      Comdats.insert(C);
-  for (const GlobalVariable &GV : TheModule->globals())
-    if (const Comdat *C = GV.getComdat())
+  for (const GlobalObject &GO : TheModule->global_objects())
+    if (const Comdat *C = GO.getComdat())
       Comdats.insert(C);
 }
 
@@ -2616,9 +2613,15 @@ void AssemblyWriter::printFunction(const Function *F) {
       Out << "; Function Attrs: " << AttrStr << '\n';
   }
 
-  if (F->isDeclaration())
-    Out << "declare ";
-  else
+  Machine.incorporateFunction(F);
+
+  if (F->isDeclaration()) {
+    Out << "declare";
+    SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
+    F->getAllMetadata(MDs);
+    printMetadataAttachments(MDs, " ");
+    Out << ' ';
+  } else
     Out << "define ";
 
   Out << getLinkagePrintName(F->getLinkage());
@@ -2638,7 +2641,6 @@ void AssemblyWriter::printFunction(const Function *F) {
   Out << ' ';
   WriteAsOperandInternal(Out, F, &TypePrinter, &Machine, F->getParent());
   Out << '(';
-  Machine.incorporateFunction(F);
 
   // Loop over the arguments, printing them...
   if (F->isDeclaration() && !IsForDebug) {
@@ -2698,13 +2700,13 @@ void AssemblyWriter::printFunction(const Function *F) {
     writeOperand(F->getPersonalityFn(), /*PrintType=*/true);
   }
 
-  SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
-  F->getAllMetadata(MDs);
-  printMetadataAttachments(MDs, " ");
-
   if (F->isDeclaration()) {
     Out << '\n';
   } else {
+    SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
+    F->getAllMetadata(MDs);
+    printMetadataAttachments(MDs, " ");
+
     Out << " {";
     // Output all of the function's basic blocks.
     for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)

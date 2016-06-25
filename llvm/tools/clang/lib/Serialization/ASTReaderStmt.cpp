@@ -184,6 +184,7 @@ void ASTStmtReader::VisitAttributedStmt(AttributedStmt *S) {
 
 void ASTStmtReader::VisitIfStmt(IfStmt *S) {
   VisitStmt(S);
+  S->setConstexpr(Record[Idx++]);
   S->setConditionVariable(Reader.getContext(),
                           ReadDeclAs<VarDecl>(Record, Idx));
   S->setCond(Reader.ReadSubExpr());
@@ -1448,6 +1449,7 @@ void ASTStmtReader::VisitExprWithCleanups(ExprWithCleanups *E) {
     E->getTrailingObjects<BlockDecl *>()[i] =
         ReadDeclAs<BlockDecl>(Record, Idx);
 
+  E->ExprWithCleanupsBits.CleanupsHaveSideEffects = Record[Idx++];
   E->SubExpr = Reader.ReadSubExpr();
 }
 

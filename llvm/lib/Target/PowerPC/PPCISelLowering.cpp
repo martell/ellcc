@@ -23,6 +23,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -922,7 +923,6 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
     setPrefLoopAlignment(4);
     break;
   }
-
 
   if (Subtarget.enableMachineScheduler())
     setSchedulingPreference(Sched::Source);
@@ -2466,7 +2466,7 @@ SDValue PPCTargetLowering::LowerINIT_TRAMPOLINE(SDValue Op,
   CLI.setDebugLoc(dl).setChain(Chain)
     .setCallee(CallingConv::C, Type::getVoidTy(*DAG.getContext()),
                DAG.getExternalSymbol("__trampoline_setup", PtrVT),
-               std::move(Args), 0);
+               std::move(Args));
 
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
   return CallResult.second;
@@ -4280,23 +4280,28 @@ PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag, SDValue &Chain,
       needIndirectCall = false;
     }
 
+  // PC-relative references to external symbols should go through $stub, unless
+  // we're building with the leopard linker or later, which automatically
+  // synthesizes these stubs.
+  Reloc::Model RM = DAG.getTarget().getRelocationModel();
+  const Triple &TargetTriple = Subtarget.getTargetTriple();
+  bool OldMachOLinker =
+      TargetTriple.isMacOSX() && TargetTriple.isMacOSXVersionLT(10, 5);
+  const Module *Mod = DAG.getMachineFunction().getFunction()->getParent();
+  const GlobalValue *GV = nullptr;
+  if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee))
+    GV = G->getGlobal();
+  bool Local = shouldAssumeDSOLocal(RM, TargetTriple, *Mod, GV);
+  bool UsePlt =
+      !Local && (OldMachOLinker || (Subtarget.isTargetELF() && !isPPC64));
+
   if (isFunctionGlobalAddress(Callee)) {
     GlobalAddressSDNode *G = cast<GlobalAddressSDNode>(Callee);
     // A call to a TLS address is actually an indirect call to a
     // thread-specific pointer.
     unsigned OpFlags = 0;
-    if ((DAG.getTarget().getRelocationModel() != Reloc::Static &&
-         (Subtarget.getTargetTriple().isMacOSX() &&
-          Subtarget.getTargetTriple().isMacOSXVersionLT(10, 5)) &&
-         !G->getGlobal()->isStrongDefinitionForLinker()) ||
-        (Subtarget.isTargetELF() && !isPPC64 &&
-         !G->getGlobal()->hasLocalLinkage() &&
-         DAG.getTarget().getRelocationModel() == Reloc::PIC_)) {
-      // PC-relative references to external symbols should go through $stub,
-      // unless we're building with the leopard linker or later, which
-      // automatically synthesizes these stubs.
+    if (UsePlt)
       OpFlags = PPCII::MO_PLT_OR_STUB;
-    }
 
     // If the callee is a GlobalAddress/ExternalSymbol node (quite common,
     // every direct call is) turn it into a TargetGlobalAddress /
@@ -4309,16 +4314,8 @@ PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag, SDValue &Chain,
   if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
     unsigned char OpFlags = 0;
 
-    if ((DAG.getTarget().getRelocationModel() != Reloc::Static &&
-         (Subtarget.getTargetTriple().isMacOSX() &&
-          Subtarget.getTargetTriple().isMacOSXVersionLT(10, 5))) ||
-        (Subtarget.isTargetELF() && !isPPC64 &&
-         DAG.getTarget().getRelocationModel() == Reloc::PIC_)) {
-      // PC-relative references to external symbols should go through $stub,
-      // unless we're building with the leopard linker or later, which
-      // automatically synthesizes these stubs.
+    if (UsePlt)
       OpFlags = PPCII::MO_PLT_OR_STUB;
-    }
 
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(), Callee.getValueType(),
                                          OpFlags);
@@ -4746,7 +4743,7 @@ SDValue PPCTargetLowering::LowerCall_32SVR4(
     CCInfo.AnalyzeCallOperands(Outs, CC_PPC32_SVR4);
   }
   CCInfo.clearWasPPCF128();
-  
+
   // Assign locations to all of the outgoing aggregate by value arguments.
   SmallVector<CCValAssign, 16> ByValArgLocs;
   CCState CCByValInfo(CallConv, isVarArg, DAG.getMachineFunction(),
@@ -9848,7 +9845,7 @@ SDValue PPCTargetLowering::DAGCombineTruncBoolExt(SDNode *N,
 
   std::list<HandleSDNode> PromOpHandles;
   for (auto &PromOp : PromOps)
-    PromOpHandles.emplace_back(PromOp); 
+    PromOpHandles.emplace_back(PromOp);
 
   // Replace all operations (these are all the same, but have a different
   // (i1) return type). DAG.getNode will validate that the types of
@@ -10102,7 +10099,7 @@ SDValue PPCTargetLowering::DAGCombineExtBoolTrunc(SDNode *N,
 
   std::list<HandleSDNode> PromOpHandles;
   for (auto &PromOp : PromOps)
-    PromOpHandles.emplace_back(PromOp); 
+    PromOpHandles.emplace_back(PromOp);
 
   // Replace all operations (these are all the same, but have a different
   // (promoted) return type). DAG.getNode will validate that the types of
@@ -10555,7 +10552,7 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
       if (Bitcast->getOpcode() != ISD::BITCAST ||
           Bitcast->getValueType(0) != MVT::f32)
         return false;
-      if (Bitcast2->getOpcode() != ISD::BITCAST ||          
+      if (Bitcast2->getOpcode() != ISD::BITCAST ||
           Bitcast2->getValueType(0) != MVT::f32)
         return false;
 
@@ -10588,8 +10585,8 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
                     MinAlign(LD->getAlignment(), 4), LD->getAAInfo());
 
       if (LD->isIndexed()) {
-	// Note that DAGCombine should re-form any pre-increment load(s) from
-	// what is produced here if that makes sense.
+        // Note that DAGCombine should re-form any pre-increment load(s) from
+        // what is produced here if that makes sense.
         DAG.ReplaceAllUsesOfValueWith(SDValue(LD, 1), BasePtr);
       }
 

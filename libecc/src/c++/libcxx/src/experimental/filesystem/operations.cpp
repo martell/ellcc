@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <fcntl.h>  /* values for fchmodat */
-#if defined(__APPLE__)
+#if !defined(UTIME_OMIT)
 #include <sys/time.h> // for ::utimes as used in __last_write_time
 #endif
 
@@ -486,9 +486,45 @@ bool __fs_is_empty(const path& p, std::error_code *ec)
 }
 
 
+namespace detail { namespace {
+
+template <class CType, class ChronoType>
+bool checked_set(CType* out, ChronoType time) {
+    using Lim = numeric_limits<CType>;
+    if (time > Lim::max() || time < Lim::min())
+        return false;
+    *out = static_cast<CType>(time);
+    return true;
+}
+
+constexpr long long min_seconds = file_time_type::duration::min().count()
+    / file_time_type::period::den;
+
+template <class SubSecDurT, class SubSecT>
+bool set_times_checked(time_t* sec_out, SubSecT* subsec_out, file_time_type tp) {
+    using namespace chrono;
+    auto dur = tp.time_since_epoch();
+    auto sec_dur = duration_cast<seconds>(dur);
+    auto subsec_dur = duration_cast<SubSecDurT>(dur - sec_dur);
+    // The tv_nsec and tv_usec fields must not be negative so adjust accordingly
+    if (subsec_dur.count() < 0) {
+        if (sec_dur.count() > min_seconds) {
+
+            sec_dur -= seconds(1);
+            subsec_dur += seconds(1);
+        } else {
+            subsec_dur = SubSecDurT::zero();
+        }
+    }
+    return checked_set(sec_out, sec_dur.count())
+        && checked_set(subsec_out, subsec_dur.count());
+}
+
+}} // end namespace detail
+
+
 file_time_type __last_write_time(const path& p, std::error_code *ec)
 {
-    using Clock = file_time_type::clock;
     std::error_code m_ec;
     struct ::stat st;
     detail::posix_stat(p, st, &m_ec);
@@ -497,9 +533,8 @@ file_time_type __last_write_time(const path& p, std::error_code *ec)
         return file_time_type::min();
     }
     if (ec) ec->clear();
-    return Clock::from_time_t(static_cast<std::time_t>(st.st_mtime));
+    return file_time_type::clock::from_time_t(st.st_mtime);
 }
-
 
 void __last_write_time(const path& p, file_time_type new_time,
                        std::error_code *ec)
@@ -507,39 +542,44 @@ void __last_write_time(const path& p, file_time_type new_time,
     using namespace std::chrono;
     std::error_code m_ec;
 
-#if defined(__APPLE__)
-    // FIXME: Use utimensat when it becomes available on OS X.
+    // We can use the presence of UTIME_OMIT to detect platforms that do not
+    // provide utimensat.
+#if !defined(UTIME_OMIT)
     // This implementation has a race condition between determining the
     // last access time and attempting to set it to the same value using
     // ::utimes
-    using Clock = file_time_type::clock;
     struct ::stat st;
     file_status fst = detail::posix_stat(p, st, &m_ec);
     if (m_ec && !status_known(fst)) {
         set_or_throw(m_ec, ec, "last_write_time", p);
         return;
     }
-    auto write_dur = new_time.time_since_epoch();
-    auto write_sec = duration_cast<seconds>(write_dur);
-    auto access_dur = Clock::from_time_t(st.st_atime).time_since_epoch();
-    auto access_sec = duration_cast<seconds>(access_dur);
     struct ::timeval tbuf[2];
-    tbuf[0].tv_sec = access_sec.count();
-    tbuf[0].tv_usec = duration_cast<microseconds>(access_dur - access_sec).count();
-    tbuf[1].tv_sec = write_sec.count();
-    tbuf[1].tv_usec = duration_cast<microseconds>(write_dur - write_sec).count();
+    tbuf[0].tv_sec = st.st_atime;
+    tbuf[0].tv_usec = 0;
+    const bool overflowed = !detail::set_times_checked<microseconds>(
+        &tbuf[1].tv_sec, &tbuf[1].tv_usec, new_time);
+
+    if (overflowed) {
+        set_or_throw(make_error_code(errc::invalid_argument), ec,
+                     "last_write_time", p);
+        return;
+    }
     if (::utimes(p.c_str(), tbuf) == -1) {
         m_ec = detail::capture_errno();
     }
 #else
-    auto dur_since_epoch = new_time.time_since_epoch();
-    auto sec_since_epoch = duration_cast<seconds>(dur_since_epoch);
-    auto ns_since_epoch = duration_cast<nanoseconds>(dur_since_epoch - sec_since_epoch);
     struct ::timespec tbuf[2];
     tbuf[0].tv_sec = 0;
     tbuf[0].tv_nsec = UTIME_OMIT;
-    tbuf[1].tv_sec = sec_since_epoch.count();
-    tbuf[1].tv_nsec = ns_since_epoch.count();
+
+    const bool overflowed = !detail::set_times_checked<nanoseconds>(
+        &tbuf[1].tv_sec, &tbuf[1].tv_nsec, new_time);
+    if (overflowed) {
+        set_or_throw(make_error_code(errc::invalid_argument),
+            ec, "last_write_time", p);
+        return;
+    }
     if (::utimensat(AT_FDCWD, p.c_str(), tbuf, 0) == -1) {
         m_ec = detail::capture_errno();
     }
@@ -554,42 +594,42 @@ void __last_write_time(const path& p, file_time_type new_time,
 void __permissions(const path& p, perms prms, std::error_code *ec)
 {
 
-    const bool resolve_symlinks = bool(perms::resolve_symlinks & prms);
+    const bool resolve_symlinks = !bool(perms::symlink_nofollow & prms);
     const bool add_perms = bool(perms::add_perms & prms);
     const bool remove_perms = bool(perms::remove_perms & prms);
-
     _LIBCPP_ASSERT(!(add_perms && remove_perms),
                    "Both add_perms and remove_perms are set");
 
-    std::error_code m_ec;
-    file_status st = detail::posix_lstat(p, &m_ec);
-    if (m_ec) return set_or_throw(m_ec, ec, "permissions", p);
-
-    const bool set_sym_perms = is_symlink(st) && !resolve_symlinks;
-
-    if ((resolve_symlinks && is_symlink(st)) && (add_perms || remove_perms)) {
-        st = detail::posix_stat(p, &m_ec);
+    bool set_sym_perms = false;
+    prms &= perms::mask;
+    if (!resolve_symlinks || (add_perms || remove_perms)) {
+        std::error_code m_ec;
+        file_status st = resolve_symlinks ? detail::posix_stat(p, &m_ec)
+                                          : detail::posix_lstat(p, &m_ec);
+        set_sym_perms = is_symlink(st);
         if (m_ec) return set_or_throw(m_ec, ec, "permissions", p);
+        _LIBCPP_ASSERT(st.permissions() != perms::unknown,
+                       "Permissions unexpectedly unknown");
+        if (add_perms)
+            prms |= st.permissions();
+        else if (remove_perms)
+           prms = st.permissions() & ~prms;
     }
-
-    prms = prms & perms::mask;
-    if (add_perms)
-        prms |= st.permissions();
-    else if (remove_perms)
-        prms = st.permissions() & ~prms;
-    auto real_perms = detail::posix_convert_perms(prms);
+    const auto real_perms = detail::posix_convert_perms(prms);
 
 # if defined(AT_SYMLINK_NOFOLLOW) && defined(AT_FDCWD)
     const int flags = set_sym_perms ? AT_SYMLINK_NOFOLLOW : 0;
     if (::fchmodat(AT_FDCWD, p.c_str(), real_perms, flags) == -1) {
+        return set_or_throw(ec, "permissions", p);
+    }
 # else
     if (set_sym_perms)
         return set_or_throw(make_error_code(errc::operation_not_supported),
                             ec, "permissions", p);
     if (::chmod(p.c_str(), real_perms) == -1) {
-# endif
         return set_or_throw(ec, "permissions", p);
     }
+# endif
     if (ec) ec->clear();
 }
 

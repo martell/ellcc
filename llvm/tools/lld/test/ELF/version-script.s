@@ -26,7 +26,7 @@
 # RUN:          global: foo3;  \
 # RUN:          local: *; }; " > %t4.script
 # RUN: ld.lld --version-script %t4.script -shared %t.o %t2.so -o %t4.so
-# RUN: llvm-readobj -dyn-symbols %t4.so | FileCheck --check-prefix=DSO %s
+# RUN: llvm-readobj -dyn-symbols %t4.so | FileCheck --check-prefix=VERDSO %s
 
 # RUN: echo "VERSION_1.0{     \
 # RUN:          global: foo1; \
@@ -46,6 +46,16 @@
 # RUN:          local: *; }; " > %t5.script
 # RUN: not ld.lld --version-script %t5.script -shared %t.o %t2.so -o %t5.so 2>&1 | \
 # RUN:   FileCheck -check-prefix=ERR %s
+
+# RUN: echo "VERSION_1.0{     \
+# RUN:          global: foo1; \
+# RUN:          local: *; };  \
+# RUN:       VERSION_2.0 {    \
+# RUN:          global: foo1; \
+# RUN:          local: *; }; " > %t6.script
+# RUN: not ld.lld --version-script %t6.script -shared %t.o %t2.so -o %t6.so 2>&1 | \
+# RUN:   FileCheck -check-prefix=ERR2 %s
+# ERR2: duplicate symbol foo1 in version script
 
 # RUN: ld.lld --version-script %t.script --dynamic-list %t.list %t.o %t2.so -o %t2
 # RUN: llvm-readobj %t2 > /dev/null
@@ -140,6 +150,44 @@
 # EXE-NEXT:   }
 # EXE-NEXT: ]
 
+# VERDSO:      DynamicSymbols [
+# VERDSO-NEXT:   Symbol {
+# VERDSO-NEXT:     Name: @
+# VERDSO-NEXT:     Value: 0x0
+# VERDSO-NEXT:     Size: 0
+# VERDSO-NEXT:     Binding: Local
+# VERDSO-NEXT:     Type: None
+# VERDSO-NEXT:     Other: 0
+# VERDSO-NEXT:     Section: Undefined
+# VERDSO-NEXT:   }
+# VERDSO-NEXT:   Symbol {
+# VERDSO-NEXT:     Name: bar@
+# VERDSO-NEXT:     Value: 0x0
+# VERDSO-NEXT:     Size: 0
+# VERDSO-NEXT:     Binding: Global
+# VERDSO-NEXT:     Type: Function
+# VERDSO-NEXT:     Other: 0
+# VERDSO-NEXT:     Section: Undefined
+# VERDSO-NEXT:   }
+# VERDSO-NEXT:   Symbol {
+# VERDSO-NEXT:     Name: foo1@@VERSION_1.0
+# VERDSO-NEXT:     Value: 0x1000
+# VERDSO-NEXT:     Size: 0
+# VERDSO-NEXT:     Binding: Global
+# VERDSO-NEXT:     Type: None
+# VERDSO-NEXT:     Other: 0
+# VERDSO-NEXT:     Section: .text
+# VERDSO-NEXT:   }
+# VERDSO-NEXT:   Symbol {
+# VERDSO-NEXT:     Name: foo3@@VERSION_2.0
+# VERDSO-NEXT:     Value: 0x1007
+# VERDSO-NEXT:     Size: 0
+# VERDSO-NEXT:     Binding: Global
+# VERDSO-NEXT:     Type: None
+# VERDSO-NEXT:     Other: 0
+# VERDSO-NEXT:     Section: .text
+# VERDSO-NEXT:   }
+# VERDSO-NEXT: ]
 
 # RUN: llvm-mc -filetype=obj -triple=x86_64-unknown-linux %s -o %t.o
 # RUN: ld.lld -shared %t.o %t2.so -o %t.so

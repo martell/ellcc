@@ -3801,6 +3801,10 @@ bool OpenMPIterationSpaceChecker::CheckInit(Stmt *S, bool EmitDiags) {
     }
     return true;
   }
+  if (auto *ExprTemp = dyn_cast<ExprWithCleanups>(S))
+    if (!ExprTemp->cleanupsHaveSideEffects())
+      S = ExprTemp->getSubExpr();
+
   InitSrcRange = S->getSourceRange();
   if (Expr *E = dyn_cast<Expr>(S))
     S = E->IgnoreParens();
@@ -3988,6 +3992,10 @@ bool OpenMPIterationSpaceChecker::CheckInc(Expr *S) {
     SemaRef.Diag(DefaultLoc, diag::err_omp_loop_not_canonical_incr) << LCDecl;
     return true;
   }
+  if (auto *ExprTemp = dyn_cast<ExprWithCleanups>(S))
+    if (!ExprTemp->cleanupsHaveSideEffects())
+      S = ExprTemp->getSubExpr();
+
   IncrementSrcRange = S->getSourceRange();
   S = S->IgnoreParens();
   if (auto UO = dyn_cast<UnaryOperator>(S)) {
@@ -6818,12 +6826,11 @@ OMPClause *Sema::ActOnOpenMPIfClause(OpenMPDirectiveKind NameModifier,
   if (!Condition->isValueDependent() && !Condition->isTypeDependent() &&
       !Condition->isInstantiationDependent() &&
       !Condition->containsUnexpandedParameterPack()) {
-    ExprResult Val = ActOnBooleanCondition(DSAStack->getCurScope(),
-                                           Condition->getExprLoc(), Condition);
+    ExprResult Val = CheckBooleanCondition(StartLoc, Condition);
     if (Val.isInvalid())
       return nullptr;
 
-    ValExpr = Val.get();
+    ValExpr = MakeFullExpr(Val.get()).get();
   }
 
   return new (Context) OMPIfClause(NameModifier, ValExpr, StartLoc, LParenLoc,
@@ -6838,12 +6845,11 @@ OMPClause *Sema::ActOnOpenMPFinalClause(Expr *Condition,
   if (!Condition->isValueDependent() && !Condition->isTypeDependent() &&
       !Condition->isInstantiationDependent() &&
       !Condition->containsUnexpandedParameterPack()) {
-    ExprResult Val = ActOnBooleanCondition(DSAStack->getCurScope(),
-                                           Condition->getExprLoc(), Condition);
+    ExprResult Val = CheckBooleanCondition(StartLoc, Condition);
     if (Val.isInvalid())
       return nullptr;
 
-    ValExpr = Val.get();
+    ValExpr = MakeFullExpr(Val.get()).get();
   }
 
   return new (Context) OMPFinalClause(ValExpr, StartLoc, LParenLoc, EndLoc);

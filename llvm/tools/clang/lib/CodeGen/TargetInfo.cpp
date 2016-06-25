@@ -272,7 +272,8 @@ static Address emitVoidPtrDirectVAArg(CodeGenFunction &CGF,
 
   // If the argument is smaller than a slot, and this is a big-endian
   // target, the argument will be right-adjusted in its slot.
-  if (DirectSize < SlotSize && CGF.CGM.getDataLayout().isBigEndian()) {
+  if (DirectSize < SlotSize && CGF.CGM.getDataLayout().isBigEndian() &&
+      !DirectTy->isStructTy()) {
     Addr = CGF.Builder.CreateConstInBoundsByteGEP(Addr, SlotSize - DirectSize);
   }
 
@@ -4962,6 +4963,8 @@ public:
     case llvm::Triple::EABIHF:
     case llvm::Triple::GNUEABI:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABI:
+    case llvm::Triple::MuslEABIHF:
       return true;
     default:
       return false;
@@ -4972,6 +4975,7 @@ public:
     switch (getTarget().getTriple().getEnvironment()) {
     case llvm::Triple::EABIHF:
     case llvm::Triple::GNUEABIHF:
+    case llvm::Triple::MuslEABIHF:
       return true;
     default:
       return false;
@@ -5083,6 +5087,16 @@ public:
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override;
+
+  void getDependentLibraryOption(llvm::StringRef Lib,
+                                 llvm::SmallString<24> &Opt) const override {
+    Opt = "/DEFAULTLIB:" + qualifyWindowsLibrary(Lib);
+  }
+
+  void getDetectMismatchOption(llvm::StringRef Name, llvm::StringRef Value,
+                               llvm::SmallString<32> &Opt) const override {
+    Opt = "/FAILIFMISMATCH:\"" + Name.str() + "=" + Value.str() + "\"";
+  }
 };
 
 void WindowsARMTargetCodeGenInfo::setTargetAttributes(
@@ -8082,6 +8096,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     else if (CodeGenOpts.FloatABI == "hard" ||
              (CodeGenOpts.FloatABI != "soft" &&
               (Triple.getEnvironment() == llvm::Triple::GNUEABIHF ||
+               Triple.getEnvironment() == llvm::Triple::MuslEABIHF ||
                Triple.getEnvironment() == llvm::Triple::EABIHF)))
       Kind = ARMABIInfo::AAPCS_VFP;
 

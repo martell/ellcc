@@ -20,3 +20,5 @@
 
 SYNC_OP_8(nand_8)
 
+NO_EXEC_STACK_DIRECTIVE
+

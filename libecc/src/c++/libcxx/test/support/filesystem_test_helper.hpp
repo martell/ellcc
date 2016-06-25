@@ -20,6 +20,7 @@ namespace fs = std::experimental::filesystem;
 namespace StaticEnv {
 
 inline fs::path makePath(fs::path const& p) {
+    // env_path is expected not to contain symlinks.
     static const fs::path env_path = LIBCXX_FILESYSTEM_STATIC_TEST_ROOT;
     return env_path / p;
 }
@@ -236,6 +237,7 @@ private:
     }
 
     static bool checkDynamicTestRoot() {
+        // LIBCXX_FILESYSTEM_DYNAMIC_TEST_ROOT is expected not to contain symlinks.
         char* fs_root = std::getenv("LIBCXX_FILESYSTEM_DYNAMIC_TEST_ROOT");
         if (!fs_root) {
             std::printf("ERROR: LIBCXX_FILESYSTEM_DYNAMIC_TEST_ROOT must be a defined "
@@ -361,6 +363,22 @@ bool checkCollectionsEqual(
     return (start1 == end1 && start2 == end2);
 }
 
+
+template <class Iter1, class Iter2>
+bool checkCollectionsEqualBackwards(
+    Iter1 const start1, Iter1 end1
+  , Iter2 const start2, Iter2 end2
+  )
+{
+    while (start1 != end1 && start2 != end2) {
+        --end1; --end2;
+        if (*end1 != *end2) {
+            return false;
+        }
+    }
+    return (start1 == end1 && start2 == end2);
+}
+
 // We often need to test that the error_code was cleared if no error occurs
 // this function returns a error_code which is set to an error that will
 // never be returned by the filesystem functions.
@@ -372,9 +390,13 @@ inline std::error_code GetTestEC() {
 // available in single-threaded mode.
 void SleepFor(std::chrono::seconds dur) {
     using namespace std::chrono;
-    const auto curr_time = system_clock::now();
-    auto wake_time = curr_time + dur;
-    while (system_clock::now() < wake_time)
+#if defined(_LIBCPP_HAS_NO_MONOTONIC_CLOCK)
+    using Clock = system_clock;
+#else
+    using Clock = steady_clock;
+#endif
+    const auto wake_time = Clock::now() + dur;
+    while (Clock::now() < wake_time)
         ;
 }
 

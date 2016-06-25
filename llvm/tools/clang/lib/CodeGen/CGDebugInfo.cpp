@@ -377,6 +377,8 @@ void CGDebugInfo::CreateCompileUnit() {
       LangTag = llvm::dwarf::DW_LANG_C_plus_plus;
   } else if (LO.ObjC1) {
     LangTag = llvm::dwarf::DW_LANG_ObjC;
+  } else if (LO.RenderScript) {
+    LangTag = llvm::dwarf::DW_LANG_GOOGLE_RenderScript;
   } else if (LO.C99) {
     LangTag = llvm::dwarf::DW_LANG_C99;
   } else {
@@ -1193,6 +1195,15 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
       MicrosoftVTableContext::MethodVFTableLocation ML =
           CGM.getMicrosoftVTableContext().getMethodVFTableLocation(GD);
       VIndex = ML.Index;
+
+      // CodeView only records the vftable offset in the class that introduces
+      // the virtual method. This is possible because, unlike Itanium, the MS
+      // C++ ABI does not include all virtual methods from non-primary bases in
+      // the vtable for the most derived class. For example, if C inherits from
+      // A and B, C's primary vftable will not include B's virtual methods.
+      if (Method->begin_overridden_methods() == Method->end_overridden_methods())
+        Flags |= llvm::DINode::FlagIntroducedVirtual;
+
       // FIXME: Pass down ML.VFPtrOffset and ML.VBTableIndex. The debugger needs
       // these to synthesize a call to a virtual method in a complex inheritance
       // hierarchy.
@@ -2755,7 +2766,7 @@ llvm::DISubroutineType *CGDebugInfo::getOrCreateFunctionType(const Decl *D,
     Elts.push_back(DBuilder.createArtificialType(
         getOrCreateType(CGM.getContext().getObjCSelType(), F)));
     // Get rest of the arguments.
-    for (const auto *PI : OMethod->params())
+    for (const auto *PI : OMethod->parameters())
       Elts.push_back(getOrCreateType(PI->getType(), F));
     // Variadic methods need a special marker at the end of the type list.
     if (OMethod->isVariadic())

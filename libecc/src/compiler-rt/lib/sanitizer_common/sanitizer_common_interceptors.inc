@@ -2482,7 +2482,16 @@ INTERCEPTOR(SSIZE_T, recvmsg, int fd, struct __sanitizer_msghdr *msg,
 #if SANITIZER_INTERCEPT_SENDMSG
 static void read_msghdr(void *ctx, struct __sanitizer_msghdr *msg,
                         SSIZE_T maxlen) {
-  COMMON_INTERCEPTOR_READ_RANGE(ctx, msg, sizeof(*msg));
+#define R(f) \
+  COMMON_INTERCEPTOR_READ_RANGE(ctx, &msg->msg_##f, sizeof(msg->msg_##f))
+  R(name);
+  R(namelen);
+  R(iov);
+  R(iovlen);
+  R(control);
+  R(controllen);
+  R(flags);
+#undef R
   if (msg->msg_name && msg->msg_namelen)
     COMMON_INTERCEPTOR_READ_RANGE(ctx, msg->msg_name, msg->msg_namelen);
   if (msg->msg_iov && msg->msg_iovlen)
@@ -2502,7 +2511,8 @@ INTERCEPTOR(SSIZE_T, sendmsg, int fd, struct __sanitizer_msghdr *msg,
     COMMON_INTERCEPTOR_FD_RELEASE(ctx, fd);
   }
   SSIZE_T res = REAL(sendmsg)(fd, msg, flags);
-  if (res >= 0 && msg) read_msghdr(ctx, msg, res);
+  if (common_flags()->intercept_send && res >= 0 && msg)
+    read_msghdr(ctx, msg, res);
   return res;
 }
 #define INIT_SENDMSG COMMON_INTERCEPT_FUNCTION(sendmsg);
@@ -4392,6 +4402,14 @@ INTERCEPTOR(void *, __tls_get_addr, void *arg) {
   }
   return res;
 }
+#if SANITIZER_PPC
+// On PowerPC, we also need to intercept __tls_get_addr_opt, which has
+// mostly the same semantics as __tls_get_addr, but its presence enables
+// some optimizations in linker (which are safe to ignore here).
+extern "C" __attribute__((alias("__interceptor___tls_get_addr"),
+                          visibility("default")))
+void *__tls_get_addr_opt(void *arg);
+#endif
 #else // SANITIZER_S390
 // On s390, we have to intercept two functions here:
 // - __tls_get_addr_internal, which is a glibc-internal function that is like
@@ -5590,21 +5608,23 @@ INTERCEPTOR(SSIZE_T, send, int fd, void *buf, SIZE_T len, int flags) {
     COMMON_INTERCEPTOR_FD_RELEASE(ctx, fd);
   }
   SSIZE_T res = REAL(send)(fd, buf, len, flags);
-  if (res > 0) COMMON_INTERCEPTOR_READ_RANGE(ctx, buf, Min((SIZE_T)res, len));
+  if (common_flags()->intercept_send && res > 0)
+    COMMON_INTERCEPTOR_READ_RANGE(ctx, buf, Min((SIZE_T)res, len));
   return res;
 }
 
 INTERCEPTOR(SSIZE_T, sendto, int fd, void *buf, SIZE_T len, int flags,
-            void *srcaddr, int addrlen) {
+            void *dstaddr, int addrlen) {
   void *ctx;
-  COMMON_INTERCEPTOR_ENTER(ctx, sendto, fd, buf, len, flags, srcaddr, addrlen);
+  COMMON_INTERCEPTOR_ENTER(ctx, sendto, fd, buf, len, flags, dstaddr, addrlen);
   if (fd >= 0) {
     COMMON_INTERCEPTOR_FD_ACCESS(ctx, fd);
     COMMON_INTERCEPTOR_FD_RELEASE(ctx, fd);
   }
-  if (srcaddr && addrlen) COMMON_INTERCEPTOR_READ_RANGE(ctx, srcaddr, addrlen);
-  SSIZE_T res = REAL(sendto)(fd, buf, len, flags, srcaddr, addrlen);
-  if (res > 0) COMMON_INTERCEPTOR_READ_RANGE(ctx, buf, Min((SIZE_T)res, len));
+  // Can't check dstaddr as it may have uninitialized padding at the end.
+  SSIZE_T res = REAL(sendto)(fd, buf, len, flags, dstaddr, addrlen);
+  if (common_flags()->intercept_send && res > 0)
+    COMMON_INTERCEPTOR_READ_RANGE(ctx, buf, Min((SIZE_T)res, len));
   return res;
 }
 #define INIT_SEND_SENDTO           \
@@ -5612,6 +5632,35 @@ INTERCEPTOR(SSIZE_T, sendto, int fd, void *buf, SIZE_T len, int flags,
   COMMON_INTERCEPT_FUNCTION(sendto);
 #else
 #define INIT_SEND_SENDTO
+#endif
+
+#if SANITIZER_INTERCEPT_EVENTFD_READ_WRITE
+INTERCEPTOR(int, eventfd_read, int fd, u64 *value) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, eventfd_read, fd, value);
+  COMMON_INTERCEPTOR_FD_ACCESS(ctx, fd);
+  int res = REAL(eventfd_read)(fd, value);
+  if (res == 0) {
+    COMMON_INTERCEPTOR_WRITE_RANGE(ctx, value, sizeof(*value));
+    if (fd >= 0) COMMON_INTERCEPTOR_FD_ACQUIRE(ctx, fd);
+  }
+  return res;
+}
+INTERCEPTOR(int, eventfd_write, int fd, u64 value) {
+  void *ctx;
+  COMMON_INTERCEPTOR_ENTER(ctx, eventfd_write, fd, value);
+  if (fd >= 0) {
+    COMMON_INTERCEPTOR_FD_ACCESS(ctx, fd);
+    COMMON_INTERCEPTOR_FD_RELEASE(ctx, fd);
+  }
+  int res = REAL(eventfd_write)(fd, value);
+  return res;
+}
+#define INIT_EVENTFD_READ_WRITE            \
+  COMMON_INTERCEPT_FUNCTION(eventfd_read); \
+  COMMON_INTERCEPT_FUNCTION(eventfd_write)
+#else
+#define INIT_EVENTFD_READ_WRITE
 #endif
 
 #if SANITIZER_INTERCEPT_STAT
@@ -5883,6 +5932,7 @@ static void InitializeCommonInterceptors() {
   INIT_RECV_RECVFROM;
   INIT_SEND_SENDTO;
   INIT_STAT;
+  INIT_EVENTFD_READ_WRITE;
   INIT___XSTAT;
   INIT___XSTAT64;
   INIT___LXSTAT;
