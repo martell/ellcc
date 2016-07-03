@@ -93,3 +93,11 @@ ifeq ($(ARCH),aarch64)
     floatditf.c floatsitf.c floatunditf.c floatunsitf.c multc3.c \
     trunctfdf2.c trunctfsf2.c
 endif
+
+VPATH := $(VPATH):$(SRCPATH)/compiler-rt/lib/profile
+SRCS += GCDAProfiling.c InstrProfiling.c InstrProfilingValue.c \
+        InstrProfilingBuffer.c InstrProfilingFile.c InstrProfilingMerge.c \
+        InstrProfilingMergeFile.c InstrProfilingWriter.c \
+        InstrProfilingPlatformDarwin.c InstrProfilingPlatformLinux.c \
+        InstrProfilingPlatformOther.c InstrProfilingRuntime.cc \
+        InstrProfilingUtil.c

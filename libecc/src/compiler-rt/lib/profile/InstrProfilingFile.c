@@ -507,3 +507,11 @@ int __llvm_profile_register_write_file_atexit(void) {
   HasBeenRegistered = 1;
   return atexit(writeFileWithoutReturn);
 }
+
+#if defined(__ELLCC__)
+__attribute__((constructor)) void __ecc_profile_runtime(void)
+{
+  __llvm_profile_register_write_file_atexit();
+  __llvm_profile_initialize_file();
+}
+#endif
