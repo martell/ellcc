@@ -15,7 +15,6 @@
 #include "InstPrinter/MBlazeInstPrinter.h"
 #include "MBlazeMCAsmInfo.h"
 #include "MBlazeTargetStreamer.h"
-#include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -57,37 +56,6 @@ static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI,
   MCAsmInfo *MAI = new MBlazeMCAsmInfo();
   return MAI;
 }
-
-static MCCodeGenInfo *createMBlazeMCCodeGenInfo(const Triple &TT,
-                                                Reloc::Model RM,
-                                                CodeModel::Model CM,
-                                                CodeGenOpt::Level OL) {
-  MCCodeGenInfo *X = new MCCodeGenInfo();
-  if (CM == CodeModel::Default)
-    CM = CodeModel::Small;
-  X->initMCCodeGenInfo(RM, CM, OL);
-  return X;
-}
-
-#if RICH
-class MBlazeTargetAsmStreamer : public MBlazeTargetStreamer {
-  formatted_raw_ostream &OS;
-
-public:
-  MBlazeTargetAsmStreamer(formatted_raw_ostream &OS);
-};
-
-MBlazeTargetAsmStreamer::
-MBlazeTargetAsmStreamer(MCStreamer &S, 
-                        formatted_raw_ostream &OS)
-    : OS(OS) {}
-
-class MBlazeTargetELFStreamer : public MBlazeTargetStreamer {
-public:
-  MCELFStreamer &getStreamer();
-  MBlazeTargetELFStreamer(MCStreamer &S, , const MCSubtargetInfo &STI);
-};
-#endif
 
 // Pin vtable to this file.
 void MBlazeTargetStreamer::anchor() {}
@@ -138,10 +106,6 @@ static MCInstPrinter *createMBlazeMCInstPrinter(const Triple &T,
 extern "C" void LLVMInitializeMBlazeTargetMC() {
   // Register the MC asm info.
   RegisterMCAsmInfoFn X(TheMBlazeTarget, createMBlazeMCAsmInfo);
-
-  // Register the MC codegen info.
-  TargetRegistry::RegisterMCCodeGenInfo(TheMBlazeTarget,
-                                        createMBlazeMCCodeGenInfo);
 
   // Register the MC instruction info.
   TargetRegistry::RegisterMCInstrInfo(TheMBlazeTarget, createMBlazeMCInstrInfo);

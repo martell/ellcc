@@ -82,42 +82,7 @@ void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: MutexDestroy %zx\n", thr->tid, addr);
   StatInc(thr, StatMutexDestroy);
-<<<<<<< .working
-#ifndef SANITIZER_GO
-  // Global mutexes not marked as LINKER_INITIALIZED
-  // cause tons of not interesting reports, so just ignore it.
-  if (IsGlobalVar(addr))
-    return;
-#endif
-  SyncVar *s = ctx->synctab.GetAndRemove(thr, pc, addr);
-  if (s == 0)
-    return;
-  if (flags()->detect_deadlocks) {
-    Callback cb(thr, pc);
-    ctx->dd->MutexDestroy(&cb, &s->dd);
-  }
-  if (IsAppMem(addr)) {
-    CHECK(!thr->is_freeing);
-    thr->is_freeing = true;
-    MemoryWrite(thr, pc, addr, kSizeLog1);
-    thr->is_freeing = false;
-  }
-||||||| .merge-left.r6313
-#ifndef SANITIZER_GO
-  // Global mutexes not marked as LINKER_INITIALIZED
-  // cause tons of not interesting reports, so just ignore it.
-  if (IsGlobalVar(addr))
-    return;
-#endif
-  if (IsAppMem(addr)) {
-    CHECK(!thr->is_freeing);
-    thr->is_freeing = true;
-    MemoryWrite(thr, pc, addr, kSizeLog1);
-    thr->is_freeing = false;
-  }
-=======
->>>>>>> .merge-right.r6313
-  SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr);
+  SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr, true);
   if (s == 0)
     return;
   if (s->is_linker_init) {
@@ -155,7 +120,7 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     rep.AddLocation(addr, 1);
     OutputReport(thr, rep);
 
-    SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr);
+    SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr, true);
     if (s != 0) {
       s->Reset(thr->proc());
       s->mtx.Unlock();
@@ -396,7 +361,9 @@ void Acquire(ThreadState *thr, uptr pc, uptr addr) {
   DPrintf("#%d: Acquire %zx\n", thr->tid, addr);
   if (thr->ignore_sync)
     return;
-  SyncVar *s = ctx->synctab.GetOrCreateAndLock(thr, pc, addr, false);
+  SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr, false);
+  if (!s)
+    return;
   AcquireImpl(thr, pc, &s->clock);
   s->mtx.ReadUnlock();
 }

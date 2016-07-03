@@ -14,7 +14,6 @@
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -42,6 +41,10 @@ TargetLowering::TargetLowering(const TargetMachine &tm)
 
 const char *TargetLowering::getTargetNodeName(unsigned Opcode) const {
   return nullptr;
+}
+
+bool TargetLowering::isPositionIndependent() const {
+  return getTargetMachine().isPositionIndependent();
 }
 
 /// Check whether a given call node is in tail position within its function. If
@@ -277,7 +280,7 @@ void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
 /// returned value is a member of the MachineJumpTableInfo::JTEntryKind enum.
 unsigned TargetLowering::getJumpTableEncoding() const {
   // In non-pic modes, just use the address of a block.
-  if (getTargetMachine().getRelocationModel() != Reloc::PIC_)
+  if (!isPositionIndependent())
     return MachineJumpTableInfo::EK_BlockAddress;
 
   // In PIC mode, if the target supports a GPRel32 directive, use it.
@@ -312,17 +315,15 @@ TargetLowering::getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
 bool
 TargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
   const TargetMachine &TM = getTargetMachine();
-  Reloc::Model RM = TM.getRelocationModel();
   const GlobalValue *GV = GA->getGlobal();
-  const Triple &TargetTriple = TM.getTargetTriple();
 
   // If the address is not even local to this DSO we will have to load it from
   // a got and then add the offset.
-  if (!shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV))
+  if (!TM.shouldAssumeDSOLocal(*GV->getParent(), GV))
     return false;
 
   // If the code is position independent we will have to add a base register.
-  if (RM == Reloc::PIC_)
+  if (isPositionIndependent())
     return false;
 
   // Otherwise we can do it.

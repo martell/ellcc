@@ -3397,12 +3397,14 @@ public:
 
   class ConditionResult;
   StmtResult ActOnIfStmt(SourceLocation IfLoc, bool IsConstexpr,
+                         Stmt *InitStmt,
                          ConditionResult Cond, Stmt *ThenVal,
                          SourceLocation ElseLoc, Stmt *ElseVal);
   StmtResult BuildIfStmt(SourceLocation IfLoc, bool IsConstexpr,
                          ConditionResult Cond, Stmt *ThenVal,
                          SourceLocation ElseLoc, Stmt *ElseVal);
   StmtResult ActOnStartOfSwitchStmt(SourceLocation SwitchLoc,
+                                    Stmt *InitStmt,
                                     ConditionResult Cond);
   StmtResult ActOnFinishSwitchStmt(SourceLocation SwitchLoc,
                                            Stmt *Switch, Stmt *Body);
@@ -3474,9 +3476,9 @@ public:
                                            SourceLocation Loc,
                                            unsigned NumParams);
   VarDecl *getCopyElisionCandidate(QualType ReturnType, Expr *E,
-                                   bool AllowFunctionParameters);
+                                   bool AllowParamOrMoveConstructible);
   bool isCopyElisionCandidate(QualType ReturnType, const VarDecl *VD,
-                              bool AllowFunctionParameters);
+                              bool AllowParamOrMoveConstructible);
 
   StmtResult ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp,
                              Scope *CurScope);
@@ -3634,6 +3636,7 @@ public:
                          const ObjCInterfaceDecl *UnknownObjCClass=nullptr,
                          bool ObjCPropertyAccess=false);
   void NoteDeletedFunction(FunctionDecl *FD);
+  void NoteDeletedInheritingConstructor(CXXConstructorDecl *CD);
   std::string getDeletedOrUnavailableSuffix(const FunctionDecl *FD);
   bool DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *PD,
                                         ObjCMethodDecl *Getter,
@@ -4256,6 +4259,13 @@ public:
 
   bool CheckInheritingConstructorUsingDecl(UsingDecl *UD);
 
+  /// Given a derived-class using shadow declaration for a constructor and the
+  /// correspnding base class constructor, find or create the implicit
+  /// synthesized derived class constructor to use for this initialization.
+  CXXConstructorDecl *
+  findInheritingConstructor(SourceLocation Loc, CXXConstructorDecl *BaseCtor,
+                            ConstructorUsingShadowDecl *DerivedShadow);
+
   Decl *ActOnUsingDeclaration(Scope *CurScope,
                               AccessSpecifier AS,
                               bool HasUsingKeyword,
@@ -4422,7 +4432,8 @@ public:
   /// \brief Determine what sort of exception specification an inheriting
   /// constructor of a class will have.
   ImplicitExceptionSpecification
-  ComputeInheritingCtorExceptionSpec(CXXConstructorDecl *CD);
+  ComputeInheritingCtorExceptionSpec(SourceLocation Loc,
+                                     CXXConstructorDecl *CD);
 
   /// \brief Evaluate the implicit exception specification for a defaulted
   /// special member function.
@@ -4452,9 +4463,12 @@ public:
          ArrayRef<SourceRange> DynamicExceptionRanges,
          Expr *NoexceptExpr);
 
+  class InheritedConstructorInfo;
+
   /// \brief Determine if a special member function should have a deleted
   /// definition when it is defaulted.
   bool ShouldDeleteSpecialMember(CXXMethodDecl *MD, CXXSpecialMember CSM,
+                                 InheritedConstructorInfo *ICI = nullptr,
                                  bool Diagnose = false);
 
   /// \brief Declare the implicit default constructor for the given class.
@@ -4490,12 +4504,6 @@ public:
   /// that looks as if the destructor was implicitly declared.
   void AdjustDestructorExceptionSpec(CXXRecordDecl *ClassDecl,
                                      CXXDestructorDecl *Destructor);
-
-  /// \brief Declare all inheriting constructors for the given class.
-  ///
-  /// \param ClassDecl The class declaration into which the inheriting
-  /// constructors will be added.
-  void DeclareInheritingConstructors(CXXRecordDecl *ClassDecl);
 
   /// \brief Define the specified inheriting constructor.
   void DefineInheritingConstructor(SourceLocation UseLoc,
@@ -5562,13 +5570,13 @@ public:
                                      bool Diagnose = true);
   AccessResult CheckConstructorAccess(SourceLocation Loc,
                                       CXXConstructorDecl *D,
+                                      DeclAccessPair FoundDecl,
                                       const InitializedEntity &Entity,
-                                      AccessSpecifier Access,
                                       bool IsCopyBindingRefToTemp = false);
   AccessResult CheckConstructorAccess(SourceLocation Loc,
                                       CXXConstructorDecl *D,
+                                      DeclAccessPair FoundDecl,
                                       const InitializedEntity &Entity,
-                                      AccessSpecifier Access,
                                       const PartialDiagnostic &PDiag);
   AccessResult CheckDestructorAccess(SourceLocation Loc,
                                      CXXDestructorDecl *Dtor,
@@ -8192,6 +8200,12 @@ public:
   StmtResult ActOnOpenMPTargetUpdateDirective(ArrayRef<OMPClause *> Clauses,
                                               SourceLocation StartLoc,
                                               SourceLocation EndLoc);
+  /// \brief Called on well-formed '\#pragma omp distribute parallel for' after
+  /// parsing of the associated statement.
+  StmtResult ActOnOpenMPDistributeParallelForDirective(
+      ArrayRef<OMPClause *> Clauses, Stmt *AStmt, SourceLocation StartLoc,
+      SourceLocation EndLoc,
+      llvm::DenseMap<ValueDecl *, Expr *> &VarsWithImplicitDSA);
 
   /// Checks correctness of linear modifiers.
   bool CheckOpenMPLinearModifier(OpenMPLinearClauseKind LinKind,

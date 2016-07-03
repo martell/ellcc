@@ -15,9 +15,68 @@
 #include "SourceCoverageViewText.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LineIterator.h"
+#include "llvm/Support/Path.h"
 
 using namespace llvm;
+
+void CoveragePrinter::StreamDestructor::operator()(raw_ostream *OS) const {
+  if (OS == &outs())
+    return;
+  delete OS;
+}
+
+std::string CoveragePrinter::getOutputPath(StringRef Path, StringRef Extension,
+                                           bool InToplevel, bool Relative) {
+  assert(Extension.size() && "The file extension may not be empty");
+
+  SmallString<256> FullPath;
+
+  if (!Relative)
+    FullPath.append(Opts.ShowOutputDirectory);
+
+  if (!InToplevel)
+    sys::path::append(FullPath, getCoverageDir());
+
+  SmallString<256> ParentPath = sys::path::parent_path(Path);
+  sys::path::remove_dots(ParentPath, /*remove_dot_dots=*/true);
+  sys::path::append(FullPath, sys::path::relative_path(ParentPath));
+
+  auto PathFilename = (sys::path::filename(Path) + "." + Extension).str();
+  sys::path::append(FullPath, PathFilename);
+
+  return FullPath.str();
+}
+
+Expected<CoveragePrinter::OwnedStream>
+CoveragePrinter::createOutputStream(StringRef Path, StringRef Extension,
+                                    bool InToplevel) {
+  if (!Opts.hasOutputDirectory())
+    return OwnedStream(&outs());
+
+  std::string FullPath = getOutputPath(Path, Extension, InToplevel, false);
+
+  auto ParentDir = sys::path::parent_path(FullPath);
+  if (auto E = sys::fs::create_directories(ParentDir))
+    return errorCodeToError(E);
+
+  std::error_code E;
+  raw_ostream *RawStream = new raw_fd_ostream(FullPath, E, sys::fs::F_RW);
+  auto OS = CoveragePrinter::OwnedStream(RawStream);
+  if (E)
+    return errorCodeToError(E);
+  return std::move(OS);
+}
+
+std::unique_ptr<CoveragePrinter>
+CoveragePrinter::create(const CoverageViewOptions &Opts) {
+  switch (Opts.Format) {
+  case CoverageViewOptions::OutputFormat::Text:
+    return llvm::make_unique<CoveragePrinterText>(Opts);
+  }
+  llvm_unreachable("Unknown coverage output format!");
+}
 
 std::string SourceCoverageView::formatCount(uint64_t N) {
   std::string Number = utostr(N);
@@ -34,6 +93,28 @@ std::string SourceCoverageView::formatCount(uint64_t N) {
   return Result;
 }
 
+bool SourceCoverageView::shouldRenderRegionMarkers(
+    bool LineHasMultipleRegions) const {
+  return getOptions().ShowRegionMarkers &&
+         (!getOptions().ShowLineStatsOrRegionMarkers || LineHasMultipleRegions);
+}
+
+bool SourceCoverageView::hasSubViews() const {
+  return !ExpansionSubViews.empty() || !InstantiationSubViews.empty();
+}
+
+std::unique_ptr<SourceCoverageView>
+SourceCoverageView::create(StringRef SourceName, const MemoryBuffer &File,
+                           const CoverageViewOptions &Options,
+                           coverage::CoverageData &&CoverageInfo) {
+  switch (Options.Format) {
+  case CoverageViewOptions::OutputFormat::Text:
+    return llvm::make_unique<SourceCoverageViewText>(SourceName, File, Options,
+                                                     std::move(CoverageInfo));
+  }
+  llvm_unreachable("Unknown coverage output format!");
+}
+
 void SourceCoverageView::addExpansion(
     const coverage::CounterMappingRegion &Region,
     std::unique_ptr<SourceCoverageView> View) {
@@ -46,18 +127,12 @@ void SourceCoverageView::addInstantiation(
   InstantiationSubViews.emplace_back(FunctionName, Line, std::move(View));
 }
 
-std::unique_ptr<SourceCoverageView>
-SourceCoverageView::create(StringRef SourceName, const MemoryBuffer &File,
-                           const CoverageViewOptions &Options,
-                           coverage::CoverageData &&CoverageInfo) {
-  return llvm::make_unique<SourceCoverageViewText>(SourceName, File, Options,
-                                                   std::move(CoverageInfo));
-}
-
 void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
                                bool ShowSourceName, unsigned ViewDepth) {
   if (ShowSourceName)
     renderSourceName(OS);
+
+  renderViewHeader(OS);
 
   // We need the expansions and instantiations sorted so we can go through them
   // while we iterate lines.
@@ -117,30 +192,36 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
                ExpansionColumn, ViewDepth);
 
     // Show the region markers.
-    if (getOptions().ShowRegionMarkers &&
-        (!getOptions().ShowLineStatsOrRegionMarkers ||
-         LineCount.hasMultipleRegions()) &&
-        !LineSegments.empty()) {
+    if (shouldRenderRegionMarkers(LineCount.hasMultipleRegions()))
       renderRegionMarkers(OS, LineSegments, ViewDepth);
-    }
 
     // Show the expansions and instantiations for this line.
     bool RenderedSubView = false;
     for (; NextESV != EndESV && NextESV->getLine() == LI.line_number();
          ++NextESV) {
       renderViewDivider(OS, ViewDepth + 1);
-      ExpansionColumn = renderExpansionView(
-          OS, *NextESV,
-          RenderedSubView ? Optional<LineRef>({*LI, LI.line_number()})
-                          : Optional<LineRef>(),
-          WrappedSegment, LineSegments, ExpansionColumn, ViewDepth);
+
+      // Re-render the current line and highlight the expansion range for
+      // this subview.
+      if (RenderedSubView) {
+        ExpansionColumn = NextESV->getStartCol();
+        renderExpansionSite(OS, {*LI, LI.line_number()}, WrappedSegment,
+                            LineSegments, ExpansionColumn, ViewDepth);
+        renderViewDivider(OS, ViewDepth + 1);
+      }
+
+      renderExpansionView(OS, *NextESV, ViewDepth + 1);
       RenderedSubView = true;
     }
     for (; NextISV != EndISV && NextISV->Line == LI.line_number(); ++NextISV) {
+      renderViewDivider(OS, ViewDepth + 1);
       renderInstantiationView(OS, *NextISV, ViewDepth + 1);
       RenderedSubView = true;
     }
     if (RenderedSubView)
       renderViewDivider(OS, ViewDepth + 1);
+    renderLineSuffix(OS, ViewDepth);
   }
+
+  renderViewFooter(OS);
 }

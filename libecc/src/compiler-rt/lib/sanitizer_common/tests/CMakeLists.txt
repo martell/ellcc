@@ -75,6 +75,10 @@ if(MSVC)
        -Wno-unknown-pragmas
        -Wno-undefined-inline)
 endif()
+if(MSVC)
+  list(APPEND SANITIZER_TEST_CFLAGS_COMMON -gcodeview)
+endif()
+list(APPEND SANITIZER_TEST_LINK_FLAGS_COMMON -g)
 
 if(NOT MSVC)
   list(APPEND SANITIZER_TEST_LINK_FLAGS_COMMON --driver-mode=g++)

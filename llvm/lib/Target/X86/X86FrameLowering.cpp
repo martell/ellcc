@@ -1281,7 +1281,7 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF,
   }
 
   while (MBBI != MBB.end() && MBBI->getFlag(MachineInstr::FrameSetup)) {
-    const MachineInstr *FrameInstr = &*MBBI;
+    const MachineInstr &FrameInstr = *MBBI;
     ++MBBI;
 
     if (NeedsWinCFI) {
@@ -1893,17 +1893,29 @@ bool X86FrameLowering::spillCalleeSavedRegisters(
     if (!X86::GR64RegClass.contains(Reg) && !X86::GR32RegClass.contains(Reg))
       continue;
 
-    bool isLiveIn = MF.getRegInfo().isLiveIn(Reg);
+    const MachineRegisterInfo &MRI = MF.getRegInfo();
+    bool isLiveIn = MRI.isLiveIn(Reg);
     if (!isLiveIn)
       MBB.addLiveIn(Reg);
+
+    // Decide whether we can add a kill flag to the use.
+    bool CanKill = !isLiveIn;
+    // Check if any subregister is live-in
+    if (CanKill) {
+      for (MCRegAliasIterator AReg(Reg, TRI, false); AReg.isValid(); ++AReg) {
+        if (MRI.isLiveIn(*AReg)) {
+          CanKill = false;
+          break;
+        }
+      }
+    }
 
     // Do not set a kill flag on values that are also marked as live-in. This
     // happens with the @llvm-returnaddress intrinsic and with arguments
     // passed in callee saved registers.
     // Omitting the kill flags is conservatively correct even if the live-in
     // is not used after all.
-    bool isKill = !isLiveIn;
-    BuildMI(MBB, MI, DL, TII.get(Opc)).addReg(Reg, getKillRegState(isKill))
+    BuildMI(MBB, MI, DL, TII.get(Opc)).addReg(Reg, getKillRegState(CanKill))
       .setMIFlag(MachineInstr::FrameSetup);
   }
 
@@ -2858,6 +2870,8 @@ void X86FrameLowering::orderFrameObjects(
   // Count the number of uses for each object.
   for (auto &MBB : MF) {
     for (auto &MI : MBB) {
+      if (MI.isDebugValue())
+        continue;
       for (const MachineOperand &MO : MI.operands()) {
         // Check to see if it's a local stack symbol.
         if (!MO.isFI())

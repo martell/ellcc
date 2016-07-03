@@ -15,7 +15,6 @@
 #include "PPC.h"
 #include "PPCRegisterInfo.h"
 #include "PPCTargetMachine.h"
-#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/IR/Attributes.h"
@@ -153,8 +152,7 @@ void PPCSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
 bool PPCSubtarget::hasLazyResolverStub(const GlobalValue *GV) const {
   if (!HasLazyResolverStubs)
     return false;
-  if (!shouldAssumeDSOLocal(TM.getRelocationModel(), TM.getTargetTriple(),
-                            *GV->getParent(), GV))
+  if (!TM.shouldAssumeDSOLocal(*GV->getParent(), GV))
     return true;
   // 32 bit macho has no relocation for a-b if a is undefined, even if b is in
   // the section that is being relocated. This means we have to use o load even
@@ -201,8 +199,6 @@ void PPCSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
 }
 
 void PPCSubtarget::overrideSchedPolicy(MachineSchedPolicy &Policy,
-                                       MachineInstr *begin,
-                                       MachineInstr *end,
                                        unsigned NumRegionInstrs) const {
   if (needsAggressiveScheduling(DarwinDirective)) {
     Policy.OnlyTopDown = false;

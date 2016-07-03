@@ -44,13 +44,13 @@ static bool isZeroImm(const MachineOperand &op) {
 /// not, return 0.  This predicate must return 0 if the instruction has
 /// any side effects other than loading from the stack slot.
 unsigned MBlazeInstrInfo::
-isLoadFromStackSlot(const MachineInstr *MI, int &FrameIndex) const {
-  if (MI->getOpcode() == MBlaze::LWI) {
-    if ((MI->getOperand(1).isFI()) && // is a stack slot
-        (MI->getOperand(2).isImm()) &&  // the imm is zero
-        (isZeroImm(MI->getOperand(2)))) {
-      FrameIndex = MI->getOperand(1).getIndex();
-      return MI->getOperand(0).getReg();
+isLoadFromStackSlot(const MachineInstr &MI, int &FrameIndex) const {
+  if (MI.getOpcode() == MBlaze::LWI) {
+    if ((MI.getOperand(1).isFI()) && // is a stack slot
+        (MI.getOperand(2).isImm()) &&  // the imm is zero
+        (isZeroImm(MI.getOperand(2)))) {
+      FrameIndex = MI.getOperand(1).getIndex();
+      return MI.getOperand(0).getReg();
     }
   }
 
@@ -63,13 +63,13 @@ isLoadFromStackSlot(const MachineInstr *MI, int &FrameIndex) const {
 /// not, return 0.  This predicate must return 0 if the instruction has
 /// any side effects other than storing to the stack slot.
 unsigned MBlazeInstrInfo::
-isStoreToStackSlot(const MachineInstr *MI, int &FrameIndex) const {
-  if (MI->getOpcode() == MBlaze::SWI) {
-    if ((MI->getOperand(1).isFI()) && // is a stack slot
-        (MI->getOperand(2).isImm()) &&  // the imm is zero
-        (isZeroImm(MI->getOperand(2)))) {
-      FrameIndex = MI->getOperand(1).getIndex();
-      return MI->getOperand(0).getReg();
+isStoreToStackSlot(const MachineInstr &MI, int &FrameIndex) const {
+  if (MI.getOpcode() == MBlaze::SWI) {
+    if ((MI.getOperand(1).isFI()) && // is a stack slot
+        (MI.getOperand(2).isImm()) &&  // the imm is zero
+        (isZeroImm(MI.getOperand(2)))) {
+      FrameIndex = MI.getOperand(1).getIndex();
+      return MI.getOperand(0).getReg();
     }
   }
   return 0;

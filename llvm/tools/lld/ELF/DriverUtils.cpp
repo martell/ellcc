@@ -88,22 +88,6 @@ std::string elf::getVersionString() {
   return "LLD " + Version + " " + Repo + "\n";
 }
 
-// Converts a hex string (e.g. "0x123456") to a vector.
-std::vector<uint8_t> elf::parseHexstring(StringRef S) {
-  if (S.find_first_not_of("0123456789abcdefABCDEF") != StringRef::npos ||
-      S.size() % 2) {
-    error("malformed hexstring: " + S);
-    return {};
-  }
-  std::vector<uint8_t> V;
-  for (; !S.empty(); S = S.substr(2)) {
-    int I;
-    S.substr(0, 2).getAsInteger(16, I);
-    V.push_back(I);
-  }
-  return V;
-}
-
 // Makes a given pathname an absolute path first, and then remove
 // beginning /. For example, "../foo.o" is converted to "home/john/foo.o",
 // assuming that the current directory is "/home/john/bar".
@@ -244,12 +228,17 @@ std::string elf::findFromSearchPaths(StringRef Path) {
 std::string elf::searchLibrary(StringRef Path) {
   if (Path.startswith(":"))
     return findFromSearchPaths(Path.substr(1));
-  if (!Config->Static) {
-    std::string S = findFromSearchPaths(("lib" + Path + ".so").str());
-    if (!S.empty())
+  for (StringRef Dir : Config->SearchPaths) {
+    if (!Config->Static) {
+      std::string S = buildSysrootedPath(Dir, ("lib" + Path + ".so").str());
+      if (fs::exists(S))
+        return S;
+    }
+    std::string S = buildSysrootedPath(Dir, ("lib" + Path + ".a").str());
+    if (fs::exists(S))
       return S;
   }
-  return findFromSearchPaths(("lib" + Path + ".a").str());
+  return "";
 }
 
 // Makes a path by concatenating Dir and File.

@@ -230,7 +230,6 @@ namespace llvm {
     explicit ARMTargetLowering(const TargetMachine &TM,
                                const ARMSubtarget &STI);
 
-    bool isPositionIndependent() const;
     unsigned getJumpTableEncoding() const override;
     bool useSoftFloat() const override;
 
@@ -254,10 +253,10 @@ namespace llvm {
                            EVT VT) const override;
 
     MachineBasicBlock *
-      EmitInstrWithCustomInserter(MachineInstr *MI,
-                                  MachineBasicBlock *MBB) const override;
+    EmitInstrWithCustomInserter(MachineInstr &MI,
+                                MachineBasicBlock *MBB) const override;
 
-    void AdjustInstrPostInstrSelection(MachineInstr *MI,
+    void AdjustInstrPostInstrSelection(MachineInstr &MI,
                                        SDNode *Node) const override;
 
     SDValue PerformCMOVCombine(SDNode *N, SelectionDAG &DAG) const;
@@ -665,20 +664,19 @@ namespace llvm {
 
     SDValue OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const;
 
-    void SetupEntryBlockForSjLj(MachineInstr *MI,
-                                MachineBasicBlock *MBB,
+    void SetupEntryBlockForSjLj(MachineInstr &MI, MachineBasicBlock *MBB,
                                 MachineBasicBlock *DispatchBB, int FI) const;
 
-    void EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const;
+    void EmitSjLjDispatchBlock(MachineInstr &MI, MachineBasicBlock *MBB) const;
 
-    bool RemapAddSubWithFlags(MachineInstr *MI, MachineBasicBlock *BB) const;
+    bool RemapAddSubWithFlags(MachineInstr &MI, MachineBasicBlock *BB) const;
 
-    MachineBasicBlock *EmitStructByval(MachineInstr *MI,
+    MachineBasicBlock *EmitStructByval(MachineInstr &MI,
                                        MachineBasicBlock *MBB) const;
 
-    MachineBasicBlock *EmitLowered__chkstk(MachineInstr *MI,
+    MachineBasicBlock *EmitLowered__chkstk(MachineInstr &MI,
                                            MachineBasicBlock *MBB) const;
-    MachineBasicBlock *EmitLowered__dbzchk(MachineInstr *MI,
+    MachineBasicBlock *EmitLowered__dbzchk(MachineInstr &MI,
                                            MachineBasicBlock *MBB) const;
   };
 

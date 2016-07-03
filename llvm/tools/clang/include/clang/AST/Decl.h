@@ -387,6 +387,7 @@ public:
   NamedDecl *getUnderlyingDecl() {
     // Fast-path the common case.
     if (this->getKind() != UsingShadow &&
+        this->getKind() != ConstructorUsingShadow &&
         this->getKind() != ObjCCompatibleAlias &&
         this->getKind() != NamespaceAlias)
       return this;
@@ -3658,6 +3659,14 @@ public:
   void setParam(unsigned i, ImplicitParamDecl *P) {
     assert(i < NumParams);
     getParams()[i] = P;
+  }
+
+  // ArrayRef interface to parameters.
+  ArrayRef<ImplicitParamDecl *> parameters() const {
+    return {getParams(), getNumParams()};
+  }
+  MutableArrayRef<ImplicitParamDecl *> parameters() {
+    return {getParams(), getNumParams()};
   }
 
   /// \brief Retrieve the parameter containing captured variables.

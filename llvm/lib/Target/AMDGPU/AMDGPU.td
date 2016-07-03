@@ -61,6 +61,12 @@ def FeatureFlatAddressSpace : SubtargetFeature<"flat-address-space",
   "Support flat address space"
 >;
 
+def FeatureUnalignedBufferAccess : SubtargetFeature<"unaligned-buffer-access",
+  "UnalignedBufferAccess",
+  "true",
+  "Support unaligned global loads and stores"
+>;
+
 def FeatureXNACK : SubtargetFeature<"xnack",
   "EnableXNACK",
   "true",
@@ -239,12 +245,6 @@ def FeatureEnableUnsafeDSOffsetFolding : SubtargetFeature <
   "EnableUnsafeDSOffsetFolding",
   "true",
   "Force using DS instruction immediate offsets on SI"
->;
-
-def FeatureIfCvt : SubtargetFeature <"disable-ifcvt",
-  "EnableIfCvt",
-  "false",
-  "Disable the if conversion pass"
 >;
 
 def FeatureEnableSIScheduler : SubtargetFeature<"si-scheduler",

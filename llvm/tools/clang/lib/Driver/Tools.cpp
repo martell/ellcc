@@ -1810,9 +1810,6 @@ static void getSparcTargetFeatures(const Driver &D, const ArgList &Args,
 
 void Clang::AddSparcTargetArgs(const ArgList &Args,
                                ArgStringList &CmdArgs) const {
-  //const Driver &D = getToolChain().getDriver();
-  std::string Triple = getToolChain().ComputeEffectiveClangTriple(Args);
-
   sparc::FloatABI FloatABI =
       sparc::getSparcFloatABI(getToolChain().getDriver(), Args);
 
@@ -2319,12 +2316,10 @@ void Clang::AddX86TargetArgs(const ArgList &Args,
   }
 
   // Set flags to support MCU ABI.
-  if (Arg *A = Args.getLastArg(options::OPT_miamcu, options::OPT_mno_iamcu)) {
-    if (A->getOption().matches(options::OPT_miamcu)) {
-      CmdArgs.push_back("-mfloat-abi");
-      CmdArgs.push_back("soft");
-      CmdArgs.push_back("-mstack-alignment=4");
-    }
+  if (Args.hasFlag(options::OPT_miamcu, options::OPT_mno_iamcu, false)) {
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("soft");
+    CmdArgs.push_back("-mstack-alignment=4");
   }
 }
 
@@ -2424,7 +2419,7 @@ static bool DecodeAArch64Mcpu(const Driver &D, StringRef Mcpu, StringRef &CPU,
   CPU = Split.first;
   if (CPU == "cortex-a53" || CPU == "cortex-a57" ||
       CPU == "cortex-a72" || CPU == "cortex-a35" || CPU == "exynos-m1" ||
-      CPU == "kryo"       || CPU == "cortex-a73") {
+      CPU == "kryo"       || CPU == "cortex-a73" || CPU == "vulcan") {
     Features.push_back("+neon");
     Features.push_back("+crc");
     Features.push_back("+crypto");
@@ -5192,6 +5187,40 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-arm-restrict-it");
   }
 
+  // Forward -cl options to -cc1
+  if (Args.getLastArg(options::OPT_cl_opt_disable)) {
+    CmdArgs.push_back("-cl-opt-disable");
+  }
+  if (Args.getLastArg(options::OPT_cl_strict_aliasing)) {
+    CmdArgs.push_back("-cl-strict-aliasing");
+  }
+  if (Args.getLastArg(options::OPT_cl_single_precision_constant)) {
+    CmdArgs.push_back("-cl-single-precision-constant");
+  }
+  if (Args.getLastArg(options::OPT_cl_finite_math_only)) {
+    CmdArgs.push_back("-cl-finite-math-only");
+  }
+  if (Args.getLastArg(options::OPT_cl_kernel_arg_info)) {
+    CmdArgs.push_back("-cl-kernel-arg-info");
+  }
+  if (Args.getLastArg(options::OPT_cl_unsafe_math_optimizations)) {
+    CmdArgs.push_back("-cl-unsafe-math-optimizations");
+  }
+  if (Args.getLastArg(options::OPT_cl_fast_relaxed_math)) {
+    CmdArgs.push_back("-cl-fast-relaxed-math");
+  }
+  if (Args.getLastArg(options::OPT_cl_mad_enable)) {
+    CmdArgs.push_back("-cl-mad-enable");
+  }
+  if (Arg *A = Args.getLastArg(options::OPT_cl_std_EQ)) {
+    std::string CLStdStr = "-cl-std=";
+    CLStdStr += A->getValue();
+    CmdArgs.push_back(Args.MakeArgString(CLStdStr));
+  }
+  if (Args.getLastArg(options::OPT_cl_denorms_are_zero)) {
+    CmdArgs.push_back("-cl-denorms-are-zero");
+  }
+
   // Forward -f options with positive and negative forms; we translate
   // these by hand.
   if (Arg *A = Args.getLastArg(options::OPT_fprofile_sample_use_EQ)) {
@@ -5443,10 +5472,25 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   bool IsMSVC2015Compatible = MSVT.getMajor() >= 19;
   if (ImplyVCPPCXXVer) {
-    if (IsMSVC2015Compatible)
-      CmdArgs.push_back("-std=c++14");
-    else
-      CmdArgs.push_back("-std=c++11");
+    StringRef LanguageStandard;
+    if (const Arg *StdArg = Args.getLastArg(options::OPT__SLASH_std)) {
+      LanguageStandard = llvm::StringSwitch<StringRef>(StdArg->getValue())
+                             .Case("c++14", "-std=c++14")
+                             .Case("c++latest", "-std=c++1z")
+                             .Default("");
+      if (LanguageStandard.empty())
+        D.Diag(clang::diag::warn_drv_unused_argument)
+            << StdArg->getAsString(Args);
+    }
+
+    if (LanguageStandard.empty()) {
+      if (IsMSVC2015Compatible)
+        LanguageStandard = "-std=c++14";
+      else
+        LanguageStandard = "-std=c++11";
+    }
+
+    CmdArgs.push_back(LanguageStandard.data());
   }
 
   // -fno-borland-extensions is default.
@@ -10496,6 +10540,10 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString(std::string("-libpath:") +
                                            WindowsSdkLibPath.c_str()));
   }
+
+  if (!C.getDriver().IsCLMode() && Args.hasArg(options::OPT_L))
+    for (const auto &LibPath : Args.getAllArgValues(options::OPT_L))
+      CmdArgs.push_back(Args.MakeArgString("-libpath:" + LibPath));
 
   CmdArgs.push_back("-nologo");
 

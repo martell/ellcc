@@ -141,7 +141,7 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
   unsigned Maj, Min, Rev;
   if (Triple.isMacOSX()) {
     Triple.getMacOSXVersion(Maj, Min, Rev);
-    PlatformName = "macosx";
+    PlatformName = "macos";
   } else {
     Triple.getOSVersion(Maj, Min, Rev);
     PlatformName = llvm::Triple::getOSTypeName(Triple.getOS());
@@ -736,6 +736,13 @@ protected:
 
       if (Opts.CPlusPlus11 && Opts.isCompatibleWithMSVC(LangOptions::MSVC2015))
         Builder.defineMacro("_HAS_CHAR16_T_LANGUAGE_SUPPORT", Twine(1));
+
+      if (Opts.isCompatibleWithMSVC(LangOptions::MSVC2015)) {
+        if (Opts.CPlusPlus1z)
+          Builder.defineMacro("_MSVC_LANG", "201403L");
+        else if (Opts.CPlusPlus14)
+          Builder.defineMacro("_MSVC_LANG", "201402L");
+      }
     }
 
     if (Opts.MicrosoftExt) {
@@ -2138,6 +2145,16 @@ public:
       Opts.cl_khr_int64_base_atomics = 1;
       Opts.cl_khr_int64_extended_atomics = 1;
       Opts.cl_khr_3d_image_writes = 1;
+    }
+  }
+
+  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
+    switch (CC) {
+      default:
+        return CCCR_Warning;
+      case CC_C:
+      case CC_OpenCLKernel:
+        return CCCR_OK;
     }
   }
 };
@@ -5870,6 +5887,7 @@ public:
                         .Case("cortex-a73", true)
                         .Case("cyclone", true)
                         .Case("kryo", true)
+                        .Case("vulcan", true)
                         .Default(false);
     return CPUKnown;
   }
@@ -6743,6 +6761,7 @@ public:
       PtrDiffType = SignedLong;
       break;
     }
+    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -8067,8 +8086,8 @@ public:
   }
 
   CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
-    return (CC == CC_SpirFunction || CC == CC_SpirKernel) ? CCCR_OK
-                                                          : CCCR_Warning;
+    return (CC == CC_SpirFunction || CC == CC_OpenCLKernel) ? CCCR_OK
+                                                            : CCCR_Warning;
   }
 
   CallingConv getDefaultCallingConv(CallingConvMethodType MT) const override {
@@ -8199,6 +8218,41 @@ public:
 
   bool useFloat128ManglingForLongDouble() const override {
     return true;
+  }
+};
+
+// 32-bit RenderScript is armv7 with width and align of 'long' set to 8-bytes
+class RenderScript32TargetInfo : public ARMleTargetInfo {
+public:
+  RenderScript32TargetInfo(const llvm::Triple &Triple,
+                           const TargetOptions &Opts)
+      : ARMleTargetInfo(llvm::Triple("armv7", Triple.getVendorName(),
+                                     Triple.getOSName(),
+                                     Triple.getEnvironmentName()),
+                        Opts) {
+    LongWidth = LongAlign = 64;
+  }
+  void getTargetDefines(const LangOptions &Opts,
+                        MacroBuilder &Builder) const override {
+    Builder.defineMacro("__RENDERSCRIPT__");
+    ARMleTargetInfo::getTargetDefines(Opts, Builder);
+  }
+};
+
+// 64-bit RenderScript is aarch64
+class RenderScript64TargetInfo : public AArch64leTargetInfo {
+public:
+  RenderScript64TargetInfo(const llvm::Triple &Triple,
+                           const TargetOptions &Opts)
+      : AArch64leTargetInfo(llvm::Triple("aarch64", Triple.getVendorName(),
+                                         Triple.getOSName(),
+                                         Triple.getEnvironmentName()),
+                            Opts) {}
+
+  void getTargetDefines(const LangOptions &Opts,
+                        MacroBuilder &Builder) const override {
+    Builder.defineMacro("__RENDERSCRIPT__");
+    AArch64leTargetInfo::getTargetDefines(Opts, Builder);
   }
 };
 
@@ -8642,6 +8696,11 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple,
     if (!(Triple == llvm::Triple("wasm64-unknown-unknown")))
       return nullptr;
     return new WebAssemblyOSTargetInfo<WebAssembly64TargetInfo>(Triple, Opts);
+
+  case llvm::Triple::renderscript32:
+    return new LinuxTargetInfo<RenderScript32TargetInfo>(Triple, Opts);
+  case llvm::Triple::renderscript64:
+    return new LinuxTargetInfo<RenderScript64TargetInfo>(Triple, Opts);
   }
 }
 

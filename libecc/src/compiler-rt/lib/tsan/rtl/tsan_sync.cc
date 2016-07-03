@@ -201,12 +201,8 @@ StackTrace::StackTrace()
     , c_() {
 }
 
-StackTrace::StackTrace(uptr *buf, uptr cnt)
-    : n_()
-    , s_(buf)
-    , c_(cnt) {
-  CHECK_NE(buf, 0);
-  CHECK_NE(cnt, 0);
+SyncVar* MetaMap::GetIfExistsAndLock(uptr addr, bool write_lock) {
+  return GetAndLock(0, 0, addr, write_lock, false);
 }
 
 SyncVar* MetaMap::GetAndLock(ThreadState *thr, uptr pc,

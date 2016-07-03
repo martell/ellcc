@@ -1720,6 +1720,7 @@ static void writeDISubprogram(raw_ostream &Out, const DISubprogram *N,
   if (N->getVirtuality() != dwarf::DW_VIRTUALITY_none ||
       N->getVirtualIndex() != 0)
     Printer.printInt("virtualIndex", N->getVirtualIndex(), false);
+  Printer.printInt("thisAdjustment", N->getThisAdjustment());
   Printer.printDIFlags("flags", N->getFlags());
   Printer.printBool("isOptimized", N->isOptimized());
   Printer.printMetadata("unit", N->getRawUnit());
@@ -2709,8 +2710,8 @@ void AssemblyWriter::printFunction(const Function *F) {
 
     Out << " {";
     // Output all of the function's basic blocks.
-    for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)
-      printBasicBlock(&*I);
+    for (const BasicBlock &BB : *F)
+      printBasicBlock(&BB);
 
     // Output the function's use-lists.
     printUseLists(F);
@@ -2782,8 +2783,8 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockStartAnnot(BB, Out);
 
   // Output all of the instructions in the basic block...
-  for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-    printInstructionLine(*I);
+  for (const Instruction &I : *BB) {
+    printInstructionLine(I);
   }
 
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockEndAnnot(BB, Out);
@@ -3243,10 +3244,9 @@ void AssemblyWriter::writeAllAttributeGroups() {
        I != E; ++I)
     asVec[I->second] = *I;
 
-  for (std::vector<std::pair<AttributeSet, unsigned> >::iterator
-         I = asVec.begin(), E = asVec.end(); I != E; ++I)
-    Out << "attributes #" << I->second << " = { "
-        << I->first.getAsString(AttributeSet::FunctionIndex, true) << " }\n";
+  for (const auto &I : asVec)
+    Out << "attributes #" << I.second << " = { "
+        << I.first.getAsString(AttributeSet::FunctionIndex, true) << " }\n";
 }
 
 void AssemblyWriter::printUseListOrder(const UseListOrder &Order) {

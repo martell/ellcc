@@ -91,8 +91,8 @@ void MappingTraits<MachOYAML::Object>::mapping(IO &IO,
   // For Fat files there will be a different tag so they can be differentiated.
   if (!IO.getContext()) {
     IO.setContext(&Object);
-    IO.mapTag("!mach-o", true);
   }
+  IO.mapTag("!mach-o", true);
   IO.mapRequired("FileHeader", Object.Header);
   IO.mapOptional("LoadCommands", Object.LoadCommands);
   IO.mapOptional("LinkEditData", Object.LinkEdit);
@@ -129,34 +129,6 @@ void MappingTraits<MachOYAML::UniversalBinary>::mapping(
   IO.mapRequired("Slices", UniversalBinary.Slices);
 
   if (IO.getContext() == &UniversalBinary)
-    IO.setContext(nullptr);
-}
-
-void MappingTraits<MachOYAML::MachFile>::mapping(
-    IO &IO, MachOYAML::MachFile &MachFile) {
-  if (!IO.getContext()) {
-    IO.setContext(&MachFile);
-  }
-  if (IO.outputting()) {
-    if (MachFile.isFat) {
-      IO.mapTag("!fat-mach-o", true);
-      MappingTraits<MachOYAML::UniversalBinary>::mapping(IO, MachFile.FatFile);
-    } else {
-      IO.mapTag("!mach-o", true);
-      MappingTraits<MachOYAML::Object>::mapping(IO, MachFile.ThinFile);
-    }
-  } else {
-    if (IO.mapTag("!fat-mach-o")) {
-      MachFile.isFat = true;
-      MappingTraits<MachOYAML::UniversalBinary>::mapping(IO, MachFile.FatFile);
-    } else if (IO.mapTag("!mach-o")) {
-      MachFile.isFat = false;
-      MappingTraits<MachOYAML::Object>::mapping(IO, MachFile.ThinFile);
-    } else {
-      assert(false && "No tag found in YAML, cannot identify file type!");
-    }
-  }
-  if (IO.getContext() == &MachFile)
     IO.setContext(nullptr);
 }
 

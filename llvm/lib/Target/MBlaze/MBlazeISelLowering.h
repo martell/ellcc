@@ -152,16 +152,16 @@ namespace llvm {
                   const SDLoc &dl, SelectionDAG &DAG) const override;
 
     virtual MachineBasicBlock*
-      EmitCustomShift(MachineInstr *MI, MachineBasicBlock *MBB) const;
+      EmitCustomShift(MachineInstr &MI, MachineBasicBlock *MBB) const;
 
     virtual MachineBasicBlock*
-      EmitCustomSelect(MachineInstr *MI, MachineBasicBlock *MBB) const;
+      EmitCustomSelect(MachineInstr &MI, MachineBasicBlock *MBB) const;
 
     virtual MachineBasicBlock*
-            EmitCustomAtomic(MachineInstr *MI, MachineBasicBlock *MBB) const;
+            EmitCustomAtomic(MachineInstr &MI, MachineBasicBlock *MBB) const;
 
     MachineBasicBlock *
-    EmitInstrWithCustomInserter(MachineInstr *MI,
+    EmitInstrWithCustomInserter(MachineInstr &MI,
                                 MachineBasicBlock *MBB) const override;
 
     // Inline asm support

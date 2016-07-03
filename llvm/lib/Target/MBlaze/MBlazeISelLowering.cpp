@@ -218,10 +218,10 @@ SDValue MBlazeTargetLowering::LowerOperation(SDValue Op,
 //  Lower helper functions
 //===----------------------------------------------------------------------===//
 MachineBasicBlock*
-MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
+MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
                                                   MachineBasicBlock *MBB)
                                                   const {
-  switch (MI->getOpcode()) {
+  switch (MI.getOpcode()) {
   default: llvm_unreachable("Unexpected instr type to insert");
 
   case MBlaze::ShiftRL:
@@ -246,16 +246,16 @@ MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   case MBlaze::MEMBARRIER:
     // The Microblaze does not need memory barriers. Just delete the pseudo
     // instruction and finish.
-    MI->eraseFromParent();
+    MI.eraseFromParent();
     return MBB;
   }
 }
 
 MachineBasicBlock*
-MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
+MBlazeTargetLowering::EmitCustomShift(MachineInstr &MI,
                                       MachineBasicBlock *MBB) const {
   const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  DebugLoc dl = MI->getDebugLoc();
+  DebugLoc dl = MI.getDebugLoc();
 
   // To "insert" a shift left instruction, we actually have to insert a
   // simple loop.  The incoming instruction knows the destination vreg to
@@ -299,12 +299,12 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
 
   unsigned IAMT = R.createVirtualRegister(&MBlaze::GPRRegClass);
   BuildMI(MBB, dl, TII->get(MBlaze::ANDI), IAMT)
-    .addReg(MI->getOperand(2).getReg())
+    .addReg(MI.getOperand(2).getReg())
     .addImm(31);
 
   unsigned IVAL = R.createVirtualRegister(&MBlaze::GPRRegClass);
   BuildMI(MBB, dl, TII->get(MBlaze::ADDIK), IVAL)
-    .addReg(MI->getOperand(1).getReg())
+    .addReg(MI.getOperand(1).getReg())
     .addImm(0);
 
   BuildMI(MBB, dl, TII->get(MBlaze::BEQID))
@@ -323,11 +323,11 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
     .addReg(IAMT).addMBB(MBB)
     .addReg(NAMT).addMBB(loop);
 
-  if (MI->getOpcode() == MBlaze::ShiftL)
+  if (MI.getOpcode() == MBlaze::ShiftL)
     BuildMI(loop, dl, TII->get(MBlaze::ADD), NDST).addReg(DST).addReg(DST);
-  else if (MI->getOpcode() == MBlaze::ShiftRA)
+  else if (MI.getOpcode() == MBlaze::ShiftRA)
     BuildMI(loop, dl, TII->get(MBlaze::SRA), NDST).addReg(DST);
-  else if (MI->getOpcode() == MBlaze::ShiftRL)
+  else if (MI.getOpcode() == MBlaze::ShiftRL)
     BuildMI(loop, dl, TII->get(MBlaze::SRL), NDST).addReg(DST);
   else
     llvm_unreachable("Cannot lower unknown shift instruction");
@@ -341,20 +341,20 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
     .addMBB(loop);
 
   BuildMI(*finish, finish->begin(), dl,
-          TII->get(MBlaze::PHI), MI->getOperand(0).getReg())
+          TII->get(MBlaze::PHI), MI.getOperand(0).getReg())
     .addReg(IVAL).addMBB(MBB)
     .addReg(NDST).addMBB(loop);
 
   // The pseudo instruction is no longer needed so remove it
-  MI->eraseFromParent();
+  MI.eraseFromParent();
   return finish;
 }
 
 MachineBasicBlock*
-MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
+MBlazeTargetLowering::EmitCustomSelect(MachineInstr &MI,
                                        MachineBasicBlock *MBB) const {
   const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  DebugLoc dl = MI->getDebugLoc();
+  DebugLoc dl = MI.getDebugLoc();
 
   // To "insert" a SELECT_CC instruction, we actually have to insert the
   // diamond control-flow pattern.  The incoming instruction knows the
@@ -375,7 +375,7 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
   MachineBasicBlock *dneBB = F->CreateMachineBasicBlock(LLVM_BB);
 
   unsigned Opc;
-  switch (MI->getOperand(4).getImm()) {
+  switch (MI.getOperand(4).getImm()) {
   default: llvm_unreachable("Unknown branch condition");
   case MBlazeCC::EQ: Opc = MBlaze::BEQID; break;
   case MBlazeCC::NE: Opc = MBlaze::BNEID; break;
@@ -399,26 +399,26 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
   flsBB->addSuccessor(dneBB);
 
   BuildMI(MBB, dl, TII->get(Opc))
-    .addReg(MI->getOperand(3).getReg())
+    .addReg(MI.getOperand(3).getReg())
     .addMBB(dneBB);
 
   //  sinkMBB:
   //   %Result = phi  [ %TrueValue, MBB ], [ %FalseValue, flsMBB ]
   //  ...
   BuildMI(*dneBB, dneBB->begin(), dl,
-          TII->get(MBlaze::PHI), MI->getOperand(0).getReg())
-    .addReg(MI->getOperand(1).getReg()).addMBB(MBB)
-    .addReg(MI->getOperand(2).getReg()).addMBB(flsBB);
+          TII->get(MBlaze::PHI), MI.getOperand(0).getReg())
+    .addReg(MI.getOperand(1).getReg()).addMBB(MBB)
+    .addReg(MI.getOperand(2).getReg()).addMBB(flsBB);
 
-  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  MI.eraseFromParent();   // The pseudo instruction is gone now.
   return dneBB;
 }
 
 MachineBasicBlock*
-MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
+MBlazeTargetLowering::EmitCustomAtomic(MachineInstr &MI,
                                        MachineBasicBlock *MBB) const {
   const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  DebugLoc dl = MI->getDebugLoc();
+  DebugLoc dl = MI.getDebugLoc();
 
   // All atomic instructions on the Microblaze are implemented using the
   // load-linked / store-conditional style atomic instruction sequences.
@@ -469,18 +469,18 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   // Add the fallthrough block as its successors.
   MBB->addSuccessor(start);
 
-  BuildMI(start, dl, TII->get(MBlaze::LWX), MI->getOperand(0).getReg())
-    .addReg(MI->getOperand(1).getReg())
+  BuildMI(start, dl, TII->get(MBlaze::LWX), MI.getOperand(0).getReg())
+    .addReg(MI.getOperand(1).getReg())
     .addReg(MBlaze::R0);
 
   MachineBasicBlock *final = start;
   unsigned finalReg = 0;
 
-  switch (MI->getOpcode()) {
+  switch (MI.getOpcode()) {
   default: llvm_unreachable("Cannot lower unknown atomic instruction!");
 
   case MBlaze::SWP32:
-    finalReg = MI->getOperand(2).getReg();
+    finalReg = MI.getOperand(2).getReg();
     start->addSuccessor(exit);
     start->addSuccessor(start);
     break;
@@ -492,7 +492,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   case MBlaze::LAS32:
   case MBlaze::LAA32: {
     unsigned opcode = 0;
-    switch (MI->getOpcode()) {
+    switch (MI.getOpcode()) {
     default: llvm_unreachable("Cannot lower unknown atomic load!");
     case MBlaze::LAA32: opcode = MBlaze::ADDK; break;
     case MBlaze::LAS32: opcode = MBlaze::RSUBK; break;
@@ -507,10 +507,10 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
     start->addSuccessor(start);
 
     BuildMI(start, dl, TII->get(opcode), finalReg)
-      .addReg(MI->getOperand(0).getReg())
-      .addReg(MI->getOperand(2).getReg());
+      .addReg(MI.getOperand(0).getReg())
+      .addReg(MI.getOperand(2).getReg());
 
-    if (MI->getOpcode() == MBlaze::LAN32) {
+    if (MI.getOpcode() == MBlaze::LAN32) {
       unsigned tmp = finalReg;
       finalReg = R.createVirtualRegister(&MBlaze::GPRRegClass);
       BuildMI(start, dl, TII->get(MBlaze::XORI), finalReg)
@@ -521,7 +521,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   }
 
   case MBlaze::CAS32: {
-    finalReg = MI->getOperand(3).getReg();
+    finalReg = MI.getOperand(3).getReg();
     final = F->CreateMachineBasicBlock(LLVM_BB);
 
     F->insert(It, final);
@@ -532,8 +532,8 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
 
     unsigned CMP = R.createVirtualRegister(&MBlaze::GPRRegClass);
     BuildMI(start, dl, TII->get(MBlaze::CMP), CMP)
-      .addReg(MI->getOperand(0).getReg())
-      .addReg(MI->getOperand(2).getReg());
+      .addReg(MI.getOperand(0).getReg())
+      .addReg(MI.getOperand(2).getReg());
 
     BuildMI(start, dl, TII->get(MBlaze::BNEID))
       .addReg(CMP)
@@ -548,7 +548,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   unsigned CHK = R.createVirtualRegister(&MBlaze::GPRRegClass);
   BuildMI(final, dl, TII->get(MBlaze::SWX))
     .addReg(finalReg)
-    .addReg(MI->getOperand(1).getReg())
+    .addReg(MI.getOperand(1).getReg())
     .addReg(MBlaze::R0);
 
   BuildMI(final, dl, TII->get(MBlaze::ADDIC), CHK)
@@ -560,7 +560,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
     .addMBB(start);
 
   // The pseudo instruction is no longer needed so remove it
-  MI->eraseFromParent();
+  MI.eraseFromParent();
   return exit;
 }
 

@@ -953,8 +953,7 @@ SparcTargetLowering::LowerCall_32(TargetLowering::CallLoweringInfo &CLI,
   // If the callee is a GlobalAddress node (quite common, every direct call is)
   // turn it into a TargetGlobalAddress node so that legalize doesn't hack it.
   // Likewise ExternalSymbol -> TargetExternalSymbol.
-  unsigned TF = ((getTargetMachine().getRelocationModel() == Reloc::PIC_)
-                 ? SparcMCExpr::VK_Sparc_WPLT30 : 0);
+  unsigned TF = isPositionIndependent() ? SparcMCExpr::VK_Sparc_WPLT30 : 0;
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, MVT::i32, 0, TF);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
@@ -1307,8 +1306,7 @@ SparcTargetLowering::LowerCall_64(TargetLowering::CallLoweringInfo &CLI,
   // Likewise ExternalSymbol -> TargetExternalSymbol.
   SDValue Callee = CLI.Callee;
   bool hasReturnsTwice = hasReturnsTwiceAttr(DAG, Callee, CLI.CS);
-  unsigned TF = ((getTargetMachine().getRelocationModel() == Reloc::PIC_)
-                 ? SparcMCExpr::VK_Sparc_WPLT30 : 0);
+  unsigned TF = isPositionIndependent() ? SparcMCExpr::VK_Sparc_WPLT30 : 0;
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, PtrVT, 0, TF);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
@@ -1640,10 +1638,8 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
   // are unsupported.
   if (Subtarget->isV9())
     setMaxAtomicSizeInBitsSupported(64);
-  else if (false && Subtarget->hasLeonCasa())
-    // Test made to fail pending completion of AtomicExpandPass,
-    // as this will cause a regression until that work is completed.
-    setMaxAtomicSizeInBitsSupported(32);
+  else if (Subtarget->hasLeonCasa())
+    setMaxAtomicSizeInBitsSupported(64);
   else
     setMaxAtomicSizeInBitsSupported(0);
 
@@ -1978,8 +1974,8 @@ SDValue SparcTargetLowering::makeAddress(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
   EVT VT = getPointerTy(DAG.getDataLayout());
 
-  // Handle PIC mode first.
-  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+  // Handle PIC mode first. SPARC needs a got load for every variable!
+  if (isPositionIndependent()) {
     // This is the pic32 code model, the GOT is known to be smaller than 4GB.
     SDValue HiLo = makeHiLoPair(Op, SparcMCExpr::VK_Sparc_GOT22,
                                 SparcMCExpr::VK_Sparc_GOT10, DAG);
@@ -2080,16 +2076,15 @@ SDValue SparcTargetLowering::LowerGlobalTLSAddress(SDValue Op,
     SDValue Symbol = withTargetFlags(Op, callTF, DAG);
 
     SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
-    SmallVector<SDValue, 4> Ops;
-    Ops.push_back(Chain);
-    Ops.push_back(Callee);
-    Ops.push_back(Symbol);
-    Ops.push_back(DAG.getRegister(SP::O0, PtrVT));
     const uint32_t *Mask = Subtarget->getRegisterInfo()->getCallPreservedMask(
         DAG.getMachineFunction(), CallingConv::C);
     assert(Mask && "Missing call preserved mask for calling convention");
-    Ops.push_back(DAG.getRegisterMask(Mask));
-    Ops.push_back(InFlag);
+    SDValue Ops[] = {Chain,
+                     Callee,
+                     Symbol,
+                     DAG.getRegister(SP::O0, PtrVT),
+                     DAG.getRegisterMask(Mask),
+                     InFlag};
     Chain = DAG.getNode(SPISD::TLS_CALL, DL, NodeTys, Ops);
     InFlag = Chain.getValue(1);
     Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(1, DL, true),
@@ -3096,9 +3091,9 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const {
 }
 
 MachineBasicBlock *
-SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
+SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
                                                  MachineBasicBlock *BB) const {
-  switch (MI->getOpcode()) {
+  switch (MI.getOpcode()) {
   default: llvm_unreachable("Unknown SELECT_CC!");
   case SP::SELECT_CC_Int_ICC:
   case SP::SELECT_CC_FP_ICC:
@@ -3120,13 +3115,12 @@ SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   }
 }
 
-MachineBasicBlock*
-SparcTargetLowering::expandSelectCC(MachineInstr *MI,
-                                    MachineBasicBlock *BB,
+MachineBasicBlock *
+SparcTargetLowering::expandSelectCC(MachineInstr &MI, MachineBasicBlock *BB,
                                     unsigned BROpcode) const {
   const TargetInstrInfo &TII = *Subtarget->getInstrInfo();
-  DebugLoc dl = MI->getDebugLoc();
-  unsigned CC = (SPCC::CondCodes)MI->getOperand(3).getImm();
+  DebugLoc dl = MI.getDebugLoc();
+  unsigned CC = (SPCC::CondCodes)MI.getOperand(3).getImm();
 
   // To "insert" a SELECT_CC instruction, we actually have to insert the diamond
   // control-flow pattern.  The incoming instruction knows the destination vreg
@@ -3171,20 +3165,20 @@ SparcTargetLowering::expandSelectCC(MachineInstr *MI,
   //   %Result = phi [ %FalseValue, copy0MBB ], [ %TrueValue, thisMBB ]
   //  ...
   BB = sinkMBB;
-  BuildMI(*BB, BB->begin(), dl, TII.get(SP::PHI), MI->getOperand(0).getReg())
-    .addReg(MI->getOperand(2).getReg()).addMBB(copy0MBB)
-    .addReg(MI->getOperand(1).getReg()).addMBB(thisMBB);
+  BuildMI(*BB, BB->begin(), dl, TII.get(SP::PHI), MI.getOperand(0).getReg())
+      .addReg(MI.getOperand(2).getReg())
+      .addMBB(copy0MBB)
+      .addReg(MI.getOperand(1).getReg())
+      .addMBB(thisMBB);
 
-  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
   return BB;
 }
 
-
-MachineBasicBlock* SparcTargetLowering::
-emitEHSjLjLongJmp(MachineInstr *MI,
-                  MachineBasicBlock *MBB) const
-{
-  DebugLoc DL = MI->getDebugLoc();
+MachineBasicBlock *
+SparcTargetLowering::emitEHSjLjLongJmp(MachineInstr &MI,
+                                       MachineBasicBlock *MBB) const {
+  DebugLoc DL = MI.getDebugLoc();
   const TargetInstrInfo *TII = Subtarget->getInstrInfo();
 
   MachineFunction *MF = MBB->getParent();
@@ -3195,7 +3189,7 @@ emitEHSjLjLongJmp(MachineInstr *MI,
   unsigned RegSize = PVT.getStoreSize();
   assert(PVT == MVT::i32 && "Invalid Pointer Size!");
 
-  unsigned Buf = MI->getOperand(0).getReg();
+  unsigned Buf = MI.getOperand(0).getReg();
   unsigned JmpLoc = MRI.createVirtualRegister(&SP::IntRegsRegClass);
 
   // TO DO: If we do 64-bit handling, this perhaps should be FLUSHW, not TA 3
@@ -3230,15 +3224,14 @@ emitEHSjLjLongJmp(MachineInstr *MI,
   // Jump to JmpLoc
   BuildMI(*MBB, MI, DL, TII->get(SP::JMPLrr)).addReg(SP::G0).addReg(JmpLoc, RegState::Kill).addReg(SP::G0);
 
-  MI->eraseFromParent();
+  MI.eraseFromParent();
   return MBB;
 }
 
-MachineBasicBlock* SparcTargetLowering::
-emitEHSjLjSetJmp(MachineInstr *MI,
-                 MachineBasicBlock *MBB) const
-{
-  DebugLoc DL = MI->getDebugLoc();
+MachineBasicBlock *
+SparcTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
+                                      MachineBasicBlock *MBB) const {
+  DebugLoc DL = MI.getDebugLoc();
   const TargetInstrInfo *TII = Subtarget->getInstrInfo();
 
   MachineFunction *MF = MBB->getParent();
@@ -3249,7 +3242,7 @@ emitEHSjLjSetJmp(MachineInstr *MI,
   unsigned RegSize = PVT.getStoreSize();
   assert(PVT == MVT::i32 && "Invalid Pointer Size!");
 
-  unsigned DstReg = MI->getOperand(0).getReg();
+  unsigned DstReg = MI.getOperand(0).getReg();
   const TargetRegisterClass *RC = MRI.getRegClass(DstReg);
   assert(RC->hasType(MVT::i32) && "Invalid destination!");
   unsigned mainDstReg = MRI.createVirtualRegister(RC);
@@ -3296,7 +3289,7 @@ emitEHSjLjSetJmp(MachineInstr *MI,
 
   unsigned LabelReg = MRI.createVirtualRegister(&SP::IntRegsRegClass);
   unsigned LabelReg2 = MRI.createVirtualRegister(&SP::IntRegsRegClass);
-  unsigned BufReg = MI->getOperand(1).getReg();
+  unsigned BufReg = MI.getOperand(1).getReg();
 
   // Instruction to store FP
   const unsigned FP  = SP::I6;
@@ -3375,7 +3368,7 @@ emitEHSjLjSetJmp(MachineInstr *MI,
              .addReg(mainDstReg).addMBB(mainMBB)
              .addReg(restoreDstReg).addMBB(restoreMBB);
 
-  MI->eraseFromParent();
+  MI.eraseFromParent();
   return sinkMBB;
 }
 
