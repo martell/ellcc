@@ -81,8 +81,10 @@ struct Configuration {
   bool EhFrameHdr;
   bool EnableNewDtags;
   bool ExportDynamic;
+  bool FatalWarnings;
   bool GcSections;
   bool GnuHash = false;
+  bool HasVersionScript = false;
   bool ICF;
   bool Mips64EL = false;
   bool NoGnuUnique;

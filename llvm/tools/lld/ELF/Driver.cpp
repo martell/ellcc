@@ -344,6 +344,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->EhFrameHdr = Args.hasArg(OPT_eh_frame_hdr);
   Config->EnableNewDtags = !Args.hasArg(OPT_disable_new_dtags);
   Config->ExportDynamic = Args.hasArg(OPT_export_dynamic);
+  Config->FatalWarnings = Args.hasArg(OPT_fatal_warnings);
   Config->GcSections = Args.hasArg(OPT_gc_sections);
   Config->ICF = Args.hasArg(OPT_icf);
   Config->NoGnuUnique = Args.hasArg(OPT_no_gnu_unique);
@@ -438,6 +439,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
     Config->DynamicList.push_back(Arg->getValue());
 
   if (auto *Arg = Args.getLastArg(OPT_version_script)) {
+    Config->HasVersionScript = true;
     if (Optional<MemoryBufferRef> Buffer = readFile(Arg->getValue()))
       parseVersionScript(*Buffer);
   }

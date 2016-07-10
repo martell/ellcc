@@ -186,6 +186,16 @@ static uint16_t getVersionId(Symbol *Sym, StringRef Name) {
       return Default ? I : (I | VERSYM_HIDDEN);
     ++I;
   }
+
+  // If we are not building shared and version script
+  // is not specified, then it is not a error, it is
+  // in common not to use script for linking executables.
+  // In this case we just create new version.
+  if (!Config->Shared && !Config->HasVersionScript) {
+    Config->SymbolVersions.push_back(elf::Version(Version));
+    return Default ? I : (I | VERSYM_HIDDEN);
+  }
+
   error("symbol " + Name + " has undefined version " + Version);
   return 0;
 }
@@ -242,9 +252,11 @@ SymbolTable<ELFT>::insert(StringRef Name, uint8_t Type, uint8_t Visibility,
 template <typename ELFT>
 std::string SymbolTable<ELFT>::conflictMsg(SymbolBody *Existing,
                                            InputFile *NewFile) {
-  StringRef Sym = Existing->getName();
-  return demangle(Sym) + " in " + getFilename(Existing->getSourceFile<ELFT>()) +
-         " and " + getFilename(NewFile);
+  std::string Sym = Existing->getName();
+  if (Config->Demangle)
+    Sym = demangle(Sym);
+  return Sym + " in " + getFilename(Existing->getSourceFile<ELFT>()) + " and " +
+         getFilename(NewFile);
 }
 
 template <class ELFT> Symbol *SymbolTable<ELFT>::addUndefined(StringRef Name) {
@@ -460,15 +472,6 @@ template <class ELFT> SymbolBody *SymbolTable<ELFT>::find(StringRef Name) {
 // Returns a list of defined symbols that match with a given glob pattern.
 template <class ELFT>
 std::vector<SymbolBody *> SymbolTable<ELFT>::findAll(StringRef Pattern) {
-  // Fast-path. Fallback to find() if Pattern doesn't contain any wildcard
-  // characters.
-  if (Pattern.find_first_of("?*") == StringRef::npos) {
-    if (SymbolBody *B = find(Pattern))
-      if (!B->isUndefined())
-        return {B};
-    return {};
-  }
-
   std::vector<SymbolBody *> Res;
   for (auto &It : Symtab) {
     StringRef Name = It.first.Val;
@@ -561,6 +564,10 @@ template <class ELFT> void SymbolTable<ELFT>::scanDynamicList() {
       B->symbol()->ExportDynamic = true;
 }
 
+static bool hasWildcard(StringRef S) {
+  return S.find_first_of("?*") != StringRef::npos;
+}
+
 // This function processes the --version-script option by marking all global
 // symbols with the VersionScriptGlobal flag, which acts as a filter on the
 // dynamic symbol table.
@@ -574,27 +581,48 @@ template <class ELFT> void SymbolTable<ELFT>::scanVersionScript() {
     return;
   }
 
+  if (Config->SymbolVersions.empty())
+    return;
+
   // If we have symbols version declarations, we should
   // assign version references for each symbol.
-  size_t I = 2;
-  for (Version &V : Config->SymbolVersions) {
+  // Current rules are:
+  // * If there is an exact match for the mangled name, we use it.
+  // * Otherwise, we look through the wildcard patterns. We look through the
+  //   version tags in reverse order. We use the first match we find (the last
+  //   matching version tag in the file).
+  for (size_t I = 0, E = Config->SymbolVersions.size(); I < E; ++I) {
+    Version &V = Config->SymbolVersions[I];
     for (StringRef Name : V.Globals) {
-      std::vector<SymbolBody *> Syms = findAll(Name);
-      if (Syms.empty()) {
+      if (hasWildcard(Name))
+        continue;
+
+      SymbolBody *B = find(Name);
+      if (!B || B->isUndefined()) {
         if (Config->NoUndefinedVersion)
           error("version script assignment of " + V.Name + " to symbol " +
                 Name + " failed: symbol not defined");
         continue;
       }
 
-      for (SymbolBody *B : Syms) {
-        if (B->symbol()->VersionId != VER_NDX_GLOBAL &&
-            B->symbol()->VersionId != VER_NDX_LOCAL)
-          warning("duplicate symbol " + Name + " in version script");
-        B->symbol()->VersionId = I;
-      }
+      if (B->symbol()->VersionId != VER_NDX_GLOBAL &&
+          B->symbol()->VersionId != VER_NDX_LOCAL)
+        warning("duplicate symbol " + Name + " in version script");
+      B->symbol()->VersionId = I + 2;
     }
-    ++I;
+  }
+
+  for (size_t I = Config->SymbolVersions.size() - 1; I != (size_t)-1; --I) {
+    Version &V = Config->SymbolVersions[I];
+    for (StringRef Name : V.Globals) {
+      if (!hasWildcard(Name))
+        continue;
+
+      for (SymbolBody *B : findAll(Name))
+        if (B->symbol()->VersionId == VER_NDX_GLOBAL ||
+            B->symbol()->VersionId == VER_NDX_LOCAL)
+          B->symbol()->VersionId = I + 2;
+    }
   }
 }
 

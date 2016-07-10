@@ -1814,7 +1814,7 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   auto PtrVt = getPointerTy(DAG.getDataLayout());
 
   if (Subtarget->genLongCalls()) {
-    assert(!isPositionIndependent() &&
+    assert((!isPositionIndependent() || Subtarget->isTargetWindows()) &&
            "long-calls codegen is not position independent!");
     // Handle a global address or an external symbol. If it's not one of
     // those, the target's already in a register, so we don't need to do
@@ -8099,7 +8099,7 @@ ARMTargetLowering::EmitStructByval(MachineInstr &MI,
 
   // Add epilogue to handle BytesLeft.
   BB = exitMBB;
-  MachineInstr *StartOfExit = exitMBB->begin();
+  auto StartOfExit = exitMBB->begin();
 
   //   [scratch, srcOut] = LDRB_POST(srcLoop, 1)
   //   [destOut] = STRB_POST(scratch, destLoop, 1)

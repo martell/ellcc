@@ -1318,7 +1318,7 @@ example:
     The ``convergent`` attribute may appear on functions or call/invoke
     instructions.  When it appears on a function, it indicates that calls to
     this function should not be made control-dependent on additional values.
-    For example, the intrinsic ``llvm.cuda.syncthreads`` is ``convergent``, so
+    For example, the intrinsic ``llvm.nvvm.barrier0`` is ``convergent``, so
     calls to this intrinsic cannot be made control-dependent on additional
     values.
 
@@ -1427,7 +1427,7 @@ example:
     generated for this function needs to follow certain conventions that
     make it possible for a runtime function to patch over it later.
     The exact effect of this attribute depends on its string value,
-    for which there currently is one legal possiblity:
+    for which there currently is one legal possibility:
 
      * ``"prologue-short-redirect"`` - This style of patchable
        function is intended to support patching a function prologue to
@@ -1474,6 +1474,13 @@ example:
     On an argument, this attribute indicates that the function does not write
     through this pointer argument, even though it may write to the memory that
     the pointer points to.
+``writeonly``
+    On a function, this attribute indicates that the function may write to but
+    does not read from memory.
+
+    On an argument, this attribute indicates that the function may write to but
+    does not read through this pointer argument (even though it may read from
+    the memory that the pointer points to).
 ``argmemonly``
     This attribute indicates that the only memory accesses inside function are
     loads and stores from objects pointed to by its pointer-typed arguments,
@@ -4338,7 +4345,7 @@ DIMacro
 
 ``DIMacro`` nodes represent definition or undefinition of a macro identifiers.
 The ``name:`` field is the macro identifier, followed by macro parameters when
-definining a function-like macro, and the ``value`` field is the token-string
+defining a function-like macro, and the ``value`` field is the token-string
 used to expand the macro identifier.
 
 .. code-block:: llvm

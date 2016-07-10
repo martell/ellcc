@@ -120,8 +120,9 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
 
   case xcore:       return "xcore";
 
-  case nvptx:       return "nvptx";
-  case nvptx64:     return "nvptx";
+  // NVPTX intrinsics are namespaced under nvvm.
+  case nvptx:       return "nvvm";
+  case nvptx64:     return "nvvm";
 
   case le32:        return "le32";
   case le64:        return "le64";
