@@ -56,7 +56,8 @@ public:
                             const MCRelaxableFragment *DF,
                             const MCAsmLayout &Layout) const;
 
-  void relaxInstruction(const MCInst &Inst, MCInst &Res) const;
+  void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
+                        MCInst &Res) const;
 
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const;
 
@@ -97,7 +98,9 @@ bool MBlazeAsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
   return int64_t(Value) != int64_t(int8_t(Value));
 }
 
-void MBlazeAsmBackend::relaxInstruction(const MCInst &Inst, MCInst &Res) const {
+void MBlazeAsmBackend::relaxInstruction(const MCInst &Inst,
+                                        const MCSubtargetInfo &STI,
+                                        MCInst &Res) const {
   Res = Inst;
   Res.setOpcode(getRelaxedOpcode(Inst.getOpcode()));
 }

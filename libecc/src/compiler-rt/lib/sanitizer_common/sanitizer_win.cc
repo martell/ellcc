@@ -28,6 +28,7 @@
 #include "sanitizer_mutex.h"
 #include "sanitizer_placement_new.h"
 #include "sanitizer_stacktrace.h"
+#include "sanitizer_symbolizer.h"
 
 namespace __sanitizer {
 
@@ -171,9 +172,16 @@ void *MmapAlignedOrDie(uptr size, uptr alignment, const char *mem_type) {
 void *MmapFixedNoReserve(uptr fixed_addr, uptr size, const char *name) {
   // FIXME: is this really "NoReserve"? On Win32 this does not matter much,
   // but on Win64 it does.
-  (void)name; // unsupported
-  void *p = VirtualAlloc((LPVOID)fixed_addr, size,
-      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  (void)name;  // unsupported
+#if SANITIZER_WINDOWS64
+  // On Windows64, use MEM_COMMIT would result in error
+  // 1455:ERROR_COMMITMENT_LIMIT.
+  // We use exception handler to commit page on demand.
+  void *p = VirtualAlloc((LPVOID)fixed_addr, size, MEM_RESERVE, PAGE_READWRITE);
+#else
+  void *p = VirtualAlloc((LPVOID)fixed_addr, size, MEM_RESERVE | MEM_COMMIT,
+                         PAGE_READWRITE);
+#endif
   if (p == 0)
     Report("ERROR: %s failed to "
            "allocate %p (%zd) bytes at %p (error code: %d)\n",
@@ -711,7 +719,7 @@ void BufferedStackTrace::SlowUnwindStack(uptr pc, u32 max_depth) {
   // FIXME: CaptureStackBackTrace might be too slow for us.
   // FIXME: Compare with StackWalk64.
   // FIXME: Look at LLVMUnhandledExceptionFilter in Signals.inc
-  size = CaptureStackBackTrace(2, Min(max_depth, kStackTraceMax),
+  size = CaptureStackBackTrace(1, Min(max_depth, kStackTraceMax),
                                (void**)trace, 0);
   if (size == 0)
     return;
@@ -726,6 +734,9 @@ void BufferedStackTrace::SlowUnwindStackWithContext(uptr pc, void *context,
   CONTEXT ctx = *(CONTEXT *)context;
   STACKFRAME64 stack_frame;
   memset(&stack_frame, 0, sizeof(stack_frame));
+
+  InitializeDbgHelpIfNeeded();
+
   size = 0;
 #if defined(_WIN64)
   int machine_type = IMAGE_FILE_MACHINE_AMD64;

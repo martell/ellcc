@@ -50,4 +50,4 @@ add_lit_testsuite(check-ubsan "Running UndefinedBehaviorSanitizer tests"
   ${CMAKE_CURRENT_BINARY_DIR}/UbsanConfig
   ${CMAKE_CURRENT_BINARY_DIR}/AsanConfig
   DEPENDS ${UBSAN_TEST_DEPS})
-set_target_properties(check-ubsan PROPERTIES FOLDER "UBSan tests")
+set_target_properties(check-ubsan PROPERTIES FOLDER "Compiler-RT Misc")

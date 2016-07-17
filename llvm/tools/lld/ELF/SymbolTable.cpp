@@ -19,6 +19,7 @@
 #include "Error.h"
 #include "LinkerScript.h"
 #include "Strings.h"
+#include "SymbolListFile.h"
 #include "Symbols.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Support/StringSaver.h"
@@ -169,8 +170,7 @@ static uint8_t getMinVisibility(uint8_t VA, uint8_t VB) {
 static uint16_t getVersionId(Symbol *Sym, StringRef Name) {
   size_t VersionBegin = Name.find('@');
   if (VersionBegin == StringRef::npos)
-    return Config->VersionScriptGlobalByDefault ? VER_NDX_GLOBAL
-                                                : VER_NDX_LOCAL;
+    return Config->DefaultSymbolVersion;
 
   // If symbol name contains '@' or '@@' we can assign its version id right
   // here. '@@' means the default version. It is usually the most recent one.
@@ -180,20 +180,18 @@ static uint16_t getVersionId(Symbol *Sym, StringRef Name) {
   if (Default)
     Version = Version.drop_front();
 
-  size_t I = 2;
-  for (elf::Version &V : Config->SymbolVersions) {
+  for (elf::Version &V : Config->SymbolVersions)
     if (V.Name == Version)
-      return Default ? I : (I | VERSYM_HIDDEN);
-    ++I;
-  }
+      return Default ? V.Id : (V.Id | VERSYM_HIDDEN);
+
 
   // If we are not building shared and version script
   // is not specified, then it is not a error, it is
   // in common not to use script for linking executables.
   // In this case we just create new version.
   if (!Config->Shared && !Config->HasVersionScript) {
-    Config->SymbolVersions.push_back(elf::Version(Version));
-    return Default ? I : (I | VERSYM_HIDDEN);
+    size_t Id = defineSymbolVersion(Version);
+    return Default ? Id : (Id | VERSYM_HIDDEN);
   }
 
   error("symbol " + Name + " has undefined version " + Version);
@@ -605,24 +603,19 @@ template <class ELFT> void SymbolTable<ELFT>::scanVersionScript() {
         continue;
       }
 
-      if (B->symbol()->VersionId != VER_NDX_GLOBAL &&
-          B->symbol()->VersionId != VER_NDX_LOCAL)
+      if (B->symbol()->VersionId != Config->DefaultSymbolVersion)
         warning("duplicate symbol " + Name + " in version script");
-      B->symbol()->VersionId = I + 2;
+      B->symbol()->VersionId = V.Id;
     }
   }
 
   for (size_t I = Config->SymbolVersions.size() - 1; I != (size_t)-1; --I) {
     Version &V = Config->SymbolVersions[I];
-    for (StringRef Name : V.Globals) {
-      if (!hasWildcard(Name))
-        continue;
-
-      for (SymbolBody *B : findAll(Name))
-        if (B->symbol()->VersionId == VER_NDX_GLOBAL ||
-            B->symbol()->VersionId == VER_NDX_LOCAL)
-          B->symbol()->VersionId = I + 2;
-    }
+    for (StringRef Name : V.Globals)
+      if (hasWildcard(Name))
+        for (SymbolBody *B : findAll(Name))
+          if (B->symbol()->VersionId == Config->DefaultSymbolVersion)
+            B->symbol()->VersionId = V.Id;
   }
 }
 

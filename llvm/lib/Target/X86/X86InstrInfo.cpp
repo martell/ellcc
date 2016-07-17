@@ -117,7 +117,8 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
                                                : X86::ADJCALLSTACKDOWN32),
                       (STI.isTarget64BitLP64() ? X86::ADJCALLSTACKUP64
                                                : X86::ADJCALLSTACKUP32),
-                      X86::CATCHRET),
+                      X86::CATCHRET,
+                      (STI.is64Bit() ? X86::RETQ : X86::RETL)),
       Subtarget(STI), RI(STI.getTargetTriple()) {
 
   static const X86MemoryFoldTableEntry MemoryFoldTable2Addr[] = {
@@ -2525,8 +2526,8 @@ void X86InstrInfo::reMaterialize(MachineBasicBlock &MBB,
     MBB.insert(I, MI);
   }
 
-  MachineInstr *NewMI = std::prev(I);
-  NewMI->substituteRegister(Orig.getOperand(0).getReg(), DestReg, SubIdx, TRI);
+  MachineInstr &NewMI = *std::prev(I);
+  NewMI.substituteRegister(Orig.getOperand(0).getReg(), DestReg, SubIdx, TRI);
 }
 
 /// True if MI has a condition code def, e.g. EFLAGS, that is not marked dead.
@@ -4057,7 +4058,7 @@ bool X86InstrInfo::AnalyzeBranchImpl(
       FBB = TBB;
       TBB = I->getOperand(0).getMBB();
       Cond.push_back(MachineOperand::CreateImm(BranchCode));
-      CondBranches.push_back(I);
+      CondBranches.push_back(&*I);
       continue;
     }
 
@@ -4110,13 +4111,13 @@ bool X86InstrInfo::AnalyzeBranchImpl(
 
     // Update the MachineOperand.
     Cond[0].setImm(BranchCode);
-    CondBranches.push_back(I);
+    CondBranches.push_back(&*I);
   }
 
   return false;
 }
 
-bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
+bool X86InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
                                  MachineBasicBlock *&TBB,
                                  MachineBasicBlock *&FBB,
                                  SmallVectorImpl<MachineOperand> &Cond,
@@ -4125,7 +4126,7 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
   return AnalyzeBranchImpl(MBB, TBB, FBB, Cond, CondBranches, AllowModify);
 }
 
-bool X86InstrInfo::AnalyzeBranchPredicate(MachineBasicBlock &MBB,
+bool X86InstrInfo::analyzeBranchPredicate(MachineBasicBlock &MBB,
                                           MachineBranchPredicate &MBP,
                                           bool AllowModify) const {
   using namespace std::placeholders;
@@ -5123,7 +5124,8 @@ bool X86InstrInfo::optimizeCompareInstr(MachineInstr &CmpInstr, unsigned SrcReg,
         ShouldUpdateCC = true; // Update CC later on.
         // This is not a def of SrcReg, but still a def of EFLAGS. Keep going
         // with the new def.
-        MI = Def = J;
+        Def = J;
+        MI = &*Def;
         break;
       }
 
@@ -5496,9 +5498,9 @@ static void expandLoadStackGuard(MachineInstrBuilder &MIB,
   unsigned Reg = MIB->getOperand(0).getReg();
   const GlobalValue *GV =
       cast<GlobalValue>((*MIB->memoperands_begin())->getValue());
-  unsigned Flag = MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant;
+  auto Flags = MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant;
   MachineMemOperand *MMO = MBB.getParent()->getMachineMemOperand(
-      MachinePointerInfo::getGOT(*MBB.getParent()), Flag, 8, 8);
+      MachinePointerInfo::getGOT(*MBB.getParent()), Flags, 8, 8);
   MachineBasicBlock::iterator I = MIB.getInstr();
 
   BuildMI(MBB, I, DL, TII.get(X86::MOV64rm), Reg).addReg(X86::RIP).addImm(1)
@@ -5547,6 +5549,15 @@ bool X86InstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     return Expand2AddrUndef(MIB, get(HasAVX ? X86::VPCMPEQDrr : X86::PCMPEQDrr));
   case X86::AVX2_SETALLONES:
     return Expand2AddrUndef(MIB, get(X86::VPCMPEQDYrr));
+  case X86::AVX512_512_SETALLONES: {
+    unsigned Reg = MIB->getOperand(0).getReg();
+    MIB->setDesc(get(X86::VPTERNLOGDZrri));
+    // VPTERNLOGD needs 3 register inputs and an immediate.
+    // 0xff will return 1s for any input.
+    MIB.addReg(Reg, RegState::Undef).addReg(Reg, RegState::Undef)
+       .addReg(Reg, RegState::Undef).addImm(0xff);
+    return true;
+  }
   case X86::TEST8ri_NOREX:
     MI.setDesc(get(X86::TEST8ri));
     return true;
@@ -6230,12 +6241,18 @@ MachineInstr *X86InstrInfo::foldMemoryOperandImpl(
     Alignment = (*LoadMI.memoperands_begin())->getAlignment();
   else
     switch (LoadMI.getOpcode()) {
+    case X86::AVX512_512_SET0:
+    case X86::AVX512_512_SETALLONES:
+      Alignment = 64;
+      break;
     case X86::AVX2_SETALLONES:
     case X86::AVX_SET0:
+    case X86::AVX512_256_SET0:
       Alignment = 32;
       break;
     case X86::V_SET0:
     case X86::V_SETALLONES:
+    case X86::AVX512_128_SET0:
       Alignment = 16;
       break;
     case X86::FsFLD0SD:
@@ -6273,6 +6290,10 @@ MachineInstr *X86InstrInfo::foldMemoryOperandImpl(
   case X86::V_SETALLONES:
   case X86::AVX2_SETALLONES:
   case X86::AVX_SET0:
+  case X86::AVX512_128_SET0:
+  case X86::AVX512_256_SET0:
+  case X86::AVX512_512_SET0:
+  case X86::AVX512_512_SETALLONES:
   case X86::FsFLD0SD:
   case X86::FsFLD0SS: {
     // Folding a V_SET0 or V_SETALLONES as a load, to ease register pressure.
@@ -6304,12 +6325,16 @@ MachineInstr *X86InstrInfo::foldMemoryOperandImpl(
       Ty = Type::getFloatTy(MF.getFunction()->getContext());
     else if (Opc == X86::FsFLD0SD)
       Ty = Type::getDoubleTy(MF.getFunction()->getContext());
-    else if (Opc == X86::AVX2_SETALLONES || Opc == X86::AVX_SET0)
+    else if (Opc == X86::AVX512_512_SET0 || Opc == X86::AVX512_512_SETALLONES)
+      Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()),16);
+    else if (Opc == X86::AVX2_SETALLONES || Opc == X86::AVX_SET0 ||
+             Opc == X86::AVX512_256_SET0)
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 8);
     else
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 4);
 
-    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX2_SETALLONES);
+    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX2_SETALLONES ||
+                      Opc == X86::AVX512_512_SETALLONES);
     const Constant *C = IsAllOnes ? Constant::getAllOnesValue(Ty) :
                                     Constant::getNullValue(Ty);
     unsigned CPI = MCP.getConstantPoolIndex(C, Alignment);
@@ -7444,9 +7469,9 @@ namespace {
           case X86::TLS_base_addr32:
           case X86::TLS_base_addr64:
             if (TLSBaseAddrReg)
-              I = ReplaceTLSBaseAddrCall(I, TLSBaseAddrReg);
+              I = ReplaceTLSBaseAddrCall(*I, TLSBaseAddrReg);
             else
-              I = SetRegister(I, &TLSBaseAddrReg);
+              I = SetRegister(*I, &TLSBaseAddrReg);
             Changed = true;
             break;
           default:
@@ -7465,29 +7490,29 @@ namespace {
 
     // Replace the TLS_base_addr instruction I with a copy from
     // TLSBaseAddrReg, returning the new instruction.
-    MachineInstr *ReplaceTLSBaseAddrCall(MachineInstr *I,
+    MachineInstr *ReplaceTLSBaseAddrCall(MachineInstr &I,
                                          unsigned TLSBaseAddrReg) {
-      MachineFunction *MF = I->getParent()->getParent();
+      MachineFunction *MF = I.getParent()->getParent();
       const X86Subtarget &STI = MF->getSubtarget<X86Subtarget>();
       const bool is64Bit = STI.is64Bit();
       const X86InstrInfo *TII = STI.getInstrInfo();
 
       // Insert a Copy from TLSBaseAddrReg to RAX/EAX.
-      MachineInstr *Copy = BuildMI(*I->getParent(), I, I->getDebugLoc(),
-                                   TII->get(TargetOpcode::COPY),
-                                   is64Bit ? X86::RAX : X86::EAX)
-                                   .addReg(TLSBaseAddrReg);
+      MachineInstr *Copy =
+          BuildMI(*I.getParent(), I, I.getDebugLoc(),
+                  TII->get(TargetOpcode::COPY), is64Bit ? X86::RAX : X86::EAX)
+              .addReg(TLSBaseAddrReg);
 
       // Erase the TLS_base_addr instruction.
-      I->eraseFromParent();
+      I.eraseFromParent();
 
       return Copy;
     }
 
     // Create a virtal register in *TLSBaseAddrReg, and populate it by
     // inserting a copy instruction after I. Returns the new instruction.
-    MachineInstr *SetRegister(MachineInstr *I, unsigned *TLSBaseAddrReg) {
-      MachineFunction *MF = I->getParent()->getParent();
+    MachineInstr *SetRegister(MachineInstr &I, unsigned *TLSBaseAddrReg) {
+      MachineFunction *MF = I.getParent()->getParent();
       const X86Subtarget &STI = MF->getSubtarget<X86Subtarget>();
       const bool is64Bit = STI.is64Bit();
       const X86InstrInfo *TII = STI.getInstrInfo();
@@ -7499,11 +7524,11 @@ namespace {
                                                       : &X86::GR32RegClass);
 
       // Insert a copy from RAX/EAX to TLSBaseAddrReg.
-      MachineInstr *Next = I->getNextNode();
-      MachineInstr *Copy = BuildMI(*I->getParent(), Next, I->getDebugLoc(),
-                                   TII->get(TargetOpcode::COPY),
-                                   *TLSBaseAddrReg)
-                                   .addReg(is64Bit ? X86::RAX : X86::EAX);
+      MachineInstr *Next = I.getNextNode();
+      MachineInstr *Copy =
+          BuildMI(*I.getParent(), Next, I.getDebugLoc(),
+                  TII->get(TargetOpcode::COPY), *TLSBaseAddrReg)
+              .addReg(is64Bit ? X86::RAX : X86::EAX);
 
       return Copy;
     }

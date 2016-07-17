@@ -54,6 +54,7 @@ extern "C" void* _DYNAMIC;
 namespace __asan {
 
 void InitializePlatformInterceptors() {}
+void InitializePlatformExceptionHandlers() {}
 
 void *AsanDoesNotSupportStaticLinkage() {
   // This will fail to link with -static.

@@ -66,6 +66,7 @@
 #include "llvm/Transforms/IPO/GlobalOpt.h"
 #include "llvm/Transforms/IPO/InferFunctionAttrs.h"
 #include "llvm/Transforms/IPO/Internalize.h"
+#include "llvm/Transforms/IPO/LowerTypeTests.h"
 #include "llvm/Transforms/IPO/PartialInlining.h"
 #include "llvm/Transforms/IPO/SCCP.h"
 #include "llvm/Transforms/IPO/StripDeadPrototypes.h"
@@ -87,6 +88,10 @@
 #include "llvm/Transforms/Scalar/GuardWidening.h"
 #include "llvm/Transforms/Scalar/IndVarSimplify.h"
 #include "llvm/Transforms/Scalar/JumpThreading.h"
+#include "llvm/Transforms/Scalar/LICM.h"
+#include "llvm/Transforms/Scalar/LoopDeletion.h"
+#include "llvm/Transforms/Scalar/LoopIdiomRecognize.h"
+#include "llvm/Transforms/Scalar/LoopInstSimplify.h"
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
 #include "llvm/Transforms/Scalar/LowerAtomic.h"
@@ -106,6 +111,7 @@
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Utils/MemorySSA.h"
 #include "llvm/Transforms/Utils/SimplifyInstructions.h"
+#include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
 #include <type_traits>

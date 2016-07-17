@@ -390,7 +390,6 @@ void SIInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
   unsigned Opcode;
   ArrayRef<int16_t> SubIndices;
-  bool Forward;
 
   if (AMDGPU::SReg_32RegClass.contains(DestReg)) {
     assert(AMDGPU::SReg_32RegClass.contains(SrcReg));
@@ -474,10 +473,7 @@ void SIInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     llvm_unreachable("Can't copy register!");
   }
 
-  if (RI.getHWRegIndex(DestReg) <= RI.getHWRegIndex(SrcReg))
-    Forward = true;
-  else
-    Forward = false;
+  bool Forward = RI.getHWRegIndex(DestReg) <= RI.getHWRegIndex(SrcReg);
 
   for (unsigned Idx = 0; Idx < SubIndices.size(); ++Idx) {
     unsigned SubIdx;
@@ -496,6 +492,8 @@ void SIInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
     if (Idx == 0)
       Builder.addReg(DestReg, RegState::Define | RegState::Implicit);
+
+    Builder.addReg(SrcReg, RegState::Implicit);
   }
 }
 
@@ -853,11 +851,6 @@ bool SIInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   switch (MI.getOpcode()) {
   default: return AMDGPUInstrInfo::expandPostRAPseudo(MI);
 
-  case AMDGPU::SGPR_USE:
-    // This is just a placeholder for register allocation.
-    MI.eraseFromParent();
-    break;
-
   case AMDGPU::V_MOV_B64_PSEUDO: {
     unsigned Dst = MI.getOperand(0).getReg();
     unsigned DstLo = RI.getSubReg(Dst, AMDGPU::sub0);
@@ -1109,8 +1102,7 @@ SIInstrInfo::BranchPredicate SIInstrInfo::getBranchPredicate(unsigned Opcode) {
   }
 }
 
-bool SIInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
-                                MachineBasicBlock *&TBB,
+bool SIInstrInfo::analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                                 MachineBasicBlock *&FBB,
                                 SmallVectorImpl<MachineOperand> &Cond,
                                 bool AllowModify) const {
@@ -2673,14 +2665,6 @@ void SIInstrInfo::moveToVALU(MachineInstr &TopInst) const {
     if (HasDst)
      addUsersToMoveToVALUWorklist(NewDstReg, MRI, Worklist);
   }
-}
-
-//===----------------------------------------------------------------------===//
-// Indirect addressing callbacks
-//===----------------------------------------------------------------------===//
-
-const TargetRegisterClass *SIInstrInfo::getIndirectAddrRegClass() const {
-  return &AMDGPU::VGPR_32RegClass;
 }
 
 void SIInstrInfo::lowerScalarAbs(SmallVectorImpl<MachineInstr *> &Worklist,

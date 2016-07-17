@@ -645,8 +645,7 @@ SDValue MBlazeTargetLowering::LowerVASTART(SDValue Op,
   // memory location argument.
   const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
   return DAG.getStore(Op.getOperand(0), dl, FI, Op.getOperand(1),
-                      MachinePointerInfo(SV),
-                      false, false, 0);
+                      MachinePointerInfo(SV));
 }
 
 //===----------------------------------------------------------------------===//
@@ -769,8 +768,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
       // emit ISD::STORE whichs stores the
       // parameter value to a stack Location
       MemOpChains.push_back(DAG.getStore(Chain, dl, Arg, PtrOff,
-                                         MachinePointerInfo(),
-                                         false, false, 0));
+                                         MachinePointerInfo()));
     }
   }
 
@@ -960,8 +958,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       InVals.push_back(DAG.getLoad(
           VA.getValVT(), dl, Chain, FIN,
-          MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI),
-          false, false, false, 0));
+          MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI)));
     }
   }
 
@@ -989,8 +986,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       MBlazeFI->recordStoreVarArgsFI(FI, -(StackLoc*4));
       SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,
-                                       MachinePointerInfo(),
-                                       false, false, 0));
+                                       MachinePointerInfo()));
 
       // Record the frame index of the first variable argument
       // which is a value necessary to VASTART.

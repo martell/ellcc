@@ -115,7 +115,7 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 //===----------------------------------------------------------------------===//
 // Branch Analysis
 //===----------------------------------------------------------------------===//
-bool MBlazeInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
+bool MBlazeInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
                                     MachineBasicBlock *&TBB,
                                     MachineBasicBlock *&FBB,
                                     SmallVectorImpl<MachineOperand> &Cond,

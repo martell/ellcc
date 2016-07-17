@@ -224,6 +224,7 @@ def ProcExynosM1 : SubtargetFeature<"exynosm1", "ARMProcFamily", "ExynosM1",
                                     FeatureFPARMv8,
                                     FeatureNEON,
                                     FeaturePerfMon,
+                                    FeaturePostRAScheduler,
                                     FeatureUseRSqrt
                                     ]>;
 
@@ -237,7 +238,8 @@ def ProcKryo    : SubtargetFeature<"kryo", "ARMProcFamily", "Kryo",
                                    FeatureNEON,
                                    FeaturePerfMon,
                                    FeaturePostRAScheduler,
-                                   FeaturePredictableSelectIsExpensive
+                                   FeaturePredictableSelectIsExpensive,
+                                   FeatureZCZeroing
                                    ]>;
 
 def ProcVulcan  : SubtargetFeature<"vulcan", "ARMProcFamily", "Vulcan",
