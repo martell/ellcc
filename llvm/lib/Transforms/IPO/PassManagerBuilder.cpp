@@ -91,7 +91,7 @@ static cl::opt<CFLAAType>
                         clEnumValN(CFLAAType::Andersen, "anders",
                                    "Enable inclusion-based CFL-AA"),
                         clEnumValN(CFLAAType::Both, "both",
-                                   "Enable both variants of CFL-aa"),
+                                   "Enable both variants of CFL-AA"),
                         clEnumValEnd));
 
 static cl::opt<bool>
@@ -133,6 +133,10 @@ static cl::opt<int> PreInlineThreshold(
     "preinline-threshold", cl::Hidden, cl::init(75), cl::ZeroOrMore,
     cl::desc("Control the amount of inlining in pre-instrumentation inliner "
              "(default = 75)"));
+
+static cl::opt<bool> EnableGVNHoist(
+    "enable-gvn-hoist", cl::init(false), cl::Hidden,
+    cl::desc("Enable the experimental GVN Hoisting pass"));
 
 PassManagerBuilder::PassManagerBuilder() {
     OptLevel = 2;
@@ -232,7 +236,8 @@ void PassManagerBuilder::populateFunctionPassManager(
   FPM.add(createCFGSimplificationPass());
   FPM.add(createSROAPass());
   FPM.add(createEarlyCSEPass());
-  FPM.add(createGVNHoistPass());
+  if(EnableGVNHoist)
+    FPM.add(createGVNHoistPass());
   FPM.add(createLowerExpectIntrinsicPass());
 }
 
@@ -407,9 +412,10 @@ void PassManagerBuilder::populateModulePassManager(
     /// PGO instrumentation is added during the compile phase for ThinLTO, do
     /// not run it a second time
     addPGOInstrPasses(MPM);
-    // Indirect call promotion that promotes intra-module targets only.
-    MPM.add(createPGOIndirectCallPromotionLegacyPass());
   }
+
+  // Indirect call promotion that promotes intra-module targets only.
+  MPM.add(createPGOIndirectCallPromotionLegacyPass());
 
   if (EnableNonLTOGlobalsModRef)
     // We add a module alias analysis pass here. In part due to bugs in the

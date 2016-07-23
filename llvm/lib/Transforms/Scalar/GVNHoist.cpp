@@ -47,8 +47,6 @@ static cl::opt<int> MaxNumberOfBBSInPath(
     cl::desc("Max number of basic blocks on the path between "
              "hoisting locations (default = 4, unlimited = -1)"));
 
-static int HoistedCtr = 0;
-
 namespace {
 
 // Provides a sorting function based on the execution order of two instructions.
@@ -83,8 +81,12 @@ public:
   }
 };
 
-// A map from a VN (value number) to all the instructions with that VN.
-typedef DenseMap<unsigned, SmallVector<Instruction *, 4>> VNtoInsns;
+// A map from a pair of VNs to all the instructions with those VNs.
+typedef DenseMap<std::pair<unsigned, unsigned>, SmallVector<Instruction *, 4>>
+    VNtoInsns;
+// An invalid value number Used when inserting a single value number into
+// VNtoInsns.
+enum : unsigned { InvalidVN = ~2U };
 
 // Records all scalar instructions candidate for code hoisting.
 class InsnInfo {
@@ -95,7 +97,7 @@ public:
   void insert(Instruction *I, GVN::ValueTable &VN) {
     // Scalar instruction.
     unsigned V = VN.lookupOrAdd(I);
-    VNtoScalars[V].push_back(I);
+    VNtoScalars[{V, InvalidVN}].push_back(I);
   }
 
   const VNtoInsns &getVNTable() const { return VNtoScalars; }
@@ -110,7 +112,7 @@ public:
   void insert(LoadInst *Load, GVN::ValueTable &VN) {
     if (Load->isSimple()) {
       unsigned V = VN.lookupOrAdd(Load->getPointerOperand());
-      VNtoLoads[V].push_back(Load);
+      VNtoLoads[{V, InvalidVN}].push_back(Load);
     }
   }
 
@@ -130,8 +132,7 @@ public:
     // Hash the store address and the stored value.
     Value *Ptr = Store->getPointerOperand();
     Value *Val = Store->getValueOperand();
-    VNtoStores[hash_combine(VN.lookupOrAdd(Ptr), VN.lookupOrAdd(Val))]
-        .push_back(Store);
+    VNtoStores[{VN.lookupOrAdd(Ptr), VN.lookupOrAdd(Val)}].push_back(Store);
   }
 
   const VNtoInsns &getVNTable() const { return VNtoStores; }
@@ -150,13 +151,14 @@ public:
     // onlyReadsMemory will be handled as a Load instruction,
     // all other calls will be handled as stores.
     unsigned V = VN.lookupOrAdd(Call);
+    auto Entry = std::make_pair(V, InvalidVN);
 
     if (Call->doesNotAccessMemory())
-      VNtoCallsScalars[V].push_back(Call);
+      VNtoCallsScalars[Entry].push_back(Call);
     else if (Call->onlyReadsMemory())
-      VNtoCallsLoads[V].push_back(Call);
+      VNtoCallsLoads[Entry].push_back(Call);
     else
-      VNtoCallsStores[V].push_back(Call);
+      VNtoCallsStores[Entry].push_back(Call);
   }
 
   const VNtoInsns &getScalarVNTable() const { return VNtoCallsScalars; }
@@ -183,11 +185,13 @@ public:
   DenseMap<const BasicBlock *, unsigned> DFSNumber;
   BBSideEffectsSet BBSideEffects;
   MemorySSA *MSSA;
+  int HoistedCtr;
+
   enum InsKind { Unknown, Scalar, Load, Store };
 
   GVNHoist(DominatorTree *Dt, AliasAnalysis *Aa, MemoryDependenceResults *Md,
            bool OptForMinSize)
-      : DT(Dt), AA(Aa), MD(Md), OptForMinSize(OptForMinSize) {}
+      : DT(Dt), AA(Aa), MD(Md), OptForMinSize(OptForMinSize), HoistedCtr(0) {}
 
   // Return true when there are exception handling in BB.
   bool hasEH(const BasicBlock *BB) {
@@ -257,21 +261,19 @@ public:
   // Return true when there are users of Def in BB.
   bool hasMemoryUseOnPath(MemoryAccess *Def, const BasicBlock *BB,
                           const Instruction *OldPt) {
-    Value::user_iterator UI = Def->user_begin();
-    Value::user_iterator UE = Def->user_end();
     const BasicBlock *DefBB = Def->getBlock();
     const BasicBlock *OldBB = OldPt->getParent();
 
-    for (; UI != UE; ++UI)
-      if (MemoryUse *U = dyn_cast<MemoryUse>(*UI)) {
-        BasicBlock *UBB = U->getBlock();
+    for (User *U : Def->users())
+      if (auto *MU = dyn_cast<MemoryUse>(U)) {
+        BasicBlock *UBB = MU->getBlock();
         // Only analyze uses in BB.
         if (BB != UBB)
           continue;
 
         // A use in the same block as the Def is on the path.
         if (UBB == DefBB) {
-          assert(MSSA->locallyDominates(Def, U) && "def not dominating use");
+          assert(MSSA->locallyDominates(Def, MU) && "def not dominating use");
           return true;
         }
 
@@ -279,7 +281,7 @@ public:
           return true;
 
         // It is only harmful to hoist when the use is before OldPt.
-        if (firstInBB(UBB, U->getMemoryInst(), OldPt))
+        if (firstInBB(UBB, MU->getMemoryInst(), OldPt))
           return true;
       }
 
@@ -392,7 +394,7 @@ public:
       return false;
 
     if (NewBB == DBB && !MSSA->isLiveOnEntryDef(D))
-      if (MemoryUseOrDef *UD = dyn_cast<MemoryUseOrDef>(D))
+      if (auto *UD = dyn_cast<MemoryUseOrDef>(D))
         if (firstInBB(DBB, NewPt, UD->getMemoryInst()))
           // Cannot move the load or store to NewPt above its definition in D.
           return false;
@@ -513,7 +515,7 @@ public:
       // At this point it is not safe to extend the current hoisting to
       // NewHoistPt: save the hoisting list so far.
       if (std::distance(Start, II) > 1)
-        HPL.push_back(std::make_pair(HoistBB, SmallVecInsn(Start, II)));
+        HPL.push_back({HoistBB, SmallVecInsn(Start, II)});
 
       // Start over from BB.
       Start = II;
@@ -526,17 +528,17 @@ public:
 
     // Save the last partition.
     if (std::distance(Start, II) > 1)
-      HPL.push_back(std::make_pair(HoistBB, SmallVecInsn(Start, II)));
+      HPL.push_back({HoistBB, SmallVecInsn(Start, II)});
   }
 
   // Initialize HPL from Map.
   void computeInsertionPoints(const VNtoInsns &Map, HoistingPointList &HPL,
                               InsKind K) {
-    for (VNtoInsns::const_iterator It = Map.begin(); It != Map.end(); ++It) {
+    for (const auto &Entry : Map) {
       if (MaxHoistedThreshold != -1 && ++HoistedCtr > MaxHoistedThreshold)
         return;
 
-      const SmallVecInsn &V = It->second;
+      const SmallVecInsn &V = Entry.second;
       if (V.size() < 2)
         continue;
 
@@ -546,7 +548,7 @@ public:
         if (!hasEH(I->getParent()))
           InstructionsToHoist.push_back(I);
 
-      if (InstructionsToHoist.size())
+      if (!InstructionsToHoist.empty())
         partitionCandidates(InstructionsToHoist, HPL, K);
     }
   }
@@ -557,12 +559,10 @@ public:
   // expression, make sure that all its operands are available at insert point.
   bool allOperandsAvailable(const Instruction *I,
                             const BasicBlock *HoistPt) const {
-    for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i) {
-      const Value *Op = I->getOperand(i);
-      const Instruction *Inst = dyn_cast<Instruction>(Op);
-      if (Inst && !DT->dominates(Inst->getParent(), HoistPt))
-        return false;
-    }
+    for (const Use &Op : I->operands())
+      if (const auto *Inst = dyn_cast<Instruction>(&Op))
+        if (!DT->dominates(Inst->getParent(), HoistPt))
+          return false;
 
     return true;
   }
@@ -574,51 +574,62 @@ public:
     llvm_unreachable("Both I and J must be from same BB");
   }
 
-  // Replace the use of From with To in Insn.
-  void replaceUseWith(Instruction *Insn, Value *From, Value *To) const {
-    for (Value::use_iterator UI = From->use_begin(), UE = From->use_end();
-         UI != UE;) {
-      Use &U = *UI++;
-      if (U.getUser() == Insn) {
-        U.set(To);
-        return;
+  bool makeOperandsAvailable(Instruction *Repl, BasicBlock *HoistPt,
+                             const SmallVecInsn &InstructionsToHoist) const {
+    // Check whether the GEP of a ld/st can be synthesized at HoistPt.
+    GetElementPtrInst *Gep = nullptr;
+    Instruction *Val = nullptr;
+    if (auto *Ld = dyn_cast<LoadInst>(Repl))
+      Gep = dyn_cast<GetElementPtrInst>(Ld->getPointerOperand());
+    if (auto *St = dyn_cast<StoreInst>(Repl)) {
+      Gep = dyn_cast<GetElementPtrInst>(St->getPointerOperand());
+      Val = dyn_cast<Instruction>(St->getValueOperand());
+      // Check that the stored value is available.
+      if (Val) {
+        if (isa<GetElementPtrInst>(Val)) {
+          // Check whether we can compute the GEP at HoistPt.
+          if (!allOperandsAvailable(Val, HoistPt))
+            return false;
+        } else if (!DT->dominates(Val->getParent(), HoistPt))
+          return false;
       }
     }
-    llvm_unreachable("should replace exactly once");
-  }
-
-  bool makeOperandsAvailable(Instruction *Repl, BasicBlock *HoistPt) const {
-    // Check whether the GEP of a ld/st can be synthesized at HoistPt.
-    Instruction *Gep = nullptr;
-    Instruction *Val = nullptr;
-    if (LoadInst *Ld = dyn_cast<LoadInst>(Repl))
-      Gep = dyn_cast<Instruction>(Ld->getPointerOperand());
-    if (StoreInst *St = dyn_cast<StoreInst>(Repl)) {
-      Gep = dyn_cast<Instruction>(St->getPointerOperand());
-      Val = dyn_cast<Instruction>(St->getValueOperand());
-    }
-
-    if (!Gep || !isa<GetElementPtrInst>(Gep))
-      return false;
 
     // Check whether we can compute the Gep at HoistPt.
-    if (!allOperandsAvailable(Gep, HoistPt))
-      return false;
-
-    // Also check that the stored value is available.
-    if (Val && !allOperandsAvailable(Val, HoistPt))
+    if (!Gep || !allOperandsAvailable(Gep, HoistPt))
       return false;
 
     // Copy the gep before moving the ld/st.
     Instruction *ClonedGep = Gep->clone();
     ClonedGep->insertBefore(HoistPt->getTerminator());
-    replaceUseWith(Repl, Gep, ClonedGep);
+    // Conservatively discard any optimization hints, they may differ on the
+    // other paths.
+    ClonedGep->dropUnknownNonDebugMetadata();
+    for (const Instruction *OtherInst : InstructionsToHoist) {
+      const GetElementPtrInst *OtherGep;
+      if (auto *OtherLd = dyn_cast<LoadInst>(OtherInst))
+        OtherGep = cast<GetElementPtrInst>(OtherLd->getPointerOperand());
+      else
+        OtherGep = cast<GetElementPtrInst>(
+            cast<StoreInst>(OtherInst)->getPointerOperand());
+      ClonedGep->intersectOptionalDataWith(OtherGep);
+    }
+    Repl->replaceUsesOfWith(Gep, ClonedGep);
 
-    // Also copy Val.
-    if (Val) {
+    // Also copy Val when it is a GEP.
+    if (Val && isa<GetElementPtrInst>(Val)) {
       Instruction *ClonedVal = Val->clone();
       ClonedVal->insertBefore(HoistPt->getTerminator());
-      replaceUseWith(Repl, Val, ClonedVal);
+      // Conservatively discard any optimization hints, they may differ on the
+      // other paths.
+      ClonedVal->dropUnknownNonDebugMetadata();
+      for (const Instruction *OtherInst : InstructionsToHoist) {
+        const auto *OtherVal =
+            cast<Instruction>(cast<StoreInst>(OtherInst)->getValueOperand());
+        ClonedVal->intersectOptionalDataWith(OtherVal);
+      }
+      ClonedVal->clearSubclassOptionalData();
+      Repl->replaceUsesOfWith(Val, ClonedVal);
     }
 
     return true;
@@ -653,9 +664,12 @@ public:
         // The order in which hoistings are done may influence the availability
         // of operands.
         if (!allOperandsAvailable(Repl, HoistPt) &&
-            !makeOperandsAvailable(Repl, HoistPt))
+            !makeOperandsAvailable(Repl, HoistPt, InstructionsToHoist))
           continue;
         Repl->moveBefore(HoistPt->getTerminator());
+        // TBAA may differ on one of the other paths, we need to get rid of
+        // anything which might conflict.
+        Repl->dropUnknownNonDebugMetadata();
       }
 
       if (isa<LoadInst>(Repl))
@@ -677,6 +691,7 @@ public:
             ++NumStoresRemoved;
           else if (isa<CallInst>(Repl))
             ++NumCallsRemoved;
+          Repl->intersectOptionalDataWith(I);
           I->replaceAllUsesWith(Repl);
           I->eraseFromParent();
         }
@@ -699,12 +714,12 @@ public:
     CallInfo CI;
     for (BasicBlock *BB : depth_first(&F.getEntryBlock())) {
       for (Instruction &I1 : *BB) {
-        if (LoadInst *Load = dyn_cast<LoadInst>(&I1))
+        if (auto *Load = dyn_cast<LoadInst>(&I1))
           LI.insert(Load, VN);
-        else if (StoreInst *Store = dyn_cast<StoreInst>(&I1))
+        else if (auto *Store = dyn_cast<StoreInst>(&I1))
           SI.insert(Store, VN);
-        else if (CallInst *Call = dyn_cast<CallInst>(&I1)) {
-          if (IntrinsicInst *Intr = dyn_cast<IntrinsicInst>(Call)) {
+        else if (auto *Call = dyn_cast<CallInst>(&I1)) {
+          if (auto *Intr = dyn_cast<IntrinsicInst>(Call)) {
             if (isa<DbgInfoIntrinsic>(Intr) ||
                 Intr->getIntrinsicID() == Intrinsic::assume)
               continue;
@@ -744,7 +759,7 @@ public:
 
     unsigned I = 0;
     for (const BasicBlock *BB : depth_first(&F.getEntryBlock()))
-      DFSNumber.insert(std::make_pair(BB, ++I));
+      DFSNumber.insert({BB, ++I});
 
     // FIXME: use lazy evaluation of VN to avoid the fix-point computation.
     while (1) {
@@ -779,6 +794,8 @@ public:
   }
 
   bool runOnFunction(Function &F) override {
+    if (skipFunction(F))
+      return false;
     auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     auto &AA = getAnalysis<AAResultsWrapperPass>().getAAResults();
     auto &MD = getAnalysis<MemoryDependenceWrapperPass>().getMemDep();

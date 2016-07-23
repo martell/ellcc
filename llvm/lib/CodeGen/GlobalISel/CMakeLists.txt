@@ -2,6 +2,9 @@
 set(GLOBAL_ISEL_FILES
       IRTranslator.cpp
       MachineIRBuilder.cpp
+      MachineLegalizeHelper.cpp
+      MachineLegalizePass.cpp
+      MachineLegalizer.cpp
       RegBankSelect.cpp
       RegisterBank.cpp
       RegisterBankInfo.cpp

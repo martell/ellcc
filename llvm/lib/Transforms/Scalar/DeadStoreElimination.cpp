@@ -59,6 +59,8 @@ EnablePartialOverwriteTracking("enable-dse-partial-overwrite-tracking",
 //===----------------------------------------------------------------------===//
 // Helper functions
 //===----------------------------------------------------------------------===//
+typedef std::map<int64_t, int64_t> OverlapIntervalsTy;
+typedef DenseMap<Instruction *, OverlapIntervalsTy> InstOverlapIntervalsTy;
 
 /// Delete this instruction.  Before we do, go through and zero out all the
 /// operands of this instruction.  If any of them become dead, delete them and
@@ -67,6 +69,7 @@ EnablePartialOverwriteTracking("enable-dse-partial-overwrite-tracking",
 static void
 deleteDeadInstruction(Instruction *I, BasicBlock::iterator *BBI,
                       MemoryDependenceResults &MD, const TargetLibraryInfo &TLI,
+                      InstOverlapIntervalsTy &IOL,
                       SmallSetVector<Value *, 16> *ValueSet = nullptr) {
   SmallVector<Instruction*, 32> NowDeadInsts;
 
@@ -104,6 +107,8 @@ deleteDeadInstruction(Instruction *I, BasicBlock::iterator *BBI,
       NewIter = DeadInst->eraseFromParent();
     else
       DeadInst->eraseFromParent();
+
+    IOL.erase(DeadInst);
 
     if (ValueSet) ValueSet->remove(DeadInst);
   } while (!NowDeadInsts.empty());
@@ -289,9 +294,6 @@ enum OverwriteResult {
   OverwriteUnknown
 };
 }
-
-typedef std::map<int64_t, int64_t> OverlapIntervalsTy;
-typedef DenseMap<Instruction *, OverlapIntervalsTy> InstOverlapIntervalsTy;
 
 /// Return 'OverwriteComplete' if a store to the 'Later' location completely
 /// overwrites a store to the 'Earlier' location, 'OverwriteEnd' if the end of
@@ -587,7 +589,8 @@ static void findUnconditionalPreds(SmallVectorImpl<BasicBlock *> &Blocks,
 /// to a field of that structure.
 static bool handleFree(CallInst *F, AliasAnalysis *AA,
                        MemoryDependenceResults *MD, DominatorTree *DT,
-                       const TargetLibraryInfo *TLI) {
+                       const TargetLibraryInfo *TLI,
+                       InstOverlapIntervalsTy &IOL) {
   bool MadeChange = false;
 
   MemoryLocation Loc = MemoryLocation(F->getOperand(0));
@@ -614,9 +617,12 @@ static bool handleFree(CallInst *F, AliasAnalysis *AA,
       if (!AA->isMustAlias(F->getArgOperand(0), DepPointer))
         break;
 
+      DEBUG(dbgs() << "DSE: Dead Store to soon to be freed memory:\n  DEAD: "
+                   << *Dependency << '\n');
+
       // DCE instructions only used to calculate that store.
       BasicBlock::iterator BBI(Dependency);
-      deleteDeadInstruction(Dependency, &BBI, *MD, *TLI);
+      deleteDeadInstruction(Dependency, &BBI, *MD, *TLI, IOL);
       ++NumFastStores;
       MadeChange = true;
 
@@ -671,7 +677,8 @@ static void removeAccessedObjects(const MemoryLocation &LoadedLoc,
 /// ret void
 static bool handleEndBlock(BasicBlock &BB, AliasAnalysis *AA,
                              MemoryDependenceResults *MD,
-                             const TargetLibraryInfo *TLI) {
+                             const TargetLibraryInfo *TLI,
+                             InstOverlapIntervalsTy &IOL) {
   bool MadeChange = false;
 
   // Keep track of all of the stack objects that are dead at the end of the
@@ -730,7 +737,7 @@ static bool handleEndBlock(BasicBlock &BB, AliasAnalysis *AA,
               dbgs() << '\n');
 
         // DCE instructions only used to calculate that store.
-        deleteDeadInstruction(Dead, &BBI, *MD, *TLI, &DeadStackObjects);
+        deleteDeadInstruction(Dead, &BBI, *MD, *TLI, IOL, &DeadStackObjects);
         ++NumFastStores;
         MadeChange = true;
         continue;
@@ -739,7 +746,9 @@ static bool handleEndBlock(BasicBlock &BB, AliasAnalysis *AA,
 
     // Remove any dead non-memory-mutating instructions.
     if (isInstructionTriviallyDead(&*BBI, TLI)) {
-      deleteDeadInstruction(&*BBI, &BBI, *MD, *TLI, &DeadStackObjects);
+      DEBUG(dbgs() << "DSE: Removing trivially dead instruction:\n  DEAD: "
+                   << *&*BBI << '\n');
+      deleteDeadInstruction(&*BBI, &BBI, *MD, *TLI, IOL, &DeadStackObjects);
       ++NumFastOther;
       MadeChange = true;
       continue;
@@ -937,7 +946,8 @@ static bool removePartiallyOverlappedStores(AliasAnalysis *AA,
 static bool eliminateNoopStore(Instruction *Inst, BasicBlock::iterator &BBI,
                                AliasAnalysis *AA, MemoryDependenceResults *MD,
                                const DataLayout &DL,
-                               const TargetLibraryInfo *TLI) {
+                               const TargetLibraryInfo *TLI,
+                               InstOverlapIntervalsTy &IOL) {
   // Must be a store instruction.
   StoreInst *SI = dyn_cast<StoreInst>(Inst);
   if (!SI)
@@ -952,7 +962,7 @@ static bool eliminateNoopStore(Instruction *Inst, BasicBlock::iterator &BBI,
       DEBUG(dbgs() << "DSE: Remove Store Of Load from same pointer:\n  LOAD: "
                    << *DepLoad << "\n  STORE: " << *SI << '\n');
 
-      deleteDeadInstruction(SI, &BBI, *MD, *TLI);
+      deleteDeadInstruction(SI, &BBI, *MD, *TLI, IOL);
       ++NumRedundantStores;
       return true;
     }
@@ -970,7 +980,7 @@ static bool eliminateNoopStore(Instruction *Inst, BasicBlock::iterator &BBI,
           dbgs() << "DSE: Remove null store to the calloc'ed object:\n  DEAD: "
                  << *Inst << "\n  OBJECT: " << *UnderlyingPointer << '\n');
 
-      deleteDeadInstruction(SI, &BBI, *MD, *TLI);
+      deleteDeadInstruction(SI, &BBI, *MD, *TLI, IOL);
       ++NumRedundantStores;
       return true;
     }
@@ -991,7 +1001,7 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
   for (BasicBlock::iterator BBI = BB.begin(), BBE = BB.end(); BBI != BBE; ) {
     // Handle 'free' calls specially.
     if (CallInst *F = isFreeCall(&*BBI, TLI)) {
-      MadeChange |= handleFree(F, AA, MD, DT, TLI);
+      MadeChange |= handleFree(F, AA, MD, DT, TLI, IOL);
       // Increment BBI after handleFree has potentially deleted instructions.
       // This ensures we maintain a valid iterator.
       ++BBI;
@@ -1005,7 +1015,7 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
       continue;
 
     // eliminateNoopStore will update in iterator, if necessary.
-    if (eliminateNoopStore(Inst, BBI, AA, MD, DL, TLI)) {
+    if (eliminateNoopStore(Inst, BBI, AA, MD, DL, TLI, IOL)) {
       MadeChange = true;
       continue;
     }
@@ -1051,9 +1061,9 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
         if (OR == OverwriteComplete) {
           DEBUG(dbgs() << "DSE: Remove Dead Store:\n  DEAD: "
                 << *DepWrite << "\n  KILLER: " << *Inst << '\n');
-          IOL.erase(DepWrite);
+
           // Delete the store and now-dead instructions that feed it.
-          deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI);
+          deleteDeadInstruction(DepWrite, &BBI, *MD, *TLI, IOL);
           ++NumFastStores;
           MadeChange = true;
 
@@ -1099,7 +1109,7 @@ static bool eliminateDeadStores(BasicBlock &BB, AliasAnalysis *AA,
   // If this block ends in a return, unwind, or unreachable, all allocas are
   // dead at its end, which means stores to them are also dead.
   if (BB.getTerminator()->getNumSuccessors() == 0)
-    MadeChange |= handleEndBlock(BB, AA, MD, TLI);
+    MadeChange |= handleEndBlock(BB, AA, MD, TLI, IOL);
 
   return MadeChange;
 }

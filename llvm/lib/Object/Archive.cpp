@@ -27,6 +27,13 @@ static const char *const ThinMagic = "!<thin>\n";
 
 void Archive::anchor() { }
 
+static Error
+malformedError(Twine Msg) {
+  std::string StringMsg = "truncated or malformed archive (" + Msg.str() + ")";
+  return make_error<GenericBinaryError>(std::move(StringMsg),
+                                        object_error::parse_failed);
+}
+
 StringRef ArchiveMemberHeader::getName() const {
   char EndCond;
   if (Name[0] == '/' || Name[0] == '#')
@@ -42,10 +49,16 @@ StringRef ArchiveMemberHeader::getName() const {
   return llvm::StringRef(Name, end);
 }
 
-ErrorOr<uint32_t> ArchiveMemberHeader::getSize() const {
+Expected<uint32_t> ArchiveMemberHeader::getSize() const {
   uint32_t Ret;
-  if (llvm::StringRef(Size, sizeof(Size)).rtrim(" ").getAsInteger(10, Ret))
-    return object_error::parse_failed; // Size is not a decimal number.
+  if (llvm::StringRef(Size, sizeof(Size)).rtrim(" ").getAsInteger(10, Ret)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(llvm::StringRef(Size, sizeof(Size)).rtrim(" "));
+    OS.flush();
+    return malformedError("characters in size field in archive header are not "
+                          "all decimal numbers: '" + Buf + "'");
+  }
   return Ret;
 }
 
@@ -91,18 +104,21 @@ Archive::Child::Child(const Archive *Parent, StringRef Data,
                       uint16_t StartOfFile)
     : Parent(Parent), Data(Data), StartOfFile(StartOfFile) {}
 
-Archive::Child::Child(const Archive *Parent, const char *Start,
-                      std::error_code *EC)
+Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
     : Parent(Parent) {
   if (!Start)
     return;
+  ErrorAsOutParameter ErrAsOutParam(Err);
 
   uint64_t Size = sizeof(ArchiveMemberHeader);
   Data = StringRef(Start, Size);
   if (!isThinMember()) {
-    ErrorOr<uint64_t> MemberSize = getRawSize();
-    if ((*EC = MemberSize.getError()))
+    Expected<uint64_t> MemberSize = getRawSize();
+    if (!MemberSize) {
+      if (Err)
+        *Err = MemberSize.takeError();
       return;
+    }
     Size += MemberSize.get();
     Data = StringRef(Start, Size);
   }
@@ -119,21 +135,18 @@ Archive::Child::Child(const Archive *Parent, const char *Start,
   }
 }
 
-ErrorOr<uint64_t> Archive::Child::getSize() const {
+Expected<uint64_t> Archive::Child::getSize() const {
   if (Parent->IsThin) {
-    ErrorOr<uint32_t> Size = getHeader()->getSize();
-    if (std::error_code EC = Size.getError())
-      return EC;
+    Expected<uint32_t> Size = getHeader()->getSize();
+    if (!Size)
+      return Size.takeError();
     return Size.get();
   }
   return Data.size() - StartOfFile;
 }
 
-ErrorOr<uint64_t> Archive::Child::getRawSize() const {
-  ErrorOr<uint32_t> Size = getHeader()->getSize();
-  if (std::error_code EC = Size.getError())
-    return EC;
-  return Size.get();
+Expected<uint64_t> Archive::Child::getRawSize() const {
+  return getHeader()->getSize();
 }
 
 bool Archive::Child::isThinMember() const {
@@ -158,9 +171,9 @@ ErrorOr<std::string> Archive::Child::getFullName() const {
 
 ErrorOr<StringRef> Archive::Child::getBuffer() const {
   if (!isThinMember()) {
-    ErrorOr<uint32_t> Size = getSize();
-    if (std::error_code EC = Size.getError())
-      return EC;
+    Expected<uint32_t> Size = getSize();
+    if (!Size)
+      return errorToErrorCode(Size.takeError());
     return StringRef(Data.data() + StartOfFile, Size.get());
   }
   ErrorOr<std::string> FullNameOrEr = getFullName();
@@ -174,7 +187,7 @@ ErrorOr<StringRef> Archive::Child::getBuffer() const {
   return Parent->ThinBuffers.back()->getBuffer();
 }
 
-ErrorOr<Archive::Child> Archive::Child::getNext() const {
+Expected<Archive::Child> Archive::Child::getNext() const {
   size_t SpaceToSkip = Data.size();
   // If it's odd, add 1 to make it even.
   if (SpaceToSkip & 1)
@@ -188,12 +201,13 @@ ErrorOr<Archive::Child> Archive::Child::getNext() const {
 
   // Check to see if this is past the end of the archive.
   if (NextLoc > Parent->Data.getBufferEnd())
-    return object_error::parse_failed;
+    return malformedError("offset to next archive member past the end of the "
+                          "archive");
 
-  std::error_code EC;
-  Child Ret(Parent, NextLoc, &EC);
-  if (EC)
-    return EC;
+  Error Err;
+  Child Ret(Parent, NextLoc, &Err);
+  if (Err)
+    return std::move(Err);
   return Ret;
 }
 
@@ -284,7 +298,7 @@ void Archive::setFirstRegular(const Child &C) {
 
 Archive::Archive(MemoryBufferRef Source, Error &Err)
     : Binary(Binary::ID_Archive, Source) {
-  ErrorAsOutParameter ErrAsOutParam(Err);
+  ErrorAsOutParameter ErrAsOutParam(&Err);
   StringRef Buffer = Data.getBuffer();
   // Check for sufficient magic.
   if (Buffer.startswith(ThinMagic)) {
@@ -472,13 +486,9 @@ Archive::child_iterator Archive::child_begin(Error &Err,
                           &Err);
 
   const char *Loc = Data.getBufferStart() + strlen(Magic);
-  std::error_code EC;
-  Child C(this, Loc, &EC);
-  if (EC) {
-    ErrorAsOutParameter ErrAsOutParam(Err);
-    Err = errorCodeToError(EC);
+  Child C(this, Loc, &Err);
+  if (Err)
     return child_end();
-  }
   return child_iterator(C, &Err);
 }
 
@@ -543,10 +553,10 @@ ErrorOr<Archive::Child> Archive::Symbol::getMember() const {
   }
 
   const char *Loc = Parent->getData().begin() + Offset;
-  std::error_code EC;
-  Child C(Parent, Loc, &EC);
-  if (EC)
-    return EC;
+  Error Err;
+  Child C(Parent, Loc, &Err);
+  if (Err)
+    return errorToErrorCode(std::move(Err));
   return C;
 }
 

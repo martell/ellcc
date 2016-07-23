@@ -132,10 +132,17 @@ public:
   /// dependency.
   void adjustSchedDependency(SUnit *def, SUnit *use, SDep& dep) const override;
 
+  unsigned getL1CacheLineSize() const;
+  unsigned getL1PrefetchDistance() const;
+
 private:
   // Helper function responsible for increasing the latency only.
-  void updateLatency(MachineInstr *SrcInst, MachineInstr *DstInst, SDep &Dep) const;
-  bool isBestZeroLatency(SUnit *Src, SUnit *Dst, const HexagonInstrInfo *TII) const;
+  void updateLatency(MachineInstr *SrcInst, MachineInstr *DstInst, SDep &Dep)
+      const;
+  void changeLatency(SUnit *Src, SmallVector<SDep, 4> &Deps, SUnit *Dst,
+      unsigned Lat) const;
+  bool isBestZeroLatency(SUnit *Src, SUnit *Dst, const HexagonInstrInfo *TII)
+      const;
   void changePhiLatency(MachineInstr *SrcInst, SUnit *Dst, SDep &Dep) const;
 };
 

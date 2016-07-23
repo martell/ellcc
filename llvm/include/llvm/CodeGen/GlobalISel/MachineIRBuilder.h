@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/GlobalISel/Types.h"
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/IR/DebugLoc.h"
 
 namespace llvm {
@@ -79,7 +80,7 @@ public:
   /// Set the insertion point to before (\p Before = true) or after
   /// (\p Before = false) \p MI.
   /// \pre MI must be in getMF().
-  void setInstr(MachineInstr &MI, bool Before = false);
+  void setInstr(MachineInstr &MI, bool Before = true);
   /// @}
 
   /// Set the debug location to \p DL for all the next build instructions.
@@ -96,7 +97,7 @@ public:
   /// \pre Ty == nullptr or isPreISelGenericOpcode(Opcode)
   ///
   /// \return The newly created instruction.
-  MachineInstr *buildInstr(unsigned Opcode, Type *Ty);
+  MachineInstr *buildInstr(unsigned Opcode, LLT Ty);
 
   /// Build and insert <empty> = \p Opcode [\p Ty] \p BB.
   ///
@@ -104,7 +105,7 @@ public:
   /// \pre Ty == nullptr or isPreISelGenericOpcode(Opcode)
   ///
   /// \return The newly created instruction.
-  MachineInstr *buildInstr(unsigned Opcode, Type *Ty, MachineBasicBlock &BB);
+  MachineInstr *buildInstr(unsigned Opcode, LLT Ty, MachineBasicBlock &BB);
 
   /// Build and insert \p Res<def> = \p Opcode [\p Ty] \p Op0, \p Op1.
   ///
@@ -112,7 +113,7 @@ public:
   /// \pre Ty == nullptr or isPreISelGenericOpcode(Opcode)
   ///
   /// \return The newly created instruction.
-  MachineInstr *buildInstr(unsigned Opcode, Type *Ty, unsigned Res,
+  MachineInstr *buildInstr(unsigned Opcode, LLT Ty, unsigned Res,
                            unsigned Op0, unsigned Op1);
 
   /// Build and insert \p Res<def> = \p Opcode \p Op0, \p Op1.
@@ -140,6 +141,48 @@ public:
   ///
   /// \return The newly created instruction.
   MachineInstr *buildInstr(unsigned Opcode);
+
+  /// Build and insert \p Res<def> = G_FRAME_INDEX \p Ty \p Idx
+  ///
+  /// G_FRAME_INDEX materializes the address of an alloca value or other
+  /// stack-based object.
+  ///
+  /// \pre setBasicBlock or setMI must have been called.
+  ///
+  /// \return The newly created instruction.
+  MachineInstr *buildFrameIndex(LLT Ty, unsigned Res, int Idx);
+
+  /// Build and insert \p Res<def> = G_ADD \p Ty \p Op0, \p Op1
+  ///
+  /// G_ADD sets \p Res to the sum of integer parameters \p Op0 and \p Op1,
+  /// truncated to their width.
+  ///
+  /// \pre setBasicBlock or setMI must have been called.
+  ///
+  /// \return The newly created instruction.
+  MachineInstr *buildAdd(LLT Ty, unsigned Res, unsigned Op0, unsigned Op1);
+
+  /// Build and insert `Res0<def>, ... = G_EXTRACT Ty Src, Idx0, ...`.
+  ///
+  /// If \p Ty has size N bits, G_EXTRACT sets \p Res[0] to bits `[Idxs[0],
+  /// Idxs[0] + N)` of \p Src and similarly for subsequent bit-indexes.
+  ///
+  /// \pre setBasicBlock or setMI must have been called.
+  ///
+  /// \return The newly created instruction.
+  MachineInstr *buildExtract(LLT Ty, ArrayRef<unsigned> Results, unsigned Src,
+                             ArrayRef<unsigned> Indexes);
+
+  /// Build and insert \p Res<def> = G_SEQUENCE \p Ty \p Ops[0], ...
+  ///
+  /// G_SEQUENCE concatenates each element in Ops into a single register, where
+  /// Ops[0] starts at bit 0 of \p Res.
+  ///
+  /// \pre setBasicBlock or setMI must have been called.
+  /// \pre The sum of the input sizes must equal the result's size.
+  ///
+  /// \return The newly created instruction.
+  MachineInstr *buildSequence(LLT Ty, unsigned Res, ArrayRef<unsigned> Ops);
 };
 
 } // End namespace llvm.

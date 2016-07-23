@@ -82,20 +82,29 @@ public:
   void scanShlibUndefined();
   void scanDynamicList();
   void scanVersionScript();
-  void traceDefined();
 
   SymbolBody *find(StringRef Name);
+
+  void trace(StringRef Name);
   void wrap(StringRef Name);
 
 private:
   std::vector<SymbolBody *> findAll(StringRef Pattern);
-  std::pair<Symbol *, bool> insert(StringRef Name);
-  std::pair<Symbol *, bool> insert(StringRef Name, uint8_t Type,
+  std::pair<Symbol *, bool> insert(StringRef &Name);
+  std::pair<Symbol *, bool> insert(StringRef &Name, uint8_t Type,
                                    uint8_t Visibility, bool CanOmitFromDynSym,
                                    bool IsUsedInRegularObj, InputFile *File);
 
   std::string conflictMsg(SymbolBody *Existing, InputFile *NewFile);
   void reportDuplicate(SymbolBody *Existing, InputFile *NewFile);
+
+  std::map<std::string, SymbolBody *> getDemangledSyms();
+
+  struct SymIndex {
+    SymIndex(int Idx, bool Traced) : Idx(Idx), Traced(Traced) {}
+    int Idx : 31;
+    unsigned Traced : 1;
+  };
 
   // The order the global symbols are in is not defined. We can use an arbitrary
   // order, but it has to be reproducible. That is true even when cross linking.
@@ -104,7 +113,7 @@ private:
   // but a bit inefficient.
   // FIXME: Experiment with passing in a custom hashing or sorting the symbols
   // once symbol resolution is finished.
-  llvm::DenseMap<SymName, unsigned> Symtab;
+  llvm::DenseMap<SymName, SymIndex> Symtab;
   std::vector<Symbol *> SymVector;
   llvm::BumpPtrAllocator Alloc;
 

@@ -335,7 +335,9 @@ void FailInAssertionOnOOM() {
   a.TestOnlyUnmap();
 }
 
-#if SANITIZER_CAN_USE_ALLOCATOR64
+// Don't test OOM conditions on Win64 because it causes other tests on the same
+// machine to OOM.
+#if SANITIZER_CAN_USE_ALLOCATOR64 && !SANITIZER_WINDOWS64
 TEST(SanitizerCommon, SizeClassAllocator64Overflow) {
   EXPECT_DEATH(FailInAssertionOnOOM<Allocator64>(), "Out of memory");
 }
@@ -777,11 +779,13 @@ TEST(SanitizerCommon, LargeMmapAllocatorBlockBegin) {
 }
 
 
-#if SANITIZER_CAN_USE_ALLOCATOR64
+// Don't test OOM conditions on Win64 because it causes other tests on the same
+// machine to OOM.
+#if SANITIZER_CAN_USE_ALLOCATOR64 && !SANITIZER_WINDOWS64
 // Regression test for out-of-memory condition in PopulateFreeList().
 TEST(SanitizerCommon, SizeClassAllocator64PopulateFreeListOOM) {
   // In a world where regions are small and chunks are huge...
-  typedef SizeClassMap<63, 128, 16> SpecialSizeClassMap;
+  typedef SizeClassMap<63, 126, 16> SpecialSizeClassMap;
   typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, 0,
                                SpecialSizeClassMap> SpecialAllocator64;
   const uptr kRegionSize =

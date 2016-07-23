@@ -116,6 +116,7 @@ static cl::extrahelp MoreHelp(
   "  [o] - preserve original dates\n"
   "  [s] - create an archive index (cf. ranlib)\n"
   "  [S] - do not build a symbol table\n"
+  "  [T] - create a thin archive\n"
   "  [u] - update only files newer than archive contents\n"
   "\nMODIFIERS (generic):\n"
   "  [c] - do not warn if the library had to be created\n"
@@ -343,8 +344,8 @@ static void doDisplayTable(StringRef Name, const object::Archive::Child &C) {
     printMode(Mode & 007);
     outs() << ' ' << C.getUID();
     outs() << '/' << C.getGID();
-    ErrorOr<uint64_t> Size = C.getSize();
-    failIfError(Size.getError());
+    Expected<uint64_t> Size = C.getSize();
+    failIfError(Size.takeError());
     outs() << ' ' << format("%6llu", Size.get());
     outs() << ' ' << C.getLastModified().str();
     outs() << ' ';

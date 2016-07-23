@@ -102,6 +102,8 @@ struct MIToken {
     NamedRegister,
     MachineBasicBlockLabel,
     MachineBasicBlock,
+    PointerType,
+    ScalarType,
     StackObject,
     FixedStackObject,
     NamedGlobalValue,

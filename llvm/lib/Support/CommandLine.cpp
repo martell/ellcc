@@ -505,7 +505,6 @@ static bool CommaSeparateAndAddOccurrence(Option *Handler, unsigned pos,
         return true;
       // Erase the portion before the comma, AND the comma.
       Val = Val.substr(Pos + 1);
-      Value.substr(Pos + 1); // Increment the original value pointer as well.
       // Check for another comma.
       Pos = Val.find(',');
     }
@@ -1212,7 +1211,8 @@ bool CommandLineParser::ParseCommandLineOptions(int argc,
       errs() << ProgramName
              << ": Not enough positional command line arguments specified!\n"
              << "Must specify at least " << NumPositionalRequired
-             << " positional arguments: See: " << argv[0] << " -help\n";
+             << " positional argument" << (NumPositionalRequired > 1 ? "s" : "")
+             << ": See: " << argv[0] << " - help\n";
     }
 
     ErrorParsing = true;

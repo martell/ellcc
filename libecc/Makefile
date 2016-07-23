@@ -654,6 +654,7 @@ clang-headers:
 	    cp -p clang/xmmintrin.h include ; \
 	    cp -p clang/f16cintrin.h include ; \
 	    cp -p clang/stdatomic.h include ; \
+	    cp -p clang/cpuid.h include ; \
 	  fi
 
 $(ElkConfigs)::

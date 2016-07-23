@@ -605,7 +605,7 @@ void GnuHashTableSection<ELFT>::addSymbols(
 // Returns the number of version definition entries. Because the first entry
 // is for the version definition itself, it is the number of versioned symbols
 // plus one. Note that we don't support multiple versions yet.
-static unsigned getVerDefNum() { return Config->SymbolVersions.size() + 1; }
+static unsigned getVerDefNum() { return Config->VersionDefinitions.size() + 1; }
 
 template <class ELFT>
 DynamicSection<ELFT>::DynamicSection()
@@ -963,41 +963,22 @@ template <class ELFT>
 EhOutputSection<ELFT>::EhOutputSection()
     : OutputSectionBase<ELFT>(".eh_frame", SHT_PROGBITS, SHF_ALLOC) {}
 
-// Returns the first relocation that points to a region
-// between Begin and Begin+Size.
-template <class IntTy, class RelTy>
-static const RelTy *getReloc(IntTy Begin, IntTy Size, ArrayRef<RelTy> &Rels) {
-  for (auto I = Rels.begin(), E = Rels.end(); I != E; ++I) {
-    if (I->r_offset < Begin)
-      continue;
-
-    // Truncate Rels for fast access. That means we expect that the
-    // relocations are sorted and we are looking up symbols in
-    // sequential order. It is naturally satisfied for .eh_frame.
-    Rels = Rels.slice(I - Rels.begin());
-    if (I->r_offset < Begin + Size)
-      return I;
-    return nullptr;
-  }
-  Rels = ArrayRef<RelTy>();
-  return nullptr;
-}
-
 // Search for an existing CIE record or create a new one.
 // CIE records from input object files are uniquified by their contents
 // and where their relocations point to.
 template <class ELFT>
 template <class RelTy>
-CieRecord *EhOutputSection<ELFT>::addCie(SectionPiece &Piece,
+CieRecord *EhOutputSection<ELFT>::addCie(EhSectionPiece &Piece,
                                          EhInputSection<ELFT> *Sec,
-                                         ArrayRef<RelTy> &Rels) {
+                                         ArrayRef<RelTy> Rels) {
   const endianness E = ELFT::TargetEndianness;
   if (read32<E>(Piece.data().data() + 4) != 0)
     fatal("CIE expected at beginning of .eh_frame: " + Sec->getSectionName());
 
   SymbolBody *Personality = nullptr;
-  if (const RelTy *Rel = getReloc(Piece.InputOff, Piece.size(), Rels))
-    Personality = &Sec->getFile()->getRelocTargetSym(*Rel);
+  unsigned FirstRelI = Piece.FirstRelocation;
+  if (FirstRelI != (unsigned)-1)
+    Personality = &Sec->getFile()->getRelocTargetSym(Rels[FirstRelI]);
 
   // Search for an existing CIE by CIE contents/relocation target pair.
   CieRecord *Cie = &CieMap[{Piece.data(), Personality}];
@@ -1014,13 +995,14 @@ CieRecord *EhOutputSection<ELFT>::addCie(SectionPiece &Piece,
 // points to a live function.
 template <class ELFT>
 template <class RelTy>
-bool EhOutputSection<ELFT>::isFdeLive(SectionPiece &Piece,
+bool EhOutputSection<ELFT>::isFdeLive(EhSectionPiece &Piece,
                                       EhInputSection<ELFT> *Sec,
-                                      ArrayRef<RelTy> &Rels) {
-  const RelTy *Rel = getReloc(Piece.InputOff, Piece.size(), Rels);
-  if (!Rel)
+                                      ArrayRef<RelTy> Rels) {
+  unsigned FirstRelI = Piece.FirstRelocation;
+  if (FirstRelI == (unsigned)-1)
     fatal("FDE doesn't reference another section");
-  SymbolBody &B = Sec->getFile()->getRelocTargetSym(*Rel);
+  const RelTy &Rel = Rels[FirstRelI];
+  SymbolBody &B = Sec->getFile()->getRelocTargetSym(Rel);
   auto *D = dyn_cast<DefinedRegular<ELFT>>(&B);
   if (!D || !D->Section)
     return false;
@@ -1039,7 +1021,7 @@ void EhOutputSection<ELFT>::addSectionAux(EhInputSection<ELFT> *Sec,
   const endianness E = ELFT::TargetEndianness;
 
   DenseMap<size_t, CieRecord *> OffsetToCie;
-  for (SectionPiece &Piece : Sec->Pieces) {
+  for (EhSectionPiece &Piece : Sec->Pieces) {
     // The empty record is the end marker.
     if (Piece.size() == 4)
       return;
@@ -1185,7 +1167,7 @@ template <class ELFT>
 MergeOutputSection<ELFT>::MergeOutputSection(StringRef Name, uint32_t Type,
                                              uintX_t Flags, uintX_t Alignment)
     : OutputSectionBase<ELFT>(Name, Type, Flags),
-      Builder(llvm::StringTableBuilder::RAW, Alignment) {}
+      Builder(StringTableBuilder::RAW, Alignment) {}
 
 template <class ELFT> void MergeOutputSection<ELFT>::writeTo(uint8_t *Buf) {
   if (shouldTailMerge()) {
@@ -1278,7 +1260,7 @@ template <class ELFT>
 typename ELFT::uint DynamicReloc<ELFT>::getOffset() const {
   if (OutputSec)
     return OutputSec->getVA() + OffsetInSec;
-  return InputSec->OutSec->getVA() + InputSec->getOffset(OffsetInSec);
+  return InputSec->OutSec->getVA() + OffsetInSec;
 }
 
 template <class ELFT>
@@ -1485,7 +1467,7 @@ static StringRef getFileDefName() {
 
 template <class ELFT> void VersionDefinitionSection<ELFT>::finalize() {
   FileDefNameOff = Out<ELFT>::DynStrTab->addString(getFileDefName());
-  for (Version &V : Config->SymbolVersions)
+  for (VersionDefinition &V : Config->VersionDefinitions)
     V.NameOff = Out<ELFT>::DynStrTab->addString(V.Name);
 
   this->Header.sh_size =
@@ -1519,7 +1501,7 @@ template <class ELFT>
 void VersionDefinitionSection<ELFT>::writeTo(uint8_t *Buf) {
   writeOne(Buf, 1, getFileDefName(), FileDefNameOff);
 
-  for (Version &V : Config->SymbolVersions) {
+  for (VersionDefinition &V : Config->VersionDefinitions) {
     Buf += sizeof(Elf_Verdef) + sizeof(Elf_Verdaux);
     writeOne(Buf, V.Id, V.Name, V.NameOff);
   }
@@ -1570,7 +1552,7 @@ void VersionNeedSection<ELFT>::addSymbol(SharedSymbol<ELFT> *SS) {
     SS->symbol()->VersionId = VER_NDX_GLOBAL;
     return;
   }
-  SharedFile<ELFT> *F = SS->File;
+  SharedFile<ELFT> *F = SS->file();
   // If we don't already know that we need an Elf_Verneed for this DSO, prepare
   // to create one by adding it to our needed list and creating a dynstr entry
   // for the soname.
@@ -1582,7 +1564,7 @@ void VersionNeedSection<ELFT>::addSymbol(SharedSymbol<ELFT> *SS) {
   // dynstr entry for the version name.
   if (NV.Index == 0) {
     NV.StrTab = Out<ELFT>::DynStrTab->addString(
-        SS->File->getStringTable().data() + SS->Verdef->getAux()->vda_name);
+        SS->file()->getStringTable().data() + SS->Verdef->getAux()->vda_name);
     NV.Index = NextIndex++;
   }
   SS->symbol()->VersionId = NV.Index;
@@ -1666,7 +1648,7 @@ void BuildIdFnv1<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
 
 template <class ELFT>
 void BuildIdMd5<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
-  llvm::MD5 Hash;
+  MD5 Hash;
   for (ArrayRef<uint8_t> Buf : Bufs)
     Hash.update(Buf);
   MD5::MD5Result Res;
@@ -1676,7 +1658,7 @@ void BuildIdMd5<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
 
 template <class ELFT>
 void BuildIdSha1<ELFT>::writeBuildId(ArrayRef<ArrayRef<uint8_t>> Bufs) {
-  llvm::SHA1 Hash;
+  SHA1 Hash;
   for (ArrayRef<uint8_t> Buf : Bufs)
     Hash.update(Buf);
   memcpy(this->HashBuf, Hash.final().data(), 20);
@@ -1770,6 +1752,7 @@ OutputSectionFactory<ELFT>::create(InputSectionBase<ELFT> *C,
     Sec = new MipsOptionsOutputSection<ELFT>();
     break;
   }
+  OwningSections.emplace_back(Sec);
   return {Sec, true};
 }
 

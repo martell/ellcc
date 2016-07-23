@@ -309,11 +309,13 @@ public:
   ScheduleDAGInstrs *
   createMachineScheduler(MachineSchedContext *C) const override;
 
+  void addIRPasses() override;
   bool addPreISel() override;
   void addMachineSSAOptimization() override;
   bool addInstSelector() override;
 #ifdef LLVM_BUILD_GLOBAL_ISEL
   bool addIRTranslator() override;
+  bool addLegalizeMachineIR() override;
   bool addRegBankSelect() override;
 #endif
   void addFastRegAlloc(FunctionPass *RegAllocPass) override;
@@ -499,6 +501,13 @@ void GCNPassConfig::addMachineSSAOptimization() {
   addPass(&DeadMachineInstructionElimID);
 }
 
+void GCNPassConfig::addIRPasses() {
+  // TODO: May want to move later or split into an early and late one.
+  addPass(createAMDGPUCodeGenPreparePass(&getGCNTargetMachine()));
+
+  AMDGPUPassConfig::addIRPasses();
+}
+
 bool GCNPassConfig::addInstSelector() {
   AMDGPUPassConfig::addInstSelector();
   addPass(createSILowerI1CopiesPass());
@@ -509,6 +518,10 @@ bool GCNPassConfig::addInstSelector() {
 #ifdef LLVM_BUILD_GLOBAL_ISEL
 bool GCNPassConfig::addIRTranslator() {
   addPass(new IRTranslator());
+  return false;
+}
+
+bool GCNPassConfig::addLegalizeMachineIR() {
   return false;
 }
 
