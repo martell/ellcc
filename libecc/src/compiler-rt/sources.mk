@@ -1,3 +1,4 @@
+CFLAGS += -O3
 CXXFLAGS += -std=c99 -D_XOPEN_SOURCE=700
 VPATH := $(VPATH):$(SRCPATH)/compiler-rt/lib/builtins
 

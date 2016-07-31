@@ -49,7 +49,7 @@ static int name_from_hosts(struct address buf[static MAXADDRS], char canon[stati
 {
 	char line[512];
 	size_t l = strlen(name);
-	int cnt = 0;
+	int cnt = 0, badfam = 0;
 	unsigned char _buf[1032];
 	FILE _f, *f = __fopen_rb_ca("/etc/hosts", &_f, _buf, sizeof _buf);
 	if (!f) switch (errno) {
@@ -71,8 +71,16 @@ static int name_from_hosts(struct address buf[static MAXADDRS], char canon[stati
 		/* Isolate IP address to parse */
 		for (p=line; *p && !isspace(*p); p++);
 		*p++ = 0;
-		if (name_from_numeric(buf+cnt, line, family))
+		switch (name_from_numeric(buf+cnt, line, family)) {
+		case 1:
 			cnt++;
+			break;
+		case 0:
+			continue;
+		default:
+			badfam = EAI_NONAME;
+			continue;
+		}
 
 		/* Extract first name as canonical name */
 		for (; *p && isspace(*p); p++);
@@ -81,7 +89,7 @@ static int name_from_hosts(struct address buf[static MAXADDRS], char canon[stati
 		if (is_valid_hostname(p)) memcpy(canon, p, z-p+1);
 	}
 	__fclose_ca(f);
-	return cnt;
+	return cnt ? cnt : badfam;
 }
 
 struct dpc_ctx {
@@ -133,16 +141,19 @@ static int name_from_dns(struct address buf[static MAXADDRS], char canon[static 
 	int qlens[2], alens[2];
 	int i, nq = 0;
 	struct dpc_ctx ctx = { .addrs = buf, .canon = canon };
+	static const struct { int af; int rr; } afrr[2] = {
+		{ .af = AF_INET6, .rr = RR_A },
+		{ .af = AF_INET, .rr = RR_AAAA },
+	};
 
-	if (family != AF_INET6) {
-		qlens[nq] = __res_mkquery(0, name, 1, RR_A, 0, 0, 0,
-			qbuf[nq], sizeof *qbuf);
-		nq++;
-	}
-	if (family != AF_INET) {
-		qlens[nq] = __res_mkquery(0, name, 1, RR_AAAA, 0, 0, 0,
-			qbuf[nq], sizeof *qbuf);
-		nq++;
+	for (i=0; i<2; i++) {
+		if (family != afrr[i].af) {
+			qlens[nq] = __res_mkquery(0, name, 1, afrr[i].rr,
+				0, 0, 0, qbuf[nq], sizeof *qbuf);
+			if (qlens[nq] == -1)
+				return EAI_NONAME;
+			nq++;
+		}
 	}
 
 	if (__res_msend_rc(nq, qp, qlens, ap, alens, sizeof *abuf, conf) < 0)

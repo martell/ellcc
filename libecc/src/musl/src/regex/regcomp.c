@@ -889,7 +889,6 @@ static reg_errcode_t parse_atom(tre_parse_ctx_t *ctx, const char *s)
 		s++;
 		break;
 	case '*':
-		return REG_BADPAT;
 	case '{':
 	case '+':
 	case '?':
@@ -978,9 +977,6 @@ static reg_errcode_t tre_parse(tre_parse_ctx_t *ctx)
 		}
 
 	parse_iter:
-		/* extension: repetitions are rejected after an empty node
-		   eg. (+), |*, {2}, but assertions are not treated as empty
-		   so ^* or $? are accepted currently. */
 		for (;;) {
 			int min, max;
 
@@ -997,6 +993,10 @@ static reg_errcode_t tre_parse(tre_parse_ctx_t *ctx)
 				break;
 			if (*s=='\\')
 				s++;
+
+			/* handle ^* at the start of a complete BRE. */
+			if (!ere && s==ctx->re+1 && s[-1]=='^')
+				break;
 
 			/* extension: multiple consecutive *+?{,} is unspecified,
 			   but (a+)+ has to be supported so accepting a++ makes
@@ -1106,6 +1106,7 @@ tre_add_tag_left(tre_mem_t mem, tre_ast_node_t *node, int tag_id)
   c->right->firstpos = NULL;
   c->right->lastpos = NULL;
   c->right->num_tags = 0;
+  c->right->num_submatches = 0;
   node->obj = c;
   node->type = CATENATION;
   return REG_OK;
@@ -1136,6 +1137,7 @@ tre_add_tag_right(tre_mem_t mem, tre_ast_node_t *node, int tag_id)
   c->left->firstpos = NULL;
   c->left->lastpos = NULL;
   c->left->num_tags = 0;
+  c->left->num_submatches = 0;
   node->obj = c;
   node->type = CATENATION;
   return REG_OK;

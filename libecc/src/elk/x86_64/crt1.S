@@ -65,7 +65,9 @@ pointer:
         .global _start
 
 _start:
+        .code16
         lgdt    [pointer]
+        .code64
         cli
         mov     $data, %ax              // Set up the segment registers.
         mov     %ax, %ds
@@ -150,7 +152,9 @@ gdt_flush:
         movw %ax, %fs
         movw %ax, %gs
         movw %ax, %ss
+        .code16
         ljmp  $(__KERNEL_CS), $flush
+        .code64
 flush:
         ret
 

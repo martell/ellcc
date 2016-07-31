@@ -25,6 +25,7 @@ Fine tuning of the installation directories:
 System types:
   --target=TARGET         configure to run on target TARGET [detected]
   --host=HOST             same as --target
+  --build=BUILD           build system type; used only to infer cross-compiling
 
 Optional features:
   --enable-optimize=...   optimize listed components for speed over size [auto]
@@ -130,6 +131,7 @@ includedir='$(prefix)/include'
 syslibdir='/lib'
 tools=
 tool_libs=
+build=
 target=
 optimize=auto
 debug=no
@@ -174,8 +176,9 @@ case "$arg" in
 --disable-wrapper|--enable-wrapper=no) wrapper=no ;;
 --enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ; gcc_wrapper=yes ;;
 --disable-gcc-wrapper|--enable-gcc-wrapper=no) wrapper=no ;;
---enable-*|--disable-*|--with-*|--without-*|--*dir=*|--build=*) ;;
+--enable-*|--disable-*|--with-*|--without-*|--*dir=*) ;;
 --host=*|--target=*) target=${arg#*=} ;;
+--build=*) build=${arg#*=} ;;
 -* ) echo "$0: unknown option $arg" ;;
 CC=*) CC=${arg#*=} ;;
 CFLAGS=*) CFLAGS=${arg#*=} ;;
@@ -184,7 +187,7 @@ LDFLAGS=*) LDFLAGS=${arg#*=} ;;
 CROSS_COMPILE=*) CROSS_COMPILE=${arg#*=} ;;
 LIBCC=*) LIBCC=${arg#*=} ;;
 *=*) ;;
-*) target=$arg ;;
+*) build=$arg ; target=$arg ;;
 esac
 done
 
@@ -216,6 +219,15 @@ test "$i" -gt 50 && fail "$0: cannot create temporary file $tmpc"
 done
 set +C
 trap 'rm "$tmpc"' EXIT INT QUIT TERM HUP
+
+#
+# Check whether we are cross-compiling, and set a default
+# CROSS_COMPILE prefix if none was provided.
+#
+test "$target" && \
+test "$target" != "$build" && \
+test -z "$CROSS_COMPILE" && \
+CROSS_COMPILE="$target-"
 
 #
 # Find a C compiler to use
@@ -303,7 +315,6 @@ printf "%s\n" "$target"
 #
 case "$target" in
 # Catch these early to simplify matching for 32-bit archs
-mips64*|powerpc64*) fail "$0: unsupported target \"$target\"" ;;
 arm64*) ARCH=aarch64 ;;
 arm*) ARCH=arm ;;
 thumb*) ARCH=arm ;;
@@ -315,9 +326,11 @@ x86_32*) ARCH=i386 ;;
 x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
 x86_64-nt64*) ARCH=nt64 ;;
 x86_64*) ARCH=x86_64 ;;
-mips*|mipsel*) ARCH=mips ;;
+mips64*) ARCH=mips64 ;;
+mips*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
 or1k*) ARCH=or1k ;;
+powerpc64*) ARCH=powerpc64 ;;
 powerpc*) ARCH=powerpc ;;
 sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
 ppc*) ARCH=powerpc ;;
@@ -620,12 +633,32 @@ trycppif __AARCH64EB__ "$t" && SUBARCH=${SUBARCH}_be
 fi
 
 if test "$ARCH" = "mips" ; then
+trycppif "__mips_isa_rev >= 6" "$t" && SUBARCH=${SUBARCH}r6
 trycppif "_MIPSEL || __MIPSEL || __MIPSEL__" "$t" && SUBARCH=${SUBARCH}el
 trycppif __mips_soft_float "$t" && SUBARCH=${SUBARCH}-sf
 fi
 
+if test "$ARCH" = "mips64" ; then
+trycppif "_MIPS_SIM != _ABI64" "$t" && ARCH=mipsn32
+trycppif "__mips_isa_rev >= 6" "$t" && SUBARCH=${SUBARCH}r6
+trycppif "_MIPSEL || __MIPSEL || __MIPSEL__" "$t" && SUBARCH=${SUBARCH}el
+trycppif __mips_soft_float "$t" && SUBARCH=${SUBARCH}-sf
+fi
+
+if test "$ARCH" = "powerpc" ; then
+trycppif "__NO_FPRS__ && !_SOFT_FLOAT" "$t" && fail \
+  "$0: error: compiler's floating point configuration is unsupported"
+trycppif _SOFT_FLOAT "$t" && SUBARCH=${SUBARCH}-sf
+fi
+
 test "$ARCH" = "microblaze" && trycppif __MICROBLAZEEL__ "$t" \
 && SUBARCH=${SUBARCH}el
+
+if test "$ARCH" = "powerpc64" ; then
+trycppif "_CALL_ELF == 2" "$t" || fail "$0: error: unsupported powerpc64 ABI"
+trycppif __LITTLE_ENDIAN__ "$t" && SUBARCH=${SUBARCH}le
+trycppif _SOFT_FLOAT "$t" && fail "$0: error: soft-float not supported on powerpc64"
+fi
 
 if test "$ARCH" = "sh" ; then
 tryflag CFLAGS_AUTO -Wa,--isa=any
