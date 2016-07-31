@@ -263,6 +263,9 @@ static TargetLibraryInfoImpl *createTLII(llvm::Triple &TargetTriple,
   case CodeGenOptions::Accelerate:
     TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::Accelerate);
     break;
+  case CodeGenOptions::SVML:
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::SVML);
+    break;
   default:
     break;
   }
@@ -453,6 +456,7 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
     MPM.add(createInstrProfilingLegacyPass(Options));
   }
   if (CodeGenOpts.hasProfileIRInstr()) {
+    PMBuilder.EnablePGOInstrGen = true;
     if (!CodeGenOpts.InstrProfileOutput.empty())
       PMBuilder.PGOInstrGen = CodeGenOpts.InstrProfileOutput;
     else
@@ -603,6 +607,7 @@ void EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
       CodeGenOpts.IncrementalLinkerCompatible;
   Options.MCOptions.MCFatalWarnings = CodeGenOpts.FatalWarnings;
   Options.MCOptions.AsmVerbose = CodeGenOpts.AsmVerbose;
+  Options.MCOptions.PreserveAsmComments = CodeGenOpts.PreserveAsmComments;
   Options.MCOptions.ABIName = TargetOpts.ABI;
 
   TM.reset(TheTarget->createTargetMachine(Triple, TargetOpts.CPU, FeaturesStr,

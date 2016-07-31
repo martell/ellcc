@@ -48,7 +48,7 @@ private:
 
   void copyLocalSymbols();
   void addReservedSymbols();
-  std::vector<OutputSectionBase<ELFT> *> createSections();
+  void createSections();
   void forEachRelSec(
       std::function<void(InputSectionBase<ELFT> &, const typename ELFT::Shdr &)>
           Fn);
@@ -67,8 +67,6 @@ private:
   void writeHeader();
   void writeSections();
   void writeBuildId();
-
-  void addCommonSymbols(std::vector<DefinedCommon *> &Syms);
 
   std::unique_ptr<FileOutputBuffer> Buffer;
 
@@ -99,13 +97,11 @@ StringRef elf::getOutputSectionName(InputSectionBase<ELFT> *S) {
   return Name;
 }
 
-template <class ELFT>
-void elf::reportDiscarded(InputSectionBase<ELFT> *IS,
-                          const std::unique_ptr<elf::ObjectFile<ELFT>> &File) {
+template <class ELFT> void elf::reportDiscarded(InputSectionBase<ELFT> *IS) {
   if (!Config->PrintGcSections || !IS || IS->Live)
     return;
   errs() << "removing unused section from '" << IS->getSectionName()
-         << "' in file '" << File->getName() << "'\n";
+         << "' in file '" << IS->getFile()->getName() << "'\n";
 }
 
 template <class ELFT> static bool needsInterpSection() {
@@ -219,15 +215,29 @@ template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
   Writer<ELFT>(*Symtab).run();
 }
 
+template <class ELFT>
+static std::vector<DefinedCommon<ELFT> *> getCommonSymbols() {
+  std::vector<DefinedCommon<ELFT> *> V;
+  for (Symbol *S : Symtab<ELFT>::X->getSymbols())
+    if (auto *B = dyn_cast<DefinedCommon<ELFT>>(S->body()))
+      V.push_back(B);
+  return V;
+}
+
 // The main function of the writer.
 template <class ELFT> void Writer<ELFT>::run() {
   if (!Config->DiscardAll)
     copyLocalSymbols();
   addReservedSymbols();
 
-  OutputSections = ScriptConfig->DoLayout
-                       ? Script<ELFT>::X->createSections(Factory)
-                       : createSections();
+  CommonInputSection<ELFT> Common(getCommonSymbols<ELFT>());
+  CommonInputSection<ELFT>::X = &Common;
+
+  if (ScriptConfig->HasContents)
+    Script<ELFT>::X->createSections(&OutputSections, Factory);
+  else
+    createSections();
+
   finalizeSections();
   if (HasError)
     return;
@@ -239,7 +249,7 @@ template <class ELFT> void Writer<ELFT>::run() {
                 ? Script<ELFT>::X->createPhdrs(OutputSections)
                 : createPhdrs();
     fixHeaders();
-    if (ScriptConfig->DoLayout) {
+    if (ScriptConfig->HasContents) {
       Script<ELFT>::X->assignAddresses(OutputSections);
     } else {
       fixSectionAlignments();
@@ -469,15 +479,6 @@ static bool compareSections(OutputSectionBase<ELFT> *A,
   return false;
 }
 
-uint32_t elf::toPhdrFlags(uint64_t Flags) {
-  uint32_t Ret = PF_R;
-  if (Flags & SHF_WRITE)
-    Ret |= PF_W;
-  if (Flags & SHF_EXECINSTR)
-    Ret |= PF_X;
-  return Ret;
-}
-
 template <class ELFT> bool elf::isOutputDynamic() {
   return !Symtab<ELFT>::X->getSharedFiles().empty() || Config->Pic;
 }
@@ -499,30 +500,6 @@ void PhdrEntry<ELFT>::add(OutputSectionBase<ELFT> *Sec) {
   if (!First)
     First = Sec;
   H.p_align = std::max<typename ELFT::uint>(H.p_align, Sec->getAlignment());
-}
-
-// Until this function is called, common symbols do not belong to any section.
-// This function adds them to end of BSS section.
-template <class ELFT>
-void Writer<ELFT>::addCommonSymbols(std::vector<DefinedCommon *> &Syms) {
-  if (Syms.empty())
-    return;
-
-  // Sort the common symbols by alignment as an heuristic to pack them better.
-  std::stable_sort(Syms.begin(), Syms.end(),
-                   [](const DefinedCommon *A, const DefinedCommon *B) {
-                     return A->Alignment > B->Alignment;
-                   });
-
-  uintX_t Off = Out<ELFT>::Bss->getSize();
-  for (DefinedCommon *C : Syms) {
-    Off = alignTo(Off, C->Alignment);
-    Out<ELFT>::Bss->updateAlignment(C->Alignment);
-    C->OffsetInBss = Off;
-    Off += C->Size;
-  }
-
-  Out<ELFT>::Bss->setSize(Off);
 }
 
 template <class ELFT>
@@ -557,7 +534,7 @@ template <class ELFT> void Writer<ELFT>::addRelIpltSymbols() {
 // The linker is expected to define some symbols depending on
 // the linking result. This function defines such symbols.
 template <class ELFT> void Writer<ELFT>::addReservedSymbols() {
-  if (Config->EMachine == EM_MIPS) {
+  if (Config->EMachine == EM_MIPS && !Config->Relocatable) {
     // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
     // so that it points to an absolute address which is relative to GOT.
     // See "Global Data Symbols" in Chapter 6 in the following document:
@@ -660,26 +637,22 @@ void Writer<ELFT>::forEachRelSec(
   }
 }
 
-template <class ELFT>
-std::vector<OutputSectionBase<ELFT> *> Writer<ELFT>::createSections() {
-  std::vector<OutputSectionBase<ELFT> *> Result;
-
+template <class ELFT> void Writer<ELFT>::createSections() {
   for (const std::unique_ptr<elf::ObjectFile<ELFT>> &F :
        Symtab.getObjectFiles()) {
     for (InputSectionBase<ELFT> *C : F->getSections()) {
       if (isDiscarded(C)) {
-        reportDiscarded(C, F);
+        reportDiscarded(C);
         continue;
       }
       OutputSectionBase<ELFT> *Sec;
       bool IsNew;
       std::tie(Sec, IsNew) = Factory.create(C, getOutputSectionName(C));
       if (IsNew)
-        Result.push_back(Sec);
+        OutputSections.push_back(Sec);
       Sec->addSection(C);
     }
   }
-  return Result;
 }
 
 // Create output section objects and add them to OutputSections.
@@ -745,7 +718,6 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
 
   // Now that we have defined all possible symbols including linker-
   // synthesized ones. Visit all symbols to give the finishing touches.
-  std::vector<DefinedCommon *> CommonSymbols;
   for (Symbol *S : Symtab.getSymbols()) {
     SymbolBody *Body = S->body();
 
@@ -753,9 +725,6 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
     // will accept an undefined reference in bitcode if it can be optimized out.
     if (S->IsUsedInRegularObj && Body->isUndefined() && !S->isWeak())
       reportUndefined<ELFT>(Symtab, Body);
-
-    if (auto *C = dyn_cast<DefinedCommon>(Body))
-      CommonSymbols.push_back(C);
 
     if (!includeInSymtab<ELFT>(*Body))
       continue;
@@ -774,7 +743,12 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
   if (HasError)
     return;
 
-  addCommonSymbols(CommonSymbols);
+  // If linker script processor hasn't added common symbol section yet,
+  // then add it to .bss now.
+  if (!CommonInputSection<ELFT>::X->OutSec) {
+    Out<ELFT>::Bss->addSection(CommonInputSection<ELFT>::X);
+    Out<ELFT>::Bss->assignOffsets();
+  }
 
   // So far we have added sections from input object files.
   // This function adds linker-created Out<ELFT>::* sections.
@@ -818,7 +792,7 @@ template <class ELFT> bool Writer<ELFT>::needsGot() {
 
   // We add the .got section to the result for dynamic MIPS target because
   // its address and properties are mentioned in the .dynamic section.
-  if (Config->EMachine == EM_MIPS)
+  if (Config->EMachine == EM_MIPS && !Config->Relocatable)
     return true;
 
   // If we have a relocation that is relative to GOT (such as GOTOFFREL),
@@ -932,7 +906,7 @@ void Writer<ELFT>::addStartStopSymbols(OutputSectionBase<ELFT> *Sec) {
       Symtab.addSynthetic(Stop, Sec, DefinedSynthetic<ELFT>::SectionEnd);
 }
 
-template <class ELFT> bool elf::needsPtLoad(OutputSectionBase<ELFT> *Sec) {
+template <class ELFT> static bool needsPtLoad(OutputSectionBase<ELFT> *Sec) {
   if (!(Sec->getFlags() & SHF_ALLOC))
     return false;
 
@@ -961,7 +935,7 @@ std::vector<PhdrEntry<ELFT>> Writer<ELFT>::createPhdrs() {
 
   // PT_INTERP must be the second entry if exists.
   if (Out<ELFT>::Interp) {
-    Phdr &Hdr = *AddHdr(PT_INTERP, toPhdrFlags(Out<ELFT>::Interp->getFlags()));
+    Phdr &Hdr = *AddHdr(PT_INTERP, Out<ELFT>::Interp->getPhdrFlags());
     Hdr.add(Out<ELFT>::Interp);
   }
 
@@ -984,11 +958,11 @@ std::vector<PhdrEntry<ELFT>> Writer<ELFT>::createPhdrs() {
     if (Sec->getFlags() & SHF_TLS)
       TlsHdr.add(Sec);
 
-    if (!needsPtLoad<ELFT>(Sec))
+    if (!needsPtLoad(Sec))
       continue;
 
     // If flags changed then we want new load segment.
-    uintX_t NewFlags = toPhdrFlags(Sec->getFlags());
+    uintX_t NewFlags = Sec->getPhdrFlags();
     if (Flags != NewFlags) {
       Load = AddHdr(PT_LOAD, NewFlags);
       Flags = NewFlags;
@@ -1008,7 +982,7 @@ std::vector<PhdrEntry<ELFT>> Writer<ELFT>::createPhdrs() {
 
   // Add an entry for .dynamic.
   if (isOutputDynamic<ELFT>()) {
-    Phdr &H = *AddHdr(PT_DYNAMIC, toPhdrFlags(Out<ELFT>::Dynamic->getFlags()));
+    Phdr &H = *AddHdr(PT_DYNAMIC, Out<ELFT>::Dynamic->getPhdrFlags());
     H.add(Out<ELFT>::Dynamic);
   }
 
@@ -1019,8 +993,7 @@ std::vector<PhdrEntry<ELFT>> Writer<ELFT>::createPhdrs() {
 
   // PT_GNU_EH_FRAME is a special section pointing on .eh_frame_hdr.
   if (!Out<ELFT>::EhFrame->empty() && Out<ELFT>::EhFrameHdr) {
-    Phdr &Hdr = *AddHdr(PT_GNU_EH_FRAME,
-                        toPhdrFlags(Out<ELFT>::EhFrameHdr->getFlags()));
+    Phdr &Hdr = *AddHdr(PT_GNU_EH_FRAME, Out<ELFT>::EhFrameHdr->getPhdrFlags());
     Hdr.add(Out<ELFT>::EhFrameHdr);
   }
 
@@ -1060,7 +1033,7 @@ template <class ELFT> void Writer<ELFT>::fixSectionAlignments() {
 // sections. These are special, we do not include them into output sections
 // list, but have them to simplify the code.
 template <class ELFT> void Writer<ELFT>::fixHeaders() {
-  uintX_t BaseVA = ScriptConfig->DoLayout ? 0 : Config->ImageBase;
+  uintX_t BaseVA = ScriptConfig->HasContents ? 0 : Config->ImageBase;
   Out<ELFT>::ElfHeader->setVA(BaseVA);
   uintX_t Off = Out<ELFT>::ElfHeader->getSize();
   Out<ELFT>::ProgramHeaders->setVA(Off + BaseVA);
@@ -1079,7 +1052,7 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
       Alignment = std::max<uintX_t>(Alignment, Target->PageSize);
 
     // We only assign VAs to allocated sections.
-    if (needsPtLoad<ELFT>(Sec)) {
+    if (needsPtLoad(Sec)) {
       VA = alignTo(VA, Alignment);
       Sec->setVA(VA);
       VA += Sec->getSize();
@@ -1159,7 +1132,8 @@ template <class ELFT> void Writer<ELFT>::setPhdrs() {
     // so round up the size to make sure the offsets are correct.
     if (H.p_type == PT_TLS) {
       Out<ELFT>::TlsPhdr = &H;
-      H.p_memsz = alignTo(H.p_memsz, H.p_align);
+      if (H.p_memsz)
+        H.p_memsz = alignTo(H.p_memsz, H.p_align);
     }
   }
 }
@@ -1340,25 +1314,12 @@ template bool elf::isRelroSection<ELF32BE>(OutputSectionBase<ELF32BE> *);
 template bool elf::isRelroSection<ELF64LE>(OutputSectionBase<ELF64LE> *);
 template bool elf::isRelroSection<ELF64BE>(OutputSectionBase<ELF64BE> *);
 
-template bool elf::needsPtLoad<ELF32LE>(OutputSectionBase<ELF32LE> *);
-template bool elf::needsPtLoad<ELF32BE>(OutputSectionBase<ELF32BE> *);
-template bool elf::needsPtLoad<ELF64LE>(OutputSectionBase<ELF64LE> *);
-template bool elf::needsPtLoad<ELF64BE>(OutputSectionBase<ELF64BE> *);
-
 template StringRef elf::getOutputSectionName<ELF32LE>(InputSectionBase<ELF32LE> *);
 template StringRef elf::getOutputSectionName<ELF32BE>(InputSectionBase<ELF32BE> *);
 template StringRef elf::getOutputSectionName<ELF64LE>(InputSectionBase<ELF64LE> *);
 template StringRef elf::getOutputSectionName<ELF64BE>(InputSectionBase<ELF64BE> *);
 
-template void elf::reportDiscarded<ELF32LE>(
-    InputSectionBase<ELF32LE> *,
-    const std::unique_ptr<elf::ObjectFile<ELF32LE>> &);
-template void elf::reportDiscarded<ELF32BE>(
-    InputSectionBase<ELF32BE> *,
-    const std::unique_ptr<elf::ObjectFile<ELF32BE>> &);
-template void elf::reportDiscarded<ELF64LE>(
-    InputSectionBase<ELF64LE> *,
-    const std::unique_ptr<elf::ObjectFile<ELF64LE>> &);
-template void elf::reportDiscarded<ELF64BE>(
-    InputSectionBase<ELF64BE> *,
-    const std::unique_ptr<elf::ObjectFile<ELF64BE>> &);
+template void elf::reportDiscarded<ELF32LE>(InputSectionBase<ELF32LE> *);
+template void elf::reportDiscarded<ELF32BE>(InputSectionBase<ELF32BE> *);
+template void elf::reportDiscarded<ELF64LE>(InputSectionBase<ELF64LE> *);
+template void elf::reportDiscarded<ELF64BE>(InputSectionBase<ELF64BE> *);

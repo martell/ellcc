@@ -52,29 +52,30 @@ static cl::opt<bool> MBDisableStackAdjust(
 //===----------------------------------------------------------------------===//
 
 static void determineFrameLayout(MachineFunction &MF) {
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
 
   // Replace the dummy '0' SPOffset by the negative offsets, as explained on
   // LowerFORMAL_ARGUMENTS. Leaving '0' for while is necessary to avoid
   // the approach done by calculateFrameObjectOffsets to the stack frame.
-  MBlazeFI->adjustLoadArgsFI(MFI);
-  MBlazeFI->adjustStoreVarArgsFI(MFI);
+  MBlazeFI->adjustLoadArgsFI(&MFI);
+  MBlazeFI->adjustStoreVarArgsFI(&MFI);
 
   // Get the number of bytes to allocate from the FrameInfo
-  unsigned FrameSize = MFI->getStackSize();
+  unsigned FrameSize = MFI.getStackSize();
   DEBUG(dbgs() << "Original Frame Size: " << FrameSize << "\n" );
   DEBUG(dbgs() << "Adjusted Frame Size: " << FrameSize << "\n" );
 
   // Get the alignments provided by the target, and the maximum alignment
   // (if any) of the fixed frame objects.
-  // unsigned MaxAlign = MFI->getMaxAlignment();
-  unsigned TargetAlign = MF.getSubtarget().getFrameLowering()->getStackAlignment();
+  // unsigned MaxAlign = MFI.getMaxAlignment();
+  unsigned TargetAlign =
+    MF.getSubtarget().getFrameLowering()->getStackAlignment();
   unsigned AlignMask = TargetAlign - 1;
 
   // Make sure the frame is aligned.
   FrameSize = (FrameSize + AlignMask) & ~AlignMask;
-  MFI->setStackSize(FrameSize);
+  MFI.setStackSize(FrameSize);
   DEBUG(dbgs() << "Aligned Frame Size: " << FrameSize << "\n" );
 }
 
@@ -91,14 +92,14 @@ int MBlazeFrameLowering::getFrameIndexReference(const MachineFunction &MF,
 // pointer register.  This is true if the function has variable sized allocas or
 // if frame pointer elimination is disabled.
 bool MBlazeFrameLowering::hasFP(const MachineFunction &MF) const {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
   return MF.getTarget().Options.DisableFramePointerElim(MF) ||
-         MFI->hasVarSizedObjects();
+         MFI.hasVarSizedObjects();
 }
 
 void MBlazeFrameLowering::emitPrologue(MachineFunction &MF,
                                        MachineBasicBlock &MBB) const {
-  MachineFrameInfo *MFI    = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   const MBlazeInstrInfo &TII =
     *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
@@ -112,10 +113,10 @@ void MBlazeFrameLowering::emitPrologue(MachineFunction &MF,
   determineFrameLayout(MF);
 
   // Get the number of bytes to allocate from the FrameInfo.
-  unsigned StackSize = MFI->getStackSize();
+  unsigned StackSize = MFI.getStackSize();
 
   // No need to allocate space on the stack.
-  if (StackSize == 0 && !MFI->adjustsStack() && !requiresRA) return;
+  if (StackSize == 0 && !MFI.adjustsStack() && !requiresRA) return;
 
   int FPOffset = MBlazeFI->getFPStackOffset();
   int RAOffset = MBlazeFI->getRAStackOffset();
@@ -125,7 +126,7 @@ void MBlazeFrameLowering::emitPrologue(MachineFunction &MF,
       .addReg(MBlaze::R1).addImm(-StackSize);
 
   // swi  R15, R1, stack_loc
-  if (MFI->adjustsStack() || requiresRA) {
+  if (MFI.adjustsStack() || requiresRA) {
     BuildMI(MBB, MBBI, DL, TII.get(MBlaze::SWI))
         .addReg(MBlaze::R15).addReg(MBlaze::R1).addImm(RAOffset);
   }
@@ -144,8 +145,8 @@ void MBlazeFrameLowering::emitPrologue(MachineFunction &MF,
 void MBlazeFrameLowering::emitEpilogue(MachineFunction &MF,
                                    MachineBasicBlock &MBB) const {
   MachineBasicBlock::iterator MBBI = MBB.getLastNonDebugInstr();
-  MachineFrameInfo *MFI            = MF.getFrameInfo();
-  MBlazeFunctionInfo *MBlazeFI     = MF.getInfo<MBlazeFunctionInfo>();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
   const MBlazeInstrInfo &TII =
     *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
 
@@ -169,13 +170,13 @@ void MBlazeFrameLowering::emitEpilogue(MachineFunction &MF,
   }
 
   // lwi R15, R1, stack_loc
-  if (MFI->adjustsStack() || requiresRA) {
+  if (MFI.adjustsStack() || requiresRA) {
     BuildMI(MBB, MBBI, dl, TII.get(MBlaze::LWI), MBlaze::R15)
       .addReg(MBlaze::R1).addImm(RAOffset);
   }
 
   // Get the number of bytes from FrameInfo
-  int StackSize = (int) MFI->getStackSize();
+  int StackSize = (int) MFI.getStackSize();
 
   // addi R1, R1, imm
   if (StackSize) {
@@ -194,7 +195,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
     // If we have a frame pointer, turn the adjcallstackup instruction into a
     // 'addi r1, r1, -<amt>' and the adjcallstackdown instruction into
     // 'addi r1, r1, <amt>'
-    MachineInstr *Old = I;
+    MachineInstr *Old = &*I;
     int Amount = Old->getOperand(0).getImm() + 4;
     if (Amount != 0) {
       // We need to keep the stack aligned properly.  To do this, we round the

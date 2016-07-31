@@ -2136,6 +2136,7 @@ public:
       Opts.cl_khr_fp16 = 1;
       Opts.cl_khr_int64_base_atomics = 1;
       Opts.cl_khr_int64_extended_atomics = 1;
+      Opts.cl_khr_mipmap_image = 1;
       Opts.cl_khr_3d_image_writes = 1;
     }
   }
@@ -5872,16 +5873,9 @@ public:
   }
 
   bool setCPU(const std::string &Name) override {
-    bool CPUKnown = llvm::StringSwitch<bool>(Name)
-                        .Case("generic", true)
-                        .Cases("cortex-a53", "cortex-a57", "cortex-a72",
-                               "cortex-a35", "exynos-m1", true)
-                        .Case("cortex-a73", true)
-                        .Case("cyclone", true)
-                        .Case("kryo", true)
-                        .Case("vulcan", true)
-                        .Default(false);
-    return CPUKnown;
+    return Name == "generic" ||
+           llvm::AArch64::parseCPUArch(Name) !=
+           static_cast<unsigned>(llvm::AArch64::ArchKind::AK_INVALID);
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -6619,8 +6613,9 @@ public:
     CK_NIAGARA2,
     CK_NIAGARA3,
     CK_NIAGARA4,
-    CK_MYRIAD2_1,
-    CK_MYRIAD2_2,
+    CK_MYRIAD2100,
+    CK_MYRIAD2150,
+    CK_MYRIAD2450,
     CK_LEON2,
     CK_LEON2_AT697E,
     CK_LEON2_AT697F,
@@ -6647,8 +6642,9 @@ public:
     case CK_SPARCLITE86X:
     case CK_SPARCLET:
     case CK_TSC701:
-    case CK_MYRIAD2_1:
-    case CK_MYRIAD2_2:
+    case CK_MYRIAD2100:
+    case CK_MYRIAD2150:
+    case CK_MYRIAD2450:
     case CK_LEON2:
     case CK_LEON2_AT697E:
     case CK_LEON2_AT697F:
@@ -6687,9 +6683,14 @@ public:
         .Case("niagara2", CK_NIAGARA2)
         .Case("niagara3", CK_NIAGARA3)
         .Case("niagara4", CK_NIAGARA4)
-        .Case("myriad2", CK_MYRIAD2_1)
-        .Case("myriad2.1", CK_MYRIAD2_1)
-        .Case("myriad2.2", CK_MYRIAD2_2)
+        .Case("ma2100", CK_MYRIAD2100)
+        .Case("ma2150", CK_MYRIAD2150)
+        .Case("ma2450", CK_MYRIAD2450)
+        // FIXME: the myriad2[.n] spellings are obsolete,
+        // but a grace period is needed to allow updating dependent builds.
+        .Case("myriad2", CK_MYRIAD2100)
+        .Case("myriad2.1", CK_MYRIAD2100)
+        .Case("myriad2.2", CK_MYRIAD2150)
         .Case("leon2", CK_LEON2)
         .Case("at697e", CK_LEON2_AT697E)
         .Case("at697f", CK_LEON2_AT697F)
@@ -6798,18 +6799,27 @@ public:
       break;
     }
     if (getTriple().getVendor() == llvm::Triple::Myriad) {
+      std::string MyriadArchValue, Myriad2Value;
+      Builder.defineMacro("__sparc_v8__");
+      Builder.defineMacro("__leon__");
       switch (CPU) {
-      case CK_MYRIAD2_1:
-        Builder.defineMacro("__myriad2", "1");
-        Builder.defineMacro("__myriad2__", "1");
+      case CK_MYRIAD2150:
+        MyriadArchValue = "__ma2150";
+        Myriad2Value = "2";
         break;
-      case CK_MYRIAD2_2:
-        Builder.defineMacro("__myriad2", "2");
-        Builder.defineMacro("__myriad2__", "2");
+      case CK_MYRIAD2450:
+        MyriadArchValue = "__ma2450";
+        Myriad2Value = "2";
         break;
       default:
+        MyriadArchValue = "__ma2100";
+        Myriad2Value = "1";
         break;
       }
+      Builder.defineMacro(MyriadArchValue, "1");
+      Builder.defineMacro(MyriadArchValue+"__", "1");
+      Builder.defineMacro("__myriad2__", Myriad2Value);
+      Builder.defineMacro("__myriad2", Myriad2Value);
     }
   }
 
@@ -8246,6 +8256,7 @@ public:
                                      Triple.getOSName(),
                                      Triple.getEnvironmentName()),
                         Opts) {
+    IsRenderScriptTarget = true;
     LongWidth = LongAlign = 64;
   }
   void getTargetDefines(const LangOptions &Opts,
@@ -8263,7 +8274,9 @@ public:
       : AArch64leTargetInfo(llvm::Triple("aarch64", Triple.getVendorName(),
                                          Triple.getOSName(),
                                          Triple.getEnvironmentName()),
-                            Opts) {}
+                            Opts) {
+    IsRenderScriptTarget = true;
+  }
 
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {

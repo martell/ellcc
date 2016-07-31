@@ -40,6 +40,16 @@ OutputSectionBase<ELFT>::OutputSectionBase(StringRef Name, uint32_t Type,
   Header.sh_addralign = 1;
 }
 
+template <class ELFT> uint32_t OutputSectionBase<ELFT>::getPhdrFlags() const {
+  uintX_t Flags = getFlags();
+  uint32_t Ret = PF_R;
+  if (Flags & SHF_WRITE)
+    Ret |= PF_W;
+  if (Flags & SHF_EXECINSTR)
+    Ret |= PF_X;
+  return Ret;
+}
+
 template <class ELFT>
 void OutputSectionBase<ELFT>::writeHeaderTo(Elf_Shdr *Shdr) {
   *Shdr = Header;
@@ -1438,7 +1448,7 @@ SymbolTableSection<ELFT>::getOutputSection(SymbolBody *Sym) {
     break;
   }
   case SymbolBody::DefinedCommonKind:
-    return Out<ELFT>::Bss;
+    return cast<DefinedCommon<ELFT>>(Sym)->Section->OutSec;
   case SymbolBody::SharedKind:
     if (cast<SharedSymbol<ELFT>>(Sym)->needsCopy())
       return Out<ELFT>::Bss;

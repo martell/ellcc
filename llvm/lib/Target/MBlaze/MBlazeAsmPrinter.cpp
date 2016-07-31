@@ -143,8 +143,8 @@ void MBlazeAsmPrinter::printSavedRegsBitmask() {
   unsigned int CPUBitmask = 0;
 
   // Set the CPU Bitmasks
-  const MachineFrameInfo *MFI = MF->getFrameInfo();
-  const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
+  const MachineFrameInfo &MFI = MF->getFrameInfo();
+  const std::vector<CalleeSavedInfo> &CSI = MFI.getCalleeSavedInfo();
   for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
     unsigned Reg = CSI[i].getReg();
     unsigned RegNum = getMBlazeRegisterNumbering(Reg);
@@ -156,7 +156,7 @@ void MBlazeAsmPrinter::printSavedRegsBitmask() {
   if (TFI->hasFP(*MF))
     CPUBitmask |= (1 <<  getMBlazeRegisterNumbering(RI.getFrameRegister(*MF)));
 
-  if (MFI->adjustsStack())
+  if (MFI.adjustsStack())
     CPUBitmask |= (1 << getMBlazeRegisterNumbering(RI.getRARegister()));
 
   // Print CPUBitmask
@@ -171,7 +171,7 @@ void MBlazeAsmPrinter::emitFrameDirective() {
   const TargetRegisterInfo &RI = *MF->getSubtarget().getRegisterInfo();
   unsigned stkReg = RI.getFrameRegister(*MF);
   unsigned retReg = RI.getRARegister();
-  unsigned stkSze = MF->getFrameInfo()->getStackSize();
+  unsigned stkSze = MF->getFrameInfo().getStackSize();
 
   OutStreamer->EmitRawText("\t.frame\t" +
                           Twine(MBlazeInstPrinter::getRegisterName(stkReg)) +

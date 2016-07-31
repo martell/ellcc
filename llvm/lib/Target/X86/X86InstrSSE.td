@@ -1820,7 +1820,7 @@ def Int_VCVTSD2SSrr: I<0x5A, MRMSrcReg,
                          (int_x86_sse2_cvtsd2ss VR128:$src1, VR128:$src2))],
                        IIC_SSE_CVT_Scalar_RR>, XD, VEX_4V, Requires<[HasAVX]>,
                        Sched<[WriteCvtF2F]>;
-def Int_VCVTSD2SSrm: I<0x5A, MRMSrcReg,
+def Int_VCVTSD2SSrm: I<0x5A, MRMSrcMem,
                        (outs VR128:$dst), (ins VR128:$src1, sdmem:$src2),
                        "vcvtsd2ss\t{$src2, $src1, $dst|$dst, $src1, $src2}",
                        [(set VR128:$dst, (int_x86_sse2_cvtsd2ss
@@ -1836,7 +1836,7 @@ def Int_CVTSD2SSrr: I<0x5A, MRMSrcReg,
                          (int_x86_sse2_cvtsd2ss VR128:$src1, VR128:$src2))],
                        IIC_SSE_CVT_Scalar_RR>, XD, Requires<[UseSSE2]>,
                        Sched<[WriteCvtF2F]>;
-def Int_CVTSD2SSrm: I<0x5A, MRMSrcReg,
+def Int_CVTSD2SSrm: I<0x5A, MRMSrcMem,
                        (outs VR128:$dst), (ins VR128:$src1, sdmem:$src2),
                        "cvtsd2ss\t{$src2, $dst|$dst, $src2}",
                        [(set VR128:$dst, (int_x86_sse2_cvtsd2ss
@@ -3147,7 +3147,7 @@ multiclass scalar_math_f32_patterns<SDNode Op, string OpcPrefix> {
 
   // Repeat everything for AVX, except for the movss + scalar combo...
   // because that one shouldn't occur with AVX codegen?
-  let Predicates = [HasAVX] in {
+  let Predicates = [UseAVX] in {
     // extracted scalar math op with insert via blend
     def : Pat<(v4f32 (X86Blendi (v4f32 VR128:$dst), (v4f32 (scalar_to_vector
           (Op (f32 (extractelt (v4f32 VR128:$dst), (iPTR 0))),
@@ -3203,7 +3203,7 @@ multiclass scalar_math_f64_patterns<SDNode Op, string OpcPrefix> {
   }
 
   // Repeat everything for AVX.
-  let Predicates = [HasAVX] in {
+  let Predicates = [UseAVX] in {
     // extracted scalar math op with insert via movsd
     def : Pat<(v2f64 (X86Movsd (v2f64 VR128:$dst), (v2f64 (scalar_to_vector
           (Op (f64 (extractelt (v2f64 VR128:$dst), (iPTR 0))),
@@ -8584,9 +8584,21 @@ let Predicates = [HasAVX2, NoVLX] in {
   defm VPSRLVD : avx2_var_shift<0x45, "vpsrlvd", srl, v4i32, v8i32>;
   defm VPSRLVQ : avx2_var_shift<0x45, "vpsrlvq", srl, v2i64, v4i64>, VEX_W;
   defm VPSRAVD : avx2_var_shift<0x46, "vpsravd", sra, v4i32, v8i32>;
-  let isCodeGenOnly = 1 in
-    defm VPSRAVD_Int : avx2_var_shift<0x46, "vpsravd", X86vsrav, v4i32, v8i32>;
+
+  def : Pat<(v4i32 (X86vsrav VR128:$src1, VR128:$src2)),
+            (VPSRAVDrr VR128:$src1, VR128:$src2)>;
+  def : Pat<(v4i32 (X86vsrav VR128:$src1,
+                    (bitconvert (loadv2i64 addr:$src2)))),
+            (VPSRAVDrm VR128:$src1, addr:$src2)>;
+  def : Pat<(v8i32 (X86vsrav VR256:$src1, VR256:$src2)),
+            (VPSRAVDYrr VR256:$src1, VR256:$src2)>;
+  def : Pat<(v8i32 (X86vsrav VR256:$src1,
+                    (bitconvert (loadv4i64 addr:$src2)))),
+            (VPSRAVDYrm VR256:$src1, addr:$src2)>;
 }
+
+
+
 //===----------------------------------------------------------------------===//
 // VGATHER - GATHER Operations
 multiclass avx2_gather<bits<8> opc, string OpcodeStr, RegisterClass RC256,

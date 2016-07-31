@@ -1752,13 +1752,17 @@ private:
   /// \brief The asm label, if specified.
   Expr *AsmLabel;
 
+#ifndef _MSC_VER
   union {
+#endif
     /// InlineParams - This is a local array used for the first function decl
     /// chunk to avoid going to the heap for the common case when we have one
     /// function chunk in the declarator.
     DeclaratorChunk::ParamInfo InlineParams[16];
     DecompositionDeclarator::Binding InlineBindings[16];
+#ifndef _MSC_VER
   };
+#endif
 
   /// \brief If this is the second or subsequent declarator in this declaration,
   /// the location of the comma before this declarator.
@@ -2395,7 +2399,9 @@ public:
     VS_None = 0,
     VS_Override = 1,
     VS_Final = 2,
-    VS_Sealed = 4
+    VS_Sealed = 4,
+    // Represents the __final keyword, which is legal for gcc in pre-C++11 mode.
+    VS_GNU_Final = 8
   };
 
   VirtSpecifiers() : Specifiers(0), LastSpecifier(VS_None) { }
@@ -2408,7 +2414,7 @@ public:
   bool isOverrideSpecified() const { return Specifiers & VS_Override; }
   SourceLocation getOverrideLoc() const { return VS_overrideLoc; }
 
-  bool isFinalSpecified() const { return Specifiers & (VS_Final | VS_Sealed); }
+  bool isFinalSpecified() const { return Specifiers & (VS_Final | VS_Sealed | VS_GNU_Final); }
   bool isFinalSpelledSealed() const { return Specifiers & VS_Sealed; }
   SourceLocation getFinalLoc() const { return VS_finalLoc; }
 

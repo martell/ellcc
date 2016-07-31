@@ -162,7 +162,8 @@ void ELFMBlazeAsmBackend::applyFixup(const MCFixup &Fixup, char *Data,
 MCAsmBackend *llvm::createMBlazeAsmBackend(const Target &T,
                                            const MCRegisterInfo &MRI,
                                            const Triple &TT,
-                                           StringRef CPU) {
+                                           StringRef CPU,
+                                           const MCTargetOptions &Options) {
   Triple TheTriple(TT);
 
   if (TheTriple.isOSDarwin())

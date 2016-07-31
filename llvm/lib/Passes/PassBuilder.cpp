@@ -102,6 +102,7 @@
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/LowerAtomic.h"
 #include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
+#include "llvm/Transforms/Scalar/LowerGuardIntrinsic.h"
 #include "llvm/Transforms/Scalar/MemCpyOptimizer.h"
 #include "llvm/Transforms/Scalar/MergedLoadStoreMotion.h"
 #include "llvm/Transforms/Scalar/NaryReassociate.h"
@@ -119,6 +120,7 @@
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Utils/MemorySSA.h"
 #include "llvm/Transforms/Utils/SimplifyInstructions.h"
+#include "llvm/Transforms/Utils/SymbolRewriter.h"
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
@@ -334,13 +336,13 @@ bool PassBuilder::parseModulePassName(ModulePassManager &MPM, StringRef Name,
       return false;
     assert(Matches.size() == 3 && "Must capture two matched strings!");
 
-    auto L = StringSwitch<OptimizationLevel>(Matches[2])
-                 .Case("O0", O0)
-                 .Case("O1", O1)
-                 .Case("O2", O2)
-                 .Case("O3", O3)
-                 .Case("Os", Os)
-                 .Case("Oz", Oz);
+    OptimizationLevel L = StringSwitch<OptimizationLevel>(Matches[2])
+        .Case("O0", O0)
+        .Case("O1", O1)
+        .Case("O2", O2)
+        .Case("O3", O3)
+        .Case("Os", Os)
+        .Case("Oz", Oz);
 
     if (Matches[1] == "default") {
       addPerModuleDefaultPipeline(MPM, L, DebugLogging);

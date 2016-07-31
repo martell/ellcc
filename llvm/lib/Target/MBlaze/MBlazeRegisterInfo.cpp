@@ -91,23 +91,23 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                     unsigned FIOperandNum, RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   unsigned OFIOperandNum = FIOperandNum == 2 ? 1 : 2;
 
   DEBUG(dbgs() << "\nFunction : " << MF.getName() << "\n";
         dbgs() << "<--------->\n" << MI);
 
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
-  int stackSize  = MFI->getStackSize();
-  int spOffset   = MFI->getObjectOffset(FrameIndex);
+  int stackSize  = MFI.getStackSize();
+  int spOffset   = MFI.getObjectOffset(FrameIndex);
 
   DEBUG(MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
         dbgs() << "FrameIndex : " << FrameIndex << "\n"
                << "spOffset   : " << spOffset << "\n"
                << "stackSize  : " << stackSize << "\n"
-               << "isFixed    : " << MFI->isFixedObjectIndex(FrameIndex) << "\n"
+               << "isFixed    : " << MFI.isFixedObjectIndex(FrameIndex) << "\n"
                << "isLiveIn   : " << MBlazeFI->isLiveIn(FrameIndex) << "\n"
-               << "isSpill    : " << MFI->isSpillSlotObjectIndex(FrameIndex)
+               << "isSpill    : " << MFI.isSpillSlotObjectIndex(FrameIndex)
                << "\n" );
 
   // as explained on LowerFormalArguments, detect negative offsets
@@ -132,10 +132,10 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 void MBlazeRegisterInfo::
 processFunctionBeforeFrameFinalized(MachineFunction &MF, RegScavenger *) const {
   // Set the stack offset where GP must be saved/loaded from.
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
   if (MBlazeFI->needGPSaveRestore())
-    MFI->setObjectOffset(MBlazeFI->getGPFI(), MBlazeFI->getGPStackOffset());
+    MFI.setObjectOffset(MBlazeFI->getGPFI(), MBlazeFI->getGPStackOffset());
 }
 
 unsigned MBlazeRegisterInfo::getFrameRegister(const MachineFunction &MF) const {

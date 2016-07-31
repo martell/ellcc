@@ -702,7 +702,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   bool needsRegArgSlots = isVarArg;
 
   MachineFunction &MF = DAG.getMachineFunction();
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
 
   // Analyze operands of the call, assigning locations to each operand.
@@ -761,7 +761,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
       // Create the frame index object for this incoming parameter
       unsigned ArgSize = VA.getValVT().getSizeInBits()/8;
       unsigned StackLoc = VA.getLocMemOffset() + 4;
-      int FI = MFI->CreateFixedObject(ArgSize, StackLoc, true);
+      int FI = MFI.CreateFixedObject(ArgSize, StackLoc, true);
 
       SDValue PtrOff = DAG.getFrameIndex(FI,getPointerTy(DAG.getDataLayout()));
 
@@ -775,7 +775,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // If we need to reserve stack space for the arguments passed via registers
   // then create a fixed stack object at the beginning of the stack.
   if (needsRegArgSlots && TFI.hasReservedCallFrame(MF))
-    MFI->CreateFixedObject(28,0,true);
+    MFI.CreateFixedObject(28,0,true);
 
   // Transform all store nodes into one single node because all store
   // nodes are independent of each other.
@@ -875,7 +875,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
                      const SDLoc &dl, SelectionDAG &DAG,
                      SmallVectorImpl<SDValue> &InVals) const {
   MachineFunction &MF = DAG.getMachineFunction();
-  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
 
   unsigned StackReg = MF.getSubtarget().getRegisterInfo()->getFrameRegister(MF);
@@ -950,7 +950,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       // Arguments are always 32-bit.
       unsigned ArgSize = VA.getLocVT().getSizeInBits()/8;
       unsigned StackLoc = VA.getLocMemOffset() + 4;
-      int FI = MFI->CreateFixedObject(ArgSize, 0, true);
+      int FI = MFI.CreateFixedObject(ArgSize, 0, true);
       MBlazeFI->recordLoadArgsFI(FI, -StackLoc);
       MBlazeFI->recordLiveIn(FI);
 
@@ -982,7 +982,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       unsigned LiveReg = MF.addLiveIn(Reg, RC);
       SDValue ArgValue = DAG.getCopyFromReg(Chain, dl, LiveReg, MVT::i32);
 
-      int FI = MFI->CreateFixedObject(4, 0, true);
+      int FI = MFI.CreateFixedObject(4, 0, true);
       MBlazeFI->recordStoreVarArgsFI(FI, -(StackLoc*4));
       SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,

@@ -56,89 +56,104 @@ MachineBasicBlock::iterator MachineIRBuilder::getInsertPt() {
 //------------------------------------------------------------------------------
 // Build instruction variants.
 //------------------------------------------------------------------------------
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode, LLT Ty) {
-  MachineInstr *NewMI = BuildMI(getMF(), DL, getTII().get(Opcode));
-  if (Ty.isValid()) {
+
+MachineInstrBuilder MachineIRBuilder::buildInstr(unsigned Opcode,
+                                                  ArrayRef<LLT> Tys) {
+  MachineInstrBuilder MIB = BuildMI(getMF(), DL, getTII().get(Opcode));
+  if (Tys.size() > 0) {
     assert(isPreISelGenericOpcode(Opcode) &&
            "Only generic instruction can have a type");
-    NewMI->setType(Ty);
+    for (unsigned i = 0; i < Tys.size(); ++i)
+      MIB->setType(Tys[i], i);
   } else
     assert(!isPreISelGenericOpcode(Opcode) &&
            "Generic instruction must have a type");
-  getMBB().insert(getInsertPt(), NewMI);
-  return NewMI;
+  getMBB().insert(getInsertPt(), MIB);
+  return MIB;
 }
 
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode, unsigned Res,
-                                           unsigned Op0, unsigned Op1) {
-  return buildInstr(Opcode, LLT{}, Res, Op0, Op1);
+MachineInstrBuilder MachineIRBuilder::buildFrameIndex(LLT Ty, unsigned Res,
+                                                       int Idx) {
+  return buildInstr(TargetOpcode::G_FRAME_INDEX, Ty)
+      .addDef(Res)
+      .addFrameIndex(Idx);
 }
 
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode, LLT Ty,
-                                           unsigned Res, unsigned Op0,
-                                           unsigned Op1) {
-  MachineInstr *NewMI = buildInstr(Opcode, Ty);
-  MachineInstrBuilder(getMF(), NewMI)
-      .addReg(Res, RegState::Define)
-      .addReg(Op0)
-      .addReg(Op1);
-  return NewMI;
+MachineInstrBuilder MachineIRBuilder::buildAdd(LLT Ty, unsigned Res,
+                                                unsigned Op0, unsigned Op1) {
+  return buildInstr(TargetOpcode::G_ADD, Ty)
+      .addDef(Res)
+      .addUse(Op0)
+      .addUse(Op1);
 }
 
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode, unsigned Res,
-                                           unsigned Op0) {
-  MachineInstr *NewMI = buildInstr(Opcode, LLT{});
-  MachineInstrBuilder(getMF(), NewMI).addReg(Res, RegState::Define).addReg(Op0);
-  return NewMI;
+MachineInstrBuilder MachineIRBuilder::buildBr(MachineBasicBlock &Dest) {
+  return buildInstr(TargetOpcode::G_BR, LLT::unsized()).addMBB(&Dest);
 }
 
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode) {
-  return buildInstr(Opcode, LLT{});
+MachineInstrBuilder MachineIRBuilder::buildCopy(unsigned Res, unsigned Op) {
+  return buildInstr(TargetOpcode::COPY).addDef(Res).addUse(Op);
 }
 
-MachineInstr *MachineIRBuilder::buildInstr(unsigned Opcode, LLT Ty,
-                                           MachineBasicBlock &BB) {
-  MachineInstr *NewMI = buildInstr(Opcode, Ty);
-  MachineInstrBuilder(getMF(), NewMI).addMBB(&BB);
-  return NewMI;
+MachineInstrBuilder MachineIRBuilder::buildBrCond(LLT Ty, unsigned Tst,
+                                                  MachineBasicBlock &Dest) {
+  return buildInstr(TargetOpcode::G_BRCOND, Ty).addUse(Tst).addMBB(&Dest);
 }
 
-MachineInstr *MachineIRBuilder::buildFrameIndex(LLT Ty, unsigned Res, int Idx) {
-  MachineInstr *NewMI = buildInstr(TargetOpcode::G_FRAME_INDEX, Ty);
-  auto MIB = MachineInstrBuilder(getMF(), NewMI);
-  MIB.addReg(Res, RegState::Define);
-  MIB.addImm(Idx);
-  return NewMI;
+
+ MachineInstrBuilder MachineIRBuilder::buildLoad(LLT VTy, LLT PTy, unsigned Res,
+                                                 unsigned Addr,
+                                                 MachineMemOperand &MMO) {
+  return buildInstr(TargetOpcode::G_LOAD, {VTy, PTy})
+      .addDef(Res)
+      .addUse(Addr)
+      .addMemOperand(&MMO);
 }
 
-MachineInstr *MachineIRBuilder::buildAdd(LLT Ty, unsigned Res, unsigned Op0,
-                                         unsigned Op1) {
-  return buildInstr(TargetOpcode::G_ADD, Ty, Res, Op0, Op1);
+MachineInstrBuilder MachineIRBuilder::buildStore(LLT VTy, LLT PTy,
+                                                  unsigned Val, unsigned Addr,
+                                                  MachineMemOperand &MMO) {
+  return buildInstr(TargetOpcode::G_STORE, {VTy, PTy})
+      .addUse(Val)
+      .addUse(Addr)
+      .addMemOperand(&MMO);
 }
 
-MachineInstr *MachineIRBuilder::buildExtract(LLT Ty, ArrayRef<unsigned> Results,
-                                             unsigned Src,
-                                             ArrayRef<unsigned> Indexes) {
+MachineInstrBuilder
+MachineIRBuilder::buildExtract(LLT Ty, ArrayRef<unsigned> Results, unsigned Src,
+                               ArrayRef<unsigned> Indexes) {
   assert(Results.size() == Indexes.size() && "inconsistent number of regs");
 
-  MachineInstr *NewMI = buildInstr(TargetOpcode::G_EXTRACT, Ty);
-  auto MIB = MachineInstrBuilder(getMF(), NewMI);
+  MachineInstrBuilder MIB = buildInstr(TargetOpcode::G_EXTRACT, Ty);
   for (auto Res : Results)
-    MIB.addReg(Res, RegState::Define);
+    MIB.addDef(Res);
 
-  MIB.addReg(Src);
+  MIB.addUse(Src);
 
   for (auto Idx : Indexes)
     MIB.addImm(Idx);
-  return NewMI;
+  return MIB;
 }
 
-MachineInstr *MachineIRBuilder::buildSequence(LLT Ty, unsigned Res,
+MachineInstrBuilder MachineIRBuilder::buildSequence(LLT Ty, unsigned Res,
                                               ArrayRef<unsigned> Ops) {
-  MachineInstr *NewMI = buildInstr(TargetOpcode::G_SEQUENCE, Ty);
-  auto MIB = MachineInstrBuilder(getMF(), NewMI);
-  MIB.addReg(Res, RegState::Define);
+  MachineInstrBuilder MIB = buildInstr(TargetOpcode::G_SEQUENCE, Ty);
+  MIB.addDef(Res);
   for (auto Op : Ops)
-    MIB.addReg(Op);
-  return NewMI;
+    MIB.addUse(Op);
+  return MIB;
+}
+
+MachineInstrBuilder MachineIRBuilder::buildIntrinsic(ArrayRef<LLT> Tys,
+                                                     Intrinsic::ID ID,
+                                                     unsigned Res,
+                                                     bool HasSideEffects) {
+  auto MIB =
+      buildInstr(HasSideEffects ? TargetOpcode::G_INTRINSIC_W_SIDE_EFFECTS
+                                : TargetOpcode::G_INTRINSIC,
+                 Tys);
+  if (Res)
+    MIB.addDef(Res);
+  MIB.addIntrinsicID(ID);
+  return MIB;
 }
