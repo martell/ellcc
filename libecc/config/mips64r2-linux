@@ -20,7 +20,7 @@ assembler:
 linker:
   exe: $E/ecc-ld$X
   options:
-    - -m elf64ebmip
+    - -m elf64btsmip
     - --build-id
     - --eh-frame-hdr
   output:

@@ -3,6 +3,7 @@ arm-elf
 armeb-elf
 mips-elf
 mipsel-elf
+mips64-elf
 nios2-elf
 ppc-elf
 ppc64-elf

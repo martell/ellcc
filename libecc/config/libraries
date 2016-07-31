@@ -1,5 +1,4 @@
 arm64v8-linux
-arm32v6-linux
 arm32v6sf-linux
 arm32v7-linux
 arm32v7sf-linux
@@ -10,6 +9,7 @@ mips32r2el-linux
 mips32r2elsf-linux
 mips32r2-linux
 mips32r2sf-linux
+mips64r2-linux
 ppc32-linux
 x86_32-linux
 x86_64-linux

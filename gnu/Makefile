@@ -16,6 +16,7 @@ CROSSSUBDIRS := \
        gnu-build$(TARGETDIR)/binutils/i386-elf \
        gnu-build$(TARGETDIR)/binutils/microblaze-elf \
        gnu-build$(TARGETDIR)/binutils/mips-elf \
+       gnu-build$(TARGETDIR)/binutils/mips64-elf \
        gnu-build$(TARGETDIR)/binutils/nios2-elf \
        gnu-build$(TARGETDIR)/binutils/ppc-elf \
        gnu-build$(TARGETDIR)/binutils/ppc64-elf \

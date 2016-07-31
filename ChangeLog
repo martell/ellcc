@@ -1,5 +1,6 @@
 current SVN:
 
+* Added support for 64 bit MIPS.
 * Update to musl 1.1.15.
 * Update to LLVM r277269.
 * Update to LLVM r276507.
