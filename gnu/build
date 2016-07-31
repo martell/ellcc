@@ -72,7 +72,8 @@ if [ `uname` = "Linux" ] ; then
     qemu_target_list="$qemu_target_list i386-linux-user \
     x86_64-linux-user arm-linux-user armeb-linux-user aarch64-linux-user \
     microblaze-linux-user mips-linux-user mipsel-linux-user mips64-linux-user \
-    ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
+    ppc-linux-user ppc64-linux-user ppc64le-linux-user ppc64abi32-linux-user 
+    sparc-linux-user"
 fi
 echo Configuring package qemu for $targets
 # haslibs is no until we can build qemu statically.

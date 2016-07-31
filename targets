@@ -7,6 +7,7 @@ mips64-elf
 nios2-elf
 ppc-elf
 ppc64-elf
+ppc64le-elf
 microblaze-elf
 i386-elf
 sparc-elf

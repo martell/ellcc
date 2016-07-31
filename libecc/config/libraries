@@ -11,6 +11,7 @@ mips32r2-linux
 mips32r2sf-linux
 mips64r2-linux
 ppc32-linux
+ppc64el-linux
 x86_32-linux
 x86_64-linux
 arm32v7sf-elk
