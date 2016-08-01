@@ -4,7 +4,7 @@ compiler:
   cxx_include_dirs:
     - $R/include/c++
   c_include_dirs:
-    - $R/include/ppc
+    - $R/include/ppc64
     - $R/include
   options:
     - -target ppc64le-ellcc-linux

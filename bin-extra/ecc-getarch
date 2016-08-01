@@ -2,7 +2,6 @@
 # This script returns the arch for a tuple.
 #
 case "$1" in
-# Catch these early to simplify matching for 32-bit archs
 arm64*|aarch64*) ARCH=aarch64 ;;
 arm*eb*) ARCH=armeb ;;
 arm*) ARCH=arm ;;
@@ -15,7 +14,8 @@ mips64*) ARCH=mips64 ;;
 mipsel*) ARCH=mipsel ;;
 mips*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
-ppc64*|powerpc64*) ARCH=ppc64 ;;
+ppc64el*) ARCH=ppc64el ;;
+ppc64*) ARCH=ppc64 ;;
 ppc*|powerpc*) ARCH=ppc ;;
 sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
 *) echo unknown && exit 1 ;;

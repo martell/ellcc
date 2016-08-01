@@ -88,3 +88,7 @@ make -C src/qemu || exit 1
 # Finally, install into the target specific bin dir.
 mkdir -p $bindir
 make TARGETDIR=$builddir BINDIR=$bindir install || exit 1
+
+# Special case for name consitancy.
+cd $bindir
+ln -sf qemu-ppc64le qemu-ppc64el

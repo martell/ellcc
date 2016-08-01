@@ -12,9 +12,11 @@ cortex*) ARCH=arm ;;
 x86_32*|i?86*) ARCH=i386 ;;
 x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
 x86_64*) ARCH=x86_64 ;;
-mips*|mipsel*) ARCH=mips ;;
+mips64*) ARCH=mips64 ;;
+mips*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
-ppc*|powerpc*) ARCH=ppc ;;
+ppc64*) ARCH=ppc64 ;;
+ppc*) ARCH=ppc ;;
 sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
 *) echo unknown && exit 1 ;;
 esac

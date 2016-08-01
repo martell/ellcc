@@ -4,7 +4,7 @@ compiler:
   cxx_include_dirs:
     - $R/include/c++
   c_include_dirs:
-    - $R/include/mips
+    - $R/include/mips64
     - $R/include
   options:
     - -target mips64-ellcc-linux
