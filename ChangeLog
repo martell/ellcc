@@ -1,5 +1,6 @@
 current SVN:
 
+* Update ithe mbedtls library to version 2.2.1.
 * Added support for 64 bit LE PowerPC 64.
 * Added support for 64 bit MIPS.
 * Update to musl 1.1.15.
