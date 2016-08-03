@@ -389,6 +389,9 @@ struct remote_state
 
   int last_sent_step;
 
+  /* The execution direction of the last resume we got.  */
+  enum exec_direction_kind last_resume_exec_dir;
+
   char *finished_object;
   char *finished_annex;
   ULONGEST finished_offset;
@@ -477,6 +480,7 @@ new_remote_state (void)
   result->buf = (char *) xmalloc (result->buf_size);
   result->remote_traceframe_number = -1;
   result->last_sent_signal = GDB_SIGNAL_0;
+  result->last_resume_exec_dir = EXEC_FORWARD;
   result->fs_pid = -1;
 
   return result;
@@ -4017,6 +4021,25 @@ remote_start_remote (int from_tty, struct target_ops *target, int extended_p)
   if (packet_support (PACKET_QAllow) != PACKET_DISABLE)
     remote_set_permissions (target);
 
+  /* gdbserver < 7.7 (before its fix from 2013-12-11) did reply to any
+     unknown 'v' packet with string "OK".  "OK" gets interpreted by GDB
+     as a reply to known packet.  For packet "vFile:setfs:" it is an
+     invalid reply and GDB would return error in
+     remote_hostio_set_filesystem, making remote files access impossible.
+     Disable "vFile:setfs:" in such case.  Do not disable other 'v' packets as
+     other "vFile" packets get correctly detected even on gdbserver < 7.7.  */
+  {
+    const char v_mustreplyempty[] = "vMustReplyEmpty";
+
+    putpkt (v_mustreplyempty);
+    getpkt (&rs->buf, &rs->buf_size, 0);
+    if (strcmp (rs->buf, "OK") == 0)
+      remote_protocol_packets[PACKET_vFile_setfs].support = PACKET_DISABLE;
+    else if (strcmp (rs->buf, "") != 0)
+      error (_("Remote replied unexpectedly to '%s': %s"), v_mustreplyempty,
+	     rs->buf);
+  }
+
   /* Next, we possibly activate noack mode.
 
      If the QStartNoAckMode packet configuration is set to AUTO,
@@ -4928,6 +4951,8 @@ remote_open_1 (const char *name, int from_tty,
   rs->continue_thread = not_sent_ptid;
   rs->remote_traceframe_number = -1;
 
+  rs->last_resume_exec_dir = EXEC_FORWARD;
+
   /* Probe for ability to use "ThreadInfo" query, as required.  */
   rs->use_threadinfo_query = 1;
   rs->use_threadextra_query = 1;
@@ -5562,6 +5587,8 @@ remote_resume (struct target_ops *ops,
 
   rs->last_sent_signal = siggnal;
   rs->last_sent_step = step;
+
+  rs->last_resume_exec_dir = execution_direction;
 
   /* The vCont packet doesn't need to specify threads via Hc.  */
   /* No reverse support (yet) for vCont.  */
@@ -13018,6 +13045,17 @@ remote_can_do_single_step (struct target_ops *ops)
     return 0;
 }
 
+/* Implementation of the to_execution_direction method for the remote
+   target.  */
+
+static enum exec_direction_kind
+remote_execution_direction (struct target_ops *self)
+{
+  struct remote_state *rs = get_remote_state ();
+
+  return rs->last_resume_exec_dir;
+}
+
 static void
 init_remote_ops (void)
 {
@@ -13163,6 +13201,7 @@ Specify the serial device it is connected to\n\
   remote_ops.to_remove_vfork_catchpoint = remote_remove_vfork_catchpoint;
   remote_ops.to_insert_exec_catchpoint = remote_insert_exec_catchpoint;
   remote_ops.to_remove_exec_catchpoint = remote_remove_exec_catchpoint;
+  remote_ops.to_execution_direction = remote_execution_direction;
 }
 
 /* Set up the extended remote vector by making a copy of the standard

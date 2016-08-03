@@ -1,3 +1,51 @@
+2016-05-25  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19828
+	* gdb.threads/clone-attach-detach.c: New file.
+	* gdb.threads/clone-attach-detach.exp: New file.
+	* gdb.threads/attach-many-short-lived-threads.exp: Skip.
+
+2016-05-18  Simon Marchi  <simon.marchi@ericsson.com>
+
+	* gdb.mi/mi-threads-interrupt.c: New file.
+	* gdb.mi/mi-threads-interrupt.exp: New file.
+
+2016-05-17  Simon Marchi  <simon.marchi@ericsson.com>
+
+	PR gdb/18077
+	* gdb.mi/mi-async-run.exp: New file.
+	* gdb.mi/mi-async-run.c: New file.
+
+2016-03-31  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19858
+	* gdb.base/jit-main.c: Include unistd.h.
+	(ATTACH): Define to 0 if not already defined.
+	(wait_for_gdb, mypid): New globals.
+	(WAIT_FOR_GDB): New macro.
+	(MAIN): Set an alarm.  Store the process's pid.  Wait for GDB at
+	some breakpoint locations.
+	* gdb.base/jit.exp (clean_reattach, continue_to_test_location):
+	New procedures.
+	(one_jit_test): Add REATTACH parameter, and handle it.  Use
+	continue_to_test_location.
+	(top level): Test attach, and adjusts calls to one_jit_test.
+
+2016-03-31  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19858
+	* gdb.base/jit.exp (compile_jit_test): Add intro comment.  Add
+	BINSUFFIX parameter, and handle it.
+	(top level): Adjust calls compile_jit_test.
+
+2016-03-17  Markus Metzger  <markus.t.metzger@intel.com>
+
+	PR gdb/19829
+	* gdb.btrace/tailcall-only.exp: New.
+	* gdb.btrace/tailcall-only.c: New.
+	* gdb.btrace/x86_64-tailcall-only.S: New.
+	* gdb.btrace/i686-tailcall-only.S: New.
+
 2016-02-16  Don Breazeal  <donb@codesourcery.com>
 
 	PR remote/19496

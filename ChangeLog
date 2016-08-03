@@ -1,7 +1,10 @@
 current SVN:
 
+* Update to GDB 7.11.1.
+* Update the nghttp2 library to version 1.13.0.
+* Update the expat library to version 2.2.0.
 * Update the curl library to version 7.50.0.
-* Update ithe mbedtls library to version 2.2.1.
+* Update ithe mbedtls library to version 2.3.0.
 * Added support for 64 bit LE PowerPC 64.
 * Added support for 64 bit MIPS.
 * Update to musl 1.1.15.

@@ -1,3 +1,162 @@
+2016-06-01  Joel Brobecker  <brobecker@adacore.com>
+
+	* version.in: Set GDB version number to 7.11.1.
+
+2016-05-25  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19828
+	* linux-nat.c (attach_proc_task_lwp_callback): Mark the lwp
+	resumed, and add the thread to GDB's thread list.
+
+2016-05-25  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19828
+	* linux-nat.c (get_pending_status): If the thread reported the
+	event to the core and it's pending, use the pending status signal
+	number.
+
+2016-05-17  Simon Marchi  <simon.marchi@ericsson.com>
+
+	PR gdb/20045
+	* mi/mi-main.c (mi_on_resume): Call target_can_async_p instead
+	of target_is_async_p.
+
+2016-05-17  Simon Marchi  <simon.marchi@ericsson.com>
+
+	PR gdb/18077
+	* mi/mi-main.c (run_one_inferior): Use run target to determine
+	whether to run async or not.
+	(mi_cmd_exec_run): Likewise.
+
+2016-05-16  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/20039
+	* mi/mi-interp.c (mi_new_thread): Put
+	target_terminal_ours_for_output in effect while outputting.
+	(mi_thread_exit): Use target_terminal_ours_for_output instead of
+	target_terminal_ours.
+	(mi_record_changed, mi_inferior_added, mi_inferior_appeared)
+	(mi_inferior_exit, mi_inferior_removed, mi_traceframe_changed)
+	(mi_tsv_created, mi_tsv_deleted, mi_tsv_modified)
+	(mi_breakpoint_created, mi_breakpoint_deleted)
+	(mi_breakpoint_modified, mi_solib_loaded, mi_solib_unloaded)
+	(mi_command_param_changed, mi_memory_changed)
+	(report_initial_inferior): Use target_terminal_ours_for_output
+	instead of target_terminal_ours.  Restore terminal settings.
+	* mi/mi-main.c (mi_execute_command): Use
+	target_terminal_ours_for_output instead of target_terminal_ours.
+	Restore terminal settings.
+
+2016-05-03  Pedro Alves <palves@redhat.com>
+
+	PR python/20037
+	* python/python.c (_initialize_python) [IS_PY3K]: xstrdup/xfree
+	oldloc.
+
+2016-05-03  Pedro Alves <palves@redhat.com>
+
+	* python/python.c (_initialize_python) [IS_PY3K]: Remove dead
+	code.
+
+2016-05-03  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* symfile.c (find_pc_overlay): Add braces to avoid -Wparentheses
+	warning.
+	(find_pc_mapped_section): Likewise.
+	(list_overlays_command): Likewise.
+
+2016-04-27  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* remote.c (remote_start_remote): Detect PACKET_vFile_setfs.support.
+
+2016-04-15  Pedro Alves  <palves@redhat.com>
+
+	* nat/linux-ptrace.h [__mips__] (GDB_ARCH_IS_TRAP_BRKPT): Also
+	accept TRAP_BRKPT.
+	 [__mips__] (GDB_ARCH_IS_TRAP_HWBKPT): Also accept TRAP_HWBKPT.
+
+2016-04-15  Pedro Alves  <palves@redhat.com>
+
+	* linux-nat.c (save_sigtrap) Delete.
+	(stop_wait_callback): Call save_stop_reason instead of
+	save_sigtrap.
+	(check_stopped_by_breakpoint): Rename to ...
+	(save_stop_reason): ... this.  Bits of save_sigtrap folded here.
+	Use GDB_ARCH_IS_TRAP_HWBKPT and handle ambiguous
+	GDB_ARCH_IS_TRAP_BRKPT / GDB_ARCH_IS_TRAP_HWBKPT.  Factor out
+	common code between the USE_SIGTRAP_SIGINFO and
+	!USE_SIGTRAP_SIGINFO blocks.
+	(linux_nat_filter_event): Call save_stop_reason instead of
+	save_sigtrap.
+	* nat/linux-ptrace.h: Check for both SI_KERNEL and TRAP_BRKPT
+	si_code for MIPS.
+	* nat/linux-ptrace.h: Fix "TRAP_HWBPT" typo in x86 table.  Add
+	comments on MIPS behavior.
+	(GDB_ARCH_IS_TRAP_HWBKPT): Define for all archs.
+
+2016-04-13  Pedro Alves  <palves@redhat.com>
+
+	PR remote/19840
+	* remote.c (struct remote_state) <last_resume_exec_dir>: New
+	field.
+	(new_remote_state): Default last_resume_exec_dir to EXEC_FORWARD.
+	(remote_open_1): Reset last_resume_exec_dir to EXEC_FORWARD.
+	(remote_resume): Store the last execution direction.
+	(remote_execution_direction): New function.
+	(init_remote_ops): Install it as to_execution_direction target_ops
+	method.
+
+2016-03-31  Yichao Yu  <yyc1992@gmail.com>
+
+	PR gdb/19858
+	* jit.c (jit_breakpoint_re_set_internal): Return 0 if we already
+	got the breakpoint at the right address.
+	(jit_inferior_created): New function.
+	(_initialize_jit): Install jit_inferior_created as
+	inferior_created observer.
+
+2016-03-17  Markus Metzger  <markus.t.metzger@intel.com>
+
+	PR gdb/19829
+	* frame.h (skip_tailcall_frames): New.
+	* infcmd.c (finish_command): Call skip_tailcall_frames.
+	* frame.c (skip_artificial_frames): Return NULL if only artificial
+	frames are found.  Update comment.
+	(frame_pop): Call skip_tailcall_frames.
+	(frame_unwind_caller_id): Handle NULL return.
+	(frame_unwind_caller_pc, frame_unwind_caller_arch): Assert that
+	skip_artificial_frames does not return NULL.
+	(frame_pop): Add an error if only tailcall frames are found.
+	* infcmd.c (finish_command): Move skip_tailcall_frames call into
+	forward-execution case.  Add an error if only tailcall frames are found.
+	* stack.c (frame_info): Check frame_unwind_caller_id.
+
+2016-03-15  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19676
+	* linux-thread-db.c (try_thread_db_load_1): Leave
+	info->td_ta_thr_iter_p NULL iff debugging a live process and we
+	have /proc access.
+	(find_new_threads_once): Assert that we have a non-NULL
+	info->td_ta_thr_iter_p instead of checking whether the target has
+	execution.
+
+2016-03-15  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/19676
+	* infrun.c (displaced_step_prepare): Also disable displaced
+	stepping on NOT_SUPPORTED_ERROR.
+	* linux-tdep.c (linux_displaced_step_location): If reading auxv
+	fails, throw NOT_SUPPORTED_ERROR instead of generic error.
+
+2016-02-24  Joel Brobecker  <brobecker@adacore.com>
+
+	* version.in: Set GDB version number to 7.11.0.DATE-git.
+
+2016-02-24  Joel Brobecker  <brobecker@adacore.com>
+
+	GDB 7.11 released.
+
 2016-02-24  Joel Brobecker  <brobecker@adacore.com>
 
 	* version.in: Set GDB version number to 7.11.
