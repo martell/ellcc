@@ -109,6 +109,8 @@ if(ENABLE_APP)
     shrpx_worker_process.cc
     shrpx_signal.cc
     shrpx_router.cc
+    shrpx_api_downstream_connection.cc
+    shrpx_health_monitor_downstream_connection.cc
   )
   if(HAVE_SPDYLAY)
     list(APPEND NGHTTPX_SRCS
@@ -148,6 +150,7 @@ if(ENABLE_APP)
       shrpx_config_test.cc
       shrpx_worker_test.cc
       shrpx_http_test.cc
+      shrpx_router_test.cc
       http2_test.cc
       util_test.cc
       nghttp2_gzip_test.c
@@ -163,7 +166,7 @@ if(ENABLE_APP)
     )
     target_include_directories(nghttpx-unittest PRIVATE ${CUNIT_INCLUDE_DIRS})
     target_compile_definitions(nghttpx-unittest
-      PRIVATE "-DNGHTTP2_TESTS_DIR=\"${CMAKE_SOURCE_DIR}/tests\""
+      PRIVATE "-DNGHTTP2_SRC_DIR=\"${CMAKE_SOURCE_DIR}/src\""
     )
     target_link_libraries(nghttpx-unittest nghttpx_static ${CUNIT_LIBRARIES})
     if(HAVE_MRUBY)

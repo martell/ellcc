@@ -48,6 +48,8 @@
 #include "shrpx_downstream.h"
 #include "shrpx_http2_session.h"
 #include "shrpx_connect_blocker.h"
+#include "shrpx_api_downstream_connection.h"
+#include "shrpx_health_monitor_downstream_connection.h"
 #ifdef HAVE_SPDYLAY
 #include "shrpx_spdy_upstream.h"
 #endif // HAVE_SPDYLAY
@@ -123,10 +125,6 @@ int ClientHandler::read_clear() {
       rb_.reset();
     } else if (rb_.wleft() == 0) {
       conn_.rlimit.stopw();
-      if (reset_conn_rtimer_required_) {
-        reset_conn_rtimer_required_ = false;
-        ev_timer_again(conn_.loop, &conn_.rt);
-      }
       return 0;
     }
 
@@ -137,10 +135,6 @@ int ClientHandler::read_clear() {
     auto nread = conn_.read_clear(rb_.last, rb_.wleft());
 
     if (nread == 0) {
-      if (reset_conn_rtimer_required_) {
-        reset_conn_rtimer_required_ = false;
-        ev_timer_again(conn_.loop, &conn_.rt);
-      }
       return 0;
     }
 
@@ -154,8 +148,6 @@ int ClientHandler::read_clear() {
 
 int ClientHandler::write_clear() {
   std::array<iovec, 2> iov;
-
-  ev_timer_again(conn_.loop, &conn_.rt);
 
   for (;;) {
     if (on_write() != 0) {
@@ -226,11 +218,6 @@ int ClientHandler::read_tls() {
       rb_.reset();
     } else if (rb_.wleft() == 0) {
       conn_.rlimit.stopw();
-      if (reset_conn_rtimer_required_) {
-        reset_conn_rtimer_required_ = false;
-        ev_timer_again(conn_.loop, &conn_.rt);
-      }
-
       return 0;
     }
 
@@ -241,11 +228,6 @@ int ClientHandler::read_tls() {
     auto nread = conn_.read_tls(rb_.last, rb_.wleft());
 
     if (nread == 0) {
-      if (reset_conn_rtimer_required_) {
-        reset_conn_rtimer_required_ = false;
-        ev_timer_again(conn_.loop, &conn_.rt);
-      }
-
       return 0;
     }
 
@@ -259,8 +241,6 @@ int ClientHandler::read_tls() {
 
 int ClientHandler::write_tls() {
   struct iovec iov;
-
-  ev_timer_again(conn_.loop, &conn_.rt);
 
   ERR_clear_error();
 
@@ -406,8 +386,9 @@ ClientHandler::ClientHandler(Worker *worker, int fd, SSL *ssl,
       faddr_(faddr),
       worker_(worker),
       left_connhd_len_(NGHTTP2_CLIENT_MAGIC_LEN),
+      affinity_hash_(0),
       should_close_after_write_(false),
-      reset_conn_rtimer_required_(false) {
+      affinity_hash_computed_(false) {
 
   ++worker_->get_worker_stat()->num_connections;
 
@@ -513,9 +494,11 @@ void ClientHandler::reset_upstream_write_timeout(ev_tstamp t) {
   }
 }
 
-void ClientHandler::signal_reset_upstream_conn_rtimer() {
-  reset_conn_rtimer_required_ = true;
+void ClientHandler::repeat_read_timer() {
+  ev_timer_again(conn_.loop, &conn_.rt);
 }
+
+void ClientHandler::stop_read_timer() { ev_timer_stop(conn_.loop, &conn_.rt); }
 
 int ClientHandler::validate_next_proto() {
   const unsigned char *next_proto = nullptr;
@@ -667,8 +650,18 @@ void ClientHandler::pool_downstream_connection(
                      << " in group " << group;
   }
 
-  auto &dconn_pool = group->shared_addr->dconn_pool;
-  dconn_pool.add_downstream_connection(std::move(dconn));
+  auto &shared_addr = group->shared_addr;
+
+  if (shared_addr->affinity == AFFINITY_NONE) {
+    auto &dconn_pool = group->shared_addr->dconn_pool;
+    dconn_pool.add_downstream_connection(std::move(dconn));
+
+    return;
+  }
+
+  auto addr = dconn->get_addr();
+  auto &dconn_pool = addr->dconn_pool;
+  dconn_pool->add_downstream_connection(std::move(dconn));
 }
 
 void ClientHandler::remove_downstream_connection(DownstreamConnection *dconn) {
@@ -682,6 +675,65 @@ void ClientHandler::remove_downstream_connection(DownstreamConnection *dconn) {
 }
 
 namespace {
+// Computes 32bits hash for session affinity for IP address |ip|.
+uint32_t compute_affinity_from_ip(const StringRef &ip) {
+  int rv;
+  std::array<uint8_t, 32> buf;
+
+  rv = util::sha256(buf.data(), ip);
+  if (rv != 0) {
+    // Not sure when sha256 failed.  Just fall back to another
+    // function.
+    return util::hash32(ip);
+  }
+
+  return (static_cast<uint32_t>(buf[0]) << 24) |
+         (static_cast<uint32_t>(buf[1]) << 16) |
+         (static_cast<uint32_t>(buf[2]) << 8) | static_cast<uint32_t>(buf[3]);
+}
+} // namespace
+
+Http2Session *ClientHandler::select_http2_session_with_affinity(
+    const std::shared_ptr<DownstreamAddrGroup> &group, DownstreamAddr *addr) {
+  auto &shared_addr = group->shared_addr;
+
+  if (LOG_ENABLED(INFO)) {
+    CLOG(INFO, this) << "Selected DownstreamAddr=" << addr
+                     << ", index=" << (addr - shared_addr->addrs.data());
+  }
+
+  if (addr->http2_extra_freelist.size()) {
+    auto session = addr->http2_extra_freelist.head;
+
+    if (LOG_ENABLED(INFO)) {
+      CLOG(INFO, this) << "Use Http2Session " << session
+                       << " from http2_extra_freelist";
+    }
+
+    if (session->max_concurrency_reached(1)) {
+      if (LOG_ENABLED(INFO)) {
+        CLOG(INFO, this) << "Maximum streams are reached for Http2Session("
+                         << session << ").";
+      }
+
+      session->remove_from_freelist();
+    }
+    return session;
+  }
+
+  auto session = new Http2Session(conn_.loop, worker_->get_cl_ssl_ctx(),
+                                  worker_, group, addr);
+
+  if (LOG_ENABLED(INFO)) {
+    CLOG(INFO, this) << "Create new Http2Session " << session;
+  }
+
+  session->add_to_extra_freelist();
+
+  return session;
+}
+
+namespace {
 // Returns true if load of |lhs| is lighter than that of |rhs|.
 // Currently, we assume that lesser streams means lesser load.
 bool load_lighter(const DownstreamAddr *lhs, const DownstreamAddr *rhs) {
@@ -689,8 +741,9 @@ bool load_lighter(const DownstreamAddr *lhs, const DownstreamAddr *rhs) {
 }
 } // namespace
 
-Http2Session *ClientHandler::select_http2_session(DownstreamAddrGroup &group) {
-  auto &shared_addr = group.shared_addr;
+Http2Session *ClientHandler::select_http2_session(
+    const std::shared_ptr<DownstreamAddrGroup> &group) {
+  auto &shared_addr = group->shared_addr;
 
   // First count the working backend addresses.
   size_t min = 0;
@@ -778,7 +831,7 @@ Http2Session *ClientHandler::select_http2_session(DownstreamAddrGroup &group) {
   }
 
   auto session = new Http2Session(conn_.loop, worker_->get_cl_ssl_ctx(),
-                                  worker_, &group, selected_addr);
+                                  worker_, group, selected_addr);
 
   if (LOG_ENABLED(INFO)) {
     CLOG(INFO, this) << "Create new Http2Session " << session;
@@ -814,11 +867,20 @@ uint32_t next_cycle(const WeightedPri &pri) {
 std::unique_ptr<DownstreamConnection>
 ClientHandler::get_downstream_connection(Downstream *downstream) {
   size_t group_idx;
-  auto &downstreamconf = get_config()->conn.downstream;
+  auto &downstreamconf = *worker_->get_downstream_config();
+  auto &routerconf = downstreamconf.router;
+
   auto catch_all = downstreamconf.addr_group_catch_all;
   auto &groups = worker_->get_downstream_addr_groups();
 
   const auto &req = downstream->request();
+
+  switch (faddr_->alt_mode) {
+  case ALTMODE_API:
+    return make_unique<APIDownstreamConnection>(worker_);
+  case ALTMODE_HEALTHMON:
+    return make_unique<HealthMonitorDownstreamConnection>();
+  }
 
   // Fast path.  If we have one group, it must be catch-all group.
   // proxy mode falls in this case.
@@ -830,21 +892,19 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
     //  have dealt with proxy case already, just use catch-all group.
     group_idx = catch_all;
   } else {
-    auto &router = get_config()->router;
-    auto &wildcard_patterns = get_config()->wildcard_patterns;
+    auto &balloc = downstream->get_block_allocator();
+
     if (!req.authority.empty()) {
-      group_idx =
-          match_downstream_addr_group(router, wildcard_patterns, req.authority,
-                                      req.path, groups, catch_all);
+      group_idx = match_downstream_addr_group(
+          routerconf, req.authority, req.path, groups, catch_all, balloc);
     } else {
       auto h = req.fs.header(http2::HD_HOST);
       if (h) {
-        group_idx = match_downstream_addr_group(
-            router, wildcard_patterns, h->value, req.path, groups, catch_all);
+        group_idx = match_downstream_addr_group(routerconf, h->value, req.path,
+                                                groups, catch_all, balloc);
       } else {
-        group_idx =
-            match_downstream_addr_group(router, wildcard_patterns, StringRef{},
-                                        req.path, groups, catch_all);
+        group_idx = match_downstream_addr_group(
+            routerconf, StringRef{}, req.path, groups, catch_all, balloc);
       }
     }
   }
@@ -853,13 +913,55 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
     CLOG(INFO, this) << "Downstream address group_idx: " << group_idx;
   }
 
-  auto &group = worker_->get_downstream_addr_groups()[group_idx];
-  auto &shared_addr = group.shared_addr;
+  auto &group = groups[group_idx];
+  auto &shared_addr = group->shared_addr;
 
-  auto proto = PROTO_NONE;
+  if (shared_addr->affinity == AFFINITY_IP) {
+    if (!affinity_hash_computed_) {
+      affinity_hash_ = compute_affinity_from_ip(StringRef{ipaddr_});
+      affinity_hash_computed_ = true;
+    }
+
+    const auto &affinity_hash = shared_addr->affinity_hash;
+
+    auto it = std::lower_bound(
+        std::begin(affinity_hash), std::end(affinity_hash), affinity_hash_,
+        [](const AffinityHash &lhs, uint32_t rhs) { return lhs.hash < rhs; });
+
+    if (it == std::end(affinity_hash)) {
+      it = std::begin(affinity_hash);
+    }
+
+    auto idx = (*it).idx;
+
+    auto &addr = shared_addr->addrs[idx];
+    if (addr.proto == PROTO_HTTP2) {
+      auto http2session = select_http2_session_with_affinity(group, &addr);
+
+      auto dconn = make_unique<Http2DownstreamConnection>(http2session);
+
+      dconn->set_client_handler(this);
+
+      return std::move(dconn);
+    }
+
+    auto &dconn_pool = addr.dconn_pool;
+    auto dconn = dconn_pool->pop_downstream_connection();
+
+    if (!dconn) {
+      dconn = make_unique<HttpDownstreamConnection>(group, idx, conn_.loop,
+                                                    worker_);
+    }
+
+    dconn->set_client_handler(this);
+
+    return dconn;
+  }
 
   auto http1_weight = shared_addr->http1_pri.weight;
   auto http2_weight = shared_addr->http2_pri.weight;
+
+  auto proto = PROTO_NONE;
 
   if (http1_weight > 0 && http2_weight > 0) {
     // We only advance cycle if both weight has nonzero to keep its
@@ -920,7 +1022,8 @@ ClientHandler::get_downstream_connection(Downstream *downstream) {
                        << " Create new one";
     }
 
-    dconn = make_unique<HttpDownstreamConnection>(&group, conn_.loop, worker_);
+    dconn =
+        make_unique<HttpDownstreamConnection>(group, -1, conn_.loop, worker_);
   }
 
   dconn->set_client_handler(this);

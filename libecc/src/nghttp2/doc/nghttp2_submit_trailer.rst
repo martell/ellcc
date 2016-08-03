@@ -14,8 +14,8 @@ Synopsis
     
     The *nva* is an array of name/value pair :type:`nghttp2_nv` with
     *nvlen* elements.  The application is responsible not to include
-    required pseudo-header fields (header field whose name starts with
-    ":") in *nva*.
+    pseudo-header fields (header field whose name starts with ":") in
+    *nva*.
     
     This function creates copies of all name/value pairs in *nva*.  It
     also lower-cases all names in *nva*.  The order of elements in
@@ -30,20 +30,20 @@ Synopsis
     :type:`nghttp2_on_frame_not_send_callback` is called.
     
     For server, trailer fields must follow response HEADERS or response
-    DATA with END_STREAM flag set.  The library does not enforce this
-    requirement, and applications should do this for themselves.  If
-    `nghttp2_submit_trailer()` is called before any response HEADERS
+    DATA without END_STREAM flat set.  The library does not enforce
+    this requirement, and applications should do this for themselves.
+    If `nghttp2_submit_trailer()` is called before any response HEADERS
     submission (usually by `nghttp2_submit_response()`), the content of
     *nva* will be sent as response headers, which will result in error.
     
     This function has the same effect with `nghttp2_submit_headers()`,
-    with flags = :macro:`NGHTTP2_FLAG_END_HEADERS` and both pri_spec and
+    with flags = :macro:`NGHTTP2_FLAG_END_STREAM` and both pri_spec and
     stream_user_data to NULL.
     
     To submit trailer fields after `nghttp2_submit_response()` is
     called, the application has to specify
-    :type:`nghttp2_data_provider` to `nghttp2_submit_response()`.  In
-    side :type:`nghttp2_data_source_read_callback`, when setting
+    :type:`nghttp2_data_provider` to `nghttp2_submit_response()`.
+    Inside of :type:`nghttp2_data_source_read_callback`, when setting
     :macro:`NGHTTP2_DATA_FLAG_EOF`, also set
     :macro:`NGHTTP2_DATA_FLAG_NO_END_STREAM`.  After that, the
     application can send trailer fields using

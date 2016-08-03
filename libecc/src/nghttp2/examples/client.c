@@ -219,9 +219,9 @@ static int on_frame_send_callback(nghttp2_session *session,
       const nghttp2_nv *nva = frame->headers.nva;
       printf("[INFO] C ----------------------------> S (HEADERS)\n");
       for (i = 0; i < frame->headers.nvlen; ++i) {
-        fwrite(nva[i].name, nva[i].namelen, 1, stdout);
+        fwrite(nva[i].name, 1, nva[i].namelen, stdout);
         printf(": ");
-        fwrite(nva[i].value, nva[i].valuelen, 1, stdout);
+        fwrite(nva[i].value, 1, nva[i].valuelen, stdout);
         printf("\n");
       }
     }
@@ -249,9 +249,9 @@ static int on_frame_recv_callback(nghttp2_session *session,
       if (req) {
         printf("[INFO] C <---------------------------- S (HEADERS)\n");
         for (i = 0; i < frame->headers.nvlen; ++i) {
-          fwrite(nva[i].name, nva[i].namelen, 1, stdout);
+          fwrite(nva[i].name, 1, nva[i].namelen, stdout);
           printf(": ");
-          fwrite(nva[i].value, nva[i].valuelen, 1, stdout);
+          fwrite(nva[i].value, 1, nva[i].valuelen, stdout);
           printf("\n");
         }
       }
@@ -562,7 +562,11 @@ static void fetch_uri(const struct URI *uri) {
     diec("nghttp2_session_client_new", rv);
   }
 
-  nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, NULL, 0);
+  rv = nghttp2_submit_settings(connection.session, NGHTTP2_FLAG_NONE, NULL, 0);
+
+  if (rv != 0) {
+    diec("nghttp2_submit_settings", rv);
+  }
 
   /* Submit the HTTP request to the outbound queue. */
   submit_request(&connection, &req);
@@ -691,9 +695,6 @@ int main(int argc, char **argv) {
   act.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &act, 0);
 
-#ifndef OPENSSL_IS_BORINGSSL
-  OPENSSL_config(NULL);
-#endif /* OPENSSL_IS_BORINGSSL */
   SSL_load_error_strings();
   SSL_library_init();
 

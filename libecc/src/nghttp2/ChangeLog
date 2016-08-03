@@ -1,530 +1,205 @@
-commit 50083f0d22f14245bf1bf3f98d15f26120f458ee (HEAD, tag: v1.11.0, origin/master, origin/HEAD, master)
+commit aa0023b3c1d7761fd6b2052793f75ad28961d0f5 (HEAD, tag: v1.13.0, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-26
+AuthorDate: 2016-07-21
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-26
+CommitDate: 2016-07-21
 
     Update man pages
 
-commit c4fba5139c988927b7ba56ac59ed341f92836e30
+commit 3bdc143474037c26c85e66abce1b66b3f6ca4a06
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-26
+AuthorDate: 2016-07-21
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-26
+CommitDate: 2016-07-21
 
-    Bump up version number to 1.11.0, LT revision to 22:0:8
+    Bump up version number to 1.13.0, LT revision to 23:0:9
 
-commit 81b3e3811b35ebf19114a724f70d6979168b521e
+commit 8b50cc0ecebd4cafa39f6cbbd7fa6ff5bd6844fa
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-26
+AuthorDate: 2016-07-21
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-26
-
-    nghttpx: Fix bug that 503 is returned if backend proto is not mixed
-
-commit 26eb983cf0c5fee10f002b6d6641c1b937ee1417
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-26
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-26
-
-    nghttpx: Fix bug that h2 is used while there is no h2 backend
-
-commit e0491c2ee8b9bba60d31066094989e0387dde764
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-25
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-25
-
-    nghttpx: Refactor protocol selection in backend
-
-commit fce7908fe6de5bc7a6b5ada8b6bb467ca5941d77
-Merge: 45f7c17 2a4bf9f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    Merge branch 'mix-backend-proto-tls'
-
-commit 2a4bf9f615315a7d76b79151e1d9be5bb5b89e93
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    nghttpx: Allow mixed protocol and TLS settings among backends under same pattern
-
-commit 45f7c179320f9e010d8eed3f220bc9b467655a7c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    nghttpx: Make backend fail if connect attempt is timed out
-
-commit f2a1fadda90fcead2855d70ef49e3c4808985390
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    nghttpx: Make backend fail if connect operation was timed out
-
-commit 98396f00ff8d8aaa7c20ca1f13c96b5074088aa6
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    nghttpx: Cleane up bit more of save_pid()
-
-commit e7d5cfff305c261537c87a1c22db5fb819cbb437
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-24
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-24
-
-    nghttpx: Fix crash introduced in the previous commit
-
-commit c308be39de8fbc13726919227529d28d7a16b017
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-23
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-23
-
-    nghttpx: Write PID in temporary file then rename
-    
-    Write PID in temporary file first.  Then rename it as the real
-    destination.  It will avoid the issue that the external process may
-    read the empty PID file because of race condition.
-
-commit 65135bc319c2d86c6bf3ad3e79b602d3c41ce342
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-22
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-22
-
-    nghttpx: Check null just in case
-
-commit 944297df289fe19b5af31914fb1a7fe904e19899
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    Update bash_completion
-
-commit f725e419e86b0f9c15c4b883b0ace50255fbe597
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    Update man pages
-
-commit 0fca3521140ebf13314adc2321de32d87c40b3da
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Make SETTINGS timeout value configurable
-    
-    SETTINGS timeout can be configurable using
-    --frontend-http2-settings-timeout and
-    --backend-http2-settings-timeout.
-
-commit 9a3461e2b6c92b39e4ad2985f17255b24d458499
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Use ev_timer_start intead of ev_timer_again for settings_timer_
-    
-    Since we only use it once, we don't have to use ev_timer_again, and
-    stop timer manually.
-
-commit 0b9ee38db65088eabda767a434f342d67b7e9d68
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Handle corner case where session is going down just after ACK recved
-
-commit a224aba577aa517376e5f3921e0b6fcbc143ac69
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: No need to check activeness of SETTINGS ACK timer
-    
-    We don't have to check activeness of SETTINGS ACK timer since we only
-    send SETTINGS frame without ACK only once per session at the moment.
-
-commit 9f770fec367e252a45bfe2ee4fd16c80344f69e1
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Save PID file after it is ready to accept connections
-
-commit c39a6696717b4e4edd57b028d9d6d3198deb40b0
-Merge: 863fbff e6dfd4f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    Merge branch 'nghttpx-settings-timeout-as-failure'
-
-commit e6dfd4ff270df1efedd2909135f574c91fd66542
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Call downstream_failure rather than on_failure in HTTP/1 backend
-
-commit e99f3c58f767373cf7c07771e9e3b0aad022b518
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Call downstream_failure where it should be
-    
-    Also, we say connection succeeded only when we got SETTINGS ACK from
-    peer, rather than when we just connected to the peer in TCP or TLS.
-
-commit 2a3b6c11eb4d2646e107fcbe6817975d5eee4930
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Don't restart SETTINGS timer, and fix log message in HTTP/2 frontend
-
-commit e26d6a2b27f345678308e0d26b849e97b0ddd627
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Don't re-enter offline if it is already in offline mode
-
-commit dce7288658742ea94ad66a3bd86522c1ab822b6c
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-21
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-21
-
-    nghttpx: Wait for SETTINGS ACK to make sure that backend h2 server is alive
-
-commit d1968c44659960f4c7bc60561027b42e8ff6fc61
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-19
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-19
-
-    nghttpx: Treat backend failure if SETTINGS is not received within timeout
-
-commit 863fbffda49945d81c919001c25ba24e16c5a4b0
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-18
-
-    Fix typo
-
-commit 629f1e6f0f19c6030c8a8a9e3a061bbd71d6898f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-18
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-18
-
-    nghttpx: Add connection: close to mruby response in graceful shutdown period
-
-commit 7a3c656adf1ea8f2628f54456cb81baa9089d5d8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-15
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-15
-
-    nghttpx: Refactor
-
-commit 2a96d433ecb542b0109da562ffacc040c7bac38d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    Add nghttp2_hd_inflate_hd2() and deprecate nghttp2_hd_inflate_hd()
-    
-    The difference between them are former has const qualifier to the |in|
-    parameter, which is desirable since it is effectively read-only.
-
-commit 796160cb77a1b087892ca8ac2df2cdea35344d22
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttpx: Don't add chunked encoded response body for HEAD request
-
-commit 5c82a36072f9da448aa0d30414912fcc28c3d98d
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttpd: Set content-length in status response
-
-commit b011012d8fef5cd36fab655033c42c92fdf1434a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttpx: Use NGHTTP2_DATA_FLAG_NO_COPY for backend HTTP/2 session
-
-commit 8026bdd45a15ad019459b72adec7c63f495da6a4
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttpx: Don't keep backend connection if request buffer is not empty
-
-commit 5ff6da11b1ae87967ad083c81a91cab62710520f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    Refactor map remove
-
-commit de3f2951b3f6327c898cf7570ec9a0ea6fdb8109
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    h2load: Robust error handling in POST data
-
-commit d00788ceeb3d75b692815aa908c68bae86aaa97a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttp: More robust error handling while reading file
-
-commit e0df95a1d8f3f904e4d300230c90d490a0f5d89a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-14
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-14
-
-    nghttp: Eliminate zero length DATA frame at the end if possible
-
-commit 6d22898936ec63009744f83dd1704183fdc2229a
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-07
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-07
-
-    src: Compile with OpenSSL 1.1.0-pre5
-    
-    * don't use CRYPTO_LOCK stuff (they are sorted out by openssl, and no
-      application intervention is required, just like boringSSL)
-    * don't use OPENSSL_config
-    * use provided API to access BIO member
-
-commit 15a9dfbaeaaad047ffc484552e9b121979775be7
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-06
-
-    nghttpd: Enable kqueue if it is available on the running platform
-
-commit c6facaf6621da44daf68888060557b775bb743af
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-06
-
-    h2load: Enable kqueue if it is available in the running platform
-
-commit 60e443b90b25e2d7e014b0bde928d98e92c25e3b
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-06
-
-    h2load: Fix crash on exit on FreeBSD
-
-commit d39335829dfc5ca218317ad6639612c9f71742cd
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-06
-
-    nghttpx: Enable kqueue by default
-    
-    We enabled libev kqueue backend in nghttpx by default.  Since it might
-    not work on some platforms, we also added --no-kqueue option to
-    disable it.
-
-commit 5d4f3f36e36718309f357140f8208b25a13eedba
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-05
-
-    Fix bug that PING flags are ignored in nghttp2_submit_ping
-
-commit 752b5b3d443e718688d378158dddaa01b1b557a8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-05
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-05
-
-    nghttpx: Just call execv instead of execve
-
-commit 70e8dc3761cef4b9de4a19f2f21d6d337f02e838
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-05-02
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-05-02
-
-    ngttpx: Pass environ to execve
-
-commit 0ee80be99525f0ba211a9e4eb7e3434d4f834b0f
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-29
-
-    Update man pages
-
-commit 3712c89a665c43ef0c6108ddc1a7428ca08e0d69
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-29
-
-    nghttpx: Use parameter instead of keyword for consistency
-
-commit 8e33f0a53534d9f73e797df031e471746aa12da8
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-29
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-29
+CommitDate: 2016-07-21
 
     Update doc
 
-commit fd801864e3a1dc6681642ca390e94c2b270c5fc3
+commit a24c94e92ab303a382f65b976b27a072ca85eea6
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-29
+AuthorDate: 2016-07-18
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-29
+CommitDate: 2016-07-18
 
-    nghttpx: Add sni keyword to --backend option
+    Update doc
+
+commit a00442bee64a720665b6271b174908fe0386c9ca
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-17
+
+    Work with Android NDK r12b
     
-    The --backend-tls-sni-field is deprecated in favor of sni keyword.
-    --backend-tls-sni-field still works, and it overrides all sni keyword
-    in --backend option.  But it will be removed in the future release.
+    clang + libc++ does not work, it still requires libc++_shared.so
+    runtime even if -lstdc++ is used, which supposed to link with static
+    version of libc++.
 
-commit 99f7e7e2a58302ea6fd4621a0da72849fb52b433
+commit f857b6398630f2588e68b0b7b520feaf8b784a31
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-29
+AuthorDate: 2016-07-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-29
+CommitDate: 2016-07-16
 
-    nghttpx: Add mruby env.server_addr and env.tls_used attributes
+    Fix warning with Sphinx 1.4
 
-commit 6c999e6fb5cae0a24145d8df319a9e6bf8819b84
+commit cbd72da9a1ad030c5926a2dbb2eb55e198c507eb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-28
+AuthorDate: 2016-07-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-28
+CommitDate: 2016-07-16
 
-    nghttpx: Enable TLS session cache again in memcached connection
+    Update man pages
 
-commit 4aa4fe56e17fe783df9bcfe9f4ed4a368d262aac
+commit 7506a9317924c3bf3d30d7e2317cd75c1c151c71
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-28
+AuthorDate: 2016-07-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-28
+CommitDate: 2016-07-16
 
-    nghttpx: Destroy SSL object, and always lookup TLS session cache
+    doc: Fix Sphinx build warnings
 
-commit 09b97a331329424c18d26b7dc7b8a743d07dd9e6
+commit 53e1623ab3121ed4723024297bc669594fe87a75
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-28
+AuthorDate: 2016-07-16
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-28
+CommitDate: 2016-07-16
 
-    nghttpx: Add mruby env.server_port to return frontend server side port
+    Update doc
+    
+    It was markdown, we should use reST.
 
-commit d2f4e4e3253b860fb3db6437506706ca14fc8928
+commit 0cb0bdabecf0c5aa82f5264327618bab716de4fd
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-27
+AuthorDate: 2016-07-13
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-27
+CommitDate: 2016-07-13
 
-    nghttpx: Always expect response trailer fields
+    Update doc
 
-commit dba0f35ee1822fa63b451aff9729dc5d1253cc1f
+commit ed8d5f04bb0fface95cf527ef2da3dbf8a69d967
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-27
+AuthorDate: 2016-07-10
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-27
+CommitDate: 2016-07-10
 
-    Avoid 0-length DATA if NGHTTP2_DATA_FLAG_NO_END_STREAM is set
+    Update doc
 
-commit 2d2b72d4eb2611c02fcaa9cbdb25bc95cd7e5671
+commit 33153010c5080ef731a7b1f4c069c351e43308cb
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-27
+AuthorDate: 2016-07-08
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-27
+CommitDate: 2016-07-08
 
-    nghttpx: Don't add 0-length DATA when response HEADERS bears END_STREAM flag
+    nghttpx: Retry memcached connection
+    
+    Previously, we didn't retry request on connection failure.  Sometimes
+    we hit the edge case where connection is about to lost just when we
+    write request.  To avoid this situation, we now retry request to
+    failed attempt.  We also add ConnectBlocker to MemcachedConnection not
+    to attempt to connect to memcached if connection could not be made
+    previously.
 
-commit b39ad3135d9be4787a1d86cd3798ac622f0dfa99
+commit 2c500b62fd8634613b14f85357a173c89fd90bad
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-26
+AuthorDate: 2016-07-07
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-26
+CommitDate: 2016-07-07
 
-    nghttpx: Don't use CN if we have dNSName or iPAddress field
+    Update doc
 
-commit 13f97ccf45af3bd34e8a5dcb78bc3851899da98c
+commit 30f26a2b9d69c0629b339cc215891268b801f089
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-25
+AuthorDate: 2016-07-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-25
+CommitDate: 2016-07-06
 
-    integration: Workaround runtime error: cgo argument has Go pointer to Go pointer
+    nghttpx: Explicitly cast to uint32_t for hash calculation
 
-commit 43bbcd35aad67aa03b3910c736a75c4bb53ccfa2
+commit ca39c71ac363addbfe349ddf5f95cdee30c54909
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-25
+AuthorDate: 2016-07-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-25
+CommitDate: 2016-07-06
 
-    Update releasechk
+    examples: Fix compile error with OpenSSL v1.1.0-beta2
 
-commit 220f49b157030eeb605a7fc624fa502a1c333553
+commit 2bbe4422d2c694b6cd50976352b5f1347bebe3d1
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-04-25
+AuthorDate: 2016-07-06
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-04-25
+CommitDate: 2016-07-06
 
-    Bump up version number to 1.11.0-DEV
+    nghttpx: Use consistent hashing for client IP based session affinity
+    
+    We use technique described in https://github.com/RJ/ketama
+
+commit 5d3535126ed9ed21c935f8006cd49c6052a6110e
+Author:     Tomasz Buchert <tomasz@debian.org>
+AuthorDate: 2016-07-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-05
+
+    Fix FTBFS on armel by explicitly including the <mutex> header.
+
+commit d2addbc1ed5433408d720c7c769b961b7c2041be
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-02
+
+    Add test for canceling PUSH_PROMISE
+
+commit 110ca3131a8cab979bfff0a4febee8a3bb370939
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-02
+
+    Cancel frame transmission from before_frame_send_callback
+    
+    We define the behaviour when NGHTTP2_ERR_CANCEL is returned from
+    before_frame_send_callback.  That is to cancel the frame passed to the
+    callback.
+
+commit fd7d3c57d7ecd75567c3c71d7deabc2c2e3b9b7f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-06-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-06-27
+
+    nghttpx: Use faster version of power
+    
+    In our use case, x and y is quite small, and there is no chance for
+    overflow, and y is always integer.
+
+commit 179561e4be3850abf870047c51e4d6eadb0a12ab
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-06-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-06-27
+
+    nghttpx: Cast to double to fix build with gcc 4.8 on Solaris 11
+
+commit 903e0077aa453f2d14ef8bcba4851901cb15feb9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-06-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-06-27
+
+    nghttpx: Fix build error with libressl
+
+commit 3fadad1bf336fc3b6dc2f240fb24dfe282d9986b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-06-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-06-26
+
+    Bump up version number to 1.13.0-DEV

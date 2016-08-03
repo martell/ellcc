@@ -379,6 +379,10 @@ void nb_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
 } // namespace
 #endif // HAVE_NEVERBLEED
 
+namespace {
+std::random_device rd;
+} // namespace
+
 int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   if (reopen_log_files() != 0) {
     LOG(FATAL) << "Failed to open log file";
@@ -387,14 +391,16 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 
   auto loop = EV_DEFAULT;
 
-  ConnectionHandler conn_handler(loop);
+  auto gen = std::mt19937(rd());
+
+  ConnectionHandler conn_handler(loop, gen);
 
   for (auto &addr : get_config()->conn.listener.addrs) {
     conn_handler.add_acceptor(make_unique<AcceptHandler>(&addr, &conn_handler));
   }
 
 #ifdef HAVE_NEVERBLEED
-  if (ssl::upstream_tls_enabled() || ssl::downstream_tls_enabled()) {
+  {
     std::array<char, NEVERBLEED_ERRBUF_SIZE> errbuf;
     auto nb = make_unique<neverbleed_t>();
     if (neverbleed_init(nb.get(), errbuf.data()) != 0) {
@@ -435,7 +441,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
       conn_handler.set_tls_ticket_key_memcached_dispatcher(
           make_unique<MemcachedDispatcher>(
               &ticketconf.memcached.addr, loop, ssl_ctx,
-              StringRef{memcachedconf.host}, &mcpool));
+              StringRef{memcachedconf.host}, &mcpool, gen));
 
       ev_timer_init(&renew_ticket_key_timer, memcached_get_ticket_key_cb, 0.,
                     0.);
@@ -531,12 +537,6 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   ev_run(loop, 0);
 
   conn_handler.cancel_ocsp_update();
-
-#ifdef HAVE_NEVERBLEED
-  if (nb && nb->daemon_pid != -1) {
-    kill(nb->daemon_pid, SIGTERM);
-  }
-#endif // HAVE_NEVERBLEED
 
   return 0;
 }

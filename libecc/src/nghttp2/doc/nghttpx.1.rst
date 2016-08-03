@@ -104,12 +104,13 @@ Connections
     Several parameters <PARAM> are accepted after <PATTERN>.
     The  parameters are  delimited  by  ";".  The  available
     parameters       are:      "proto=<PROTO>",       "tls",
-    "sni=<SNI_HOST>",   "fall=<N>",  and   "rise=<N>".   The
-    parameter consists  of keyword, and  optionally followed
-    by "=" and value.  For example, the parameter "proto=h2"
-    consists  of the  keyword "proto"  and value  "h2".  The
-    parameter "tls"  consists of  the keyword  "tls" without
-    value.  Each parameter is described as follows.
+    "sni=<SNI_HOST>",     "fall=<N>",    "rise=<N>",     and
+    "affinity=<METHOD>".  The parameter consists of keyword,
+    and optionally followed by  "=" and value.  For example,
+    the parameter "proto=h2" consists of the keyword "proto"
+    and  value "h2".   The parameter  "tls" consists  of the
+    keyword   "tls"  without   value.   Each   parameter  is
+    described as follows.
 
     The backend application protocol  can be specified using
     optional  "proto"   parameter,  and   in  the   form  of
@@ -144,6 +145,20 @@ Connections
     backend  is permanently  offline, once  it goes  in that
     state, and this is the default behaviour.
 
+    The     session     affinity    is     enabled     using
+    "affinity=<METHOD>"  parameter.   If  "ip" is  given  in
+    <METHOD>, client  IP based session affinity  is enabled.
+    If  "none" is  given  in <METHOD>,  session affinity  is
+    disabled, and this is the default.  The session affinity
+    is enabled per  <PATTERN>.  If at least  one backend has
+    "affinity" parameter,  and its  <METHOD> is  not "none",
+    session  affinity is  enabled  for  all backend  servers
+    sharing  the  same  <PATTERN>.   It is  advised  to  set
+    "affinity"  parameter  to   all  backend  explicitly  if
+    session affinity  is desired.  The session  affinity may
+    break if one of the backend gets unreachable, or backend
+    settings are reloaded or replaced by API.
+
     Since ";" and ":" are  used as delimiter, <PATTERN> must
     not  contain these  characters.  Since  ";" has  special
     meaning in shell, the option value must be quoted.
@@ -151,7 +166,7 @@ Connections
 
     Default: ``127.0.0.1,80``
 
-.. option:: -f, --frontend=(<HOST>,<PORT>|unix:<PATH>)[;no-tls]
+.. option:: -f, --frontend=(<HOST>,<PORT>|unix:<PATH>)[[;PARAM]...]
 
     Set  frontend  host and  port.   If  <HOST> is  '\*',  it
     assumes  all addresses  including  both  IPv4 and  IPv6.
@@ -160,8 +175,24 @@ Connections
     This  option can  be used  multiple times  to listen  to
     multiple addresses.
 
+    This option  can take  0 or  more parameters,  which are
+    described  below.   Note   that  "api"  and  "healthmon"
+    parameters are mutually exclusive.
+
     Optionally, TLS  can be disabled by  specifying "no-tls"
     parameter.  TLS is enabled by default.
+
+    To  make this  frontend as  API endpoint,  specify "api"
+    parameter.   This   is  disabled  by  default.    It  is
+    important  to  limit the  access  to  the API  frontend.
+    Otherwise, someone  may change  the backend  server, and
+    break your services,  or expose confidential information
+    to the outside the world.
+
+    To  make  this  frontend  as  health  monitor  endpoint,
+    specify  "healthmon"  parameter.   This is  disabled  by
+    default.  Any  requests which come through  this address
+    are replied with 200 HTTP status, without no body.
 
 
     Default: ``*,3000``
@@ -413,6 +444,19 @@ Timeout
     backend server.
 
     Default: ``10s``
+
+.. option:: --backend-max-backoff=<DURATION>
+
+    Specify  maximum backoff  interval.  This  is used  when
+    doing health  check against offline backend  (see "fail"
+    parameter  in :option:`--backend`  option).   It is  also used  to
+    limit  the  maximum   interval  to  temporarily  disable
+    backend  when nghttpx  failed to  connect to  it.  These
+    intervals are calculated  using exponential backoff, and
+    consecutive failed attempts increase the interval.  This
+    option caps its maximum value.
+
+    Default: ``2m``
 
 
 SSL/TLS
@@ -972,6 +1016,16 @@ HTTP
     backend server, the custom error pages are not used.
 
 
+API
+~~~
+
+.. option:: --api-max-request-body=<SIZE>
+
+    Set the maximum size of request body for API request.
+
+    Default: ``16K``
+
+
 Debug
 ~~~~~
 
@@ -1145,7 +1199,7 @@ backend server and extracts URI-reference with parameter
 and pushes those URIs to the frontend client. Here is a sample Link
 header field to initiate server push:
 
-.. code-block:: http
+.. code-block:: text
 
   Link: </fonts/font.woff>; rel=preload
   Link: </css/theme.css>; rel=preload
@@ -1521,6 +1575,62 @@ addresses:
     end
 
     App.new
+
+API ENDPOINTS
+-------------
+
+nghttpx exposes API endpoints to manipulate it via HTTP based API.  By
+default, API endpoint is disabled.  To enable it, add a dedicated
+frontend for API using :option:`--frontend` option with "api"
+parameter.  All requests which come from this frontend address, will
+be treated as API request.
+
+The response is normally JSON dictionary, and at least includes the
+following keys:
+
+status
+  The status of the request processing.  The following values are
+  defined:
+
+  Success
+    The request was successful.
+
+  Failure
+    The request was failed.  No change has been made.
+
+code
+  HTTP status code
+
+We wrote "normally", since nghttpx may return ordinal HTML response in
+some cases where the error has occurred before reaching API endpoint
+(e.g., header field is too large).
+
+The following section describes available API endpoints.
+
+PUT /api/v1beta1/backendconfig
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This API replaces the current backend server settings with the
+requested ones.  The request method should be PUT, but POST is also
+acceptable.  The request body must be nghttpx configuration file
+format.  For configuration file format, see `FILES`_ section.  The
+line separator inside the request body must be single LF (0x0A).
+Currently, only :option:`backend <--backend>` option is parsed, the
+others are simply ignored.  The semantics of this API is replace the
+current backend with the backend options in request body.  Describe
+the desired set of backend severs, and nghttpx makes it happen.  If
+there is no :option:`backend <--backend>` option is found in request
+body, the current set of backend is replaced with the :option:`backend
+<--backend>` option's default value, which is ``127.0.0.1,80``.
+
+The replacement is done instantly without breaking existing
+connections or requests.  It also avoids any process creation as is
+the case with hot swapping with signals.
+
+The one limitation is that only numeric IP address is allowd in
+:option:`backend <--backend>` in request body while non numeric
+hostname is allowed in command-line or configuration file is read
+using :option:`--conf`.
 
 SEE ALSO
 --------

@@ -143,9 +143,6 @@ namespace {
 void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
                            spdylay_frame *frame, void *user_data) {
   auto upstream = static_cast<SpdyUpstream *>(user_data);
-  auto handler = upstream->get_client_handler();
-
-  handler->signal_reset_upstream_conn_rtimer();
 
   switch (type) {
   case SPDYLAY_SYN_STREAM: {
@@ -289,6 +286,7 @@ void on_ctrl_recv_callback(spdylay_session *session, spdylay_frame_type type,
     downstream->set_request_state(Downstream::HEADER_COMPLETE);
 
 #ifdef HAVE_MRUBY
+    auto handler = upstream->get_client_handler();
     auto worker = handler->get_worker();
     auto mruby_ctx = worker->get_mruby_context();
 
@@ -359,6 +357,15 @@ void SpdyUpstream::initiate_downstream(Downstream *downstream) {
   }
 
   downstream_queue_.mark_active(downstream);
+
+  auto &req = downstream->request();
+  if (!req.http2_expect_body) {
+    if (downstream->end_upload_data() != 0) {
+      if (downstream->get_response_state() != Downstream::MSG_COMPLETE) {
+        rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
+      }
+    }
+  }
 }
 
 namespace {
@@ -378,7 +385,9 @@ void on_data_chunk_recv_callback(spdylay_session *session, uint8_t flags,
   downstream->reset_upstream_rtimer();
 
   if (downstream->push_upload_data_chunk(data, len) != 0) {
-    upstream->rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
+    if (downstream->get_response_state() != Downstream::MSG_COMPLETE) {
+      upstream->rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
+    }
 
     upstream->consume(stream_id, len);
 
@@ -429,9 +438,6 @@ void on_data_recv_callback(spdylay_session *session, uint8_t flags,
   auto upstream = static_cast<SpdyUpstream *>(user_data);
   auto downstream = static_cast<Downstream *>(
       spdylay_session_get_stream_user_data(session, stream_id));
-  auto handler = upstream->get_client_handler();
-
-  handler->signal_reset_upstream_conn_rtimer();
 
   if (downstream && (flags & SPDYLAY_DATA_FLAG_FIN)) {
     if (!downstream->validate_request_recv_body_length()) {
@@ -440,7 +446,11 @@ void on_data_recv_callback(spdylay_session *session, uint8_t flags,
     }
 
     downstream->disable_upstream_rtimer();
-    downstream->end_upload_data();
+    if (downstream->end_upload_data() != 0) {
+      if (downstream->get_response_state() != Downstream::MSG_COMPLETE) {
+        upstream->rst_stream(downstream, SPDYLAY_INTERNAL_ERROR);
+      }
+    }
     downstream->set_request_state(Downstream::MSG_COMPLETE);
   }
 }
@@ -512,13 +522,22 @@ uint32_t infer_upstream_rst_stream_status_code(uint32_t downstream_error_code) {
 }
 } // namespace
 
+namespace {
+size_t downstream_queue_size(Worker *worker) {
+  auto &downstreamconf = *worker->get_downstream_config();
+
+  if (get_config()->http2_proxy) {
+    return downstreamconf.connections_per_host;
+  }
+
+  return downstreamconf.connections_per_frontend;
+}
+} // namespace
+
 SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
     : wb_(handler->get_worker()->get_mcpool()),
-      downstream_queue_(
-          get_config()->http2_proxy
-              ? get_config()->conn.downstream.connections_per_host
-              : get_config()->conn.downstream.connections_per_frontend,
-          !get_config()->http2_proxy),
+      downstream_queue_(downstream_queue_size(handler->get_worker()),
+                        !get_config()->http2_proxy),
       handler_(handler),
       session_(nullptr) {
   spdylay_session_callbacks callbacks{};
@@ -545,7 +564,13 @@ SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
 
   auto &http2conf = get_config()->http2;
 
-  if (version >= SPDYLAY_PROTO_SPDY3) {
+  auto faddr = handler_->get_upstream_addr();
+
+  // We use automatic WINDOW_UPDATE for API endpoints.  Since SPDY is
+  // going to be deprecated in the future, and the default stream
+  // window is large enough for API request body (64KiB), we don't
+  // expand window size depending on the options.
+  if (version >= SPDYLAY_PROTO_SPDY3 && !faddr->alt_mode) {
     int val = 1;
     flow_control_ = true;
     initial_window_size_ = 1 << http2conf.upstream.window_bits;
@@ -558,19 +583,23 @@ SpdyUpstream::SpdyUpstream(uint16_t version, ClientHandler *handler)
   }
   // TODO Maybe call from outside?
   std::array<spdylay_settings_entry, 2> entry;
+  size_t num_entry = 1;
   entry[0].settings_id = SPDYLAY_SETTINGS_MAX_CONCURRENT_STREAMS;
   entry[0].value = http2conf.upstream.max_concurrent_streams;
   entry[0].flags = SPDYLAY_ID_FLAG_SETTINGS_NONE;
 
-  entry[1].settings_id = SPDYLAY_SETTINGS_INITIAL_WINDOW_SIZE;
-  entry[1].value = initial_window_size_;
-  entry[1].flags = SPDYLAY_ID_FLAG_SETTINGS_NONE;
+  if (flow_control_) {
+    ++num_entry;
+    entry[1].settings_id = SPDYLAY_SETTINGS_INITIAL_WINDOW_SIZE;
+    entry[1].value = initial_window_size_;
+    entry[1].flags = SPDYLAY_ID_FLAG_SETTINGS_NONE;
+  }
 
   rv = spdylay_submit_settings(session_, SPDYLAY_FLAG_SETTINGS_NONE,
-                               entry.data(), entry.size());
+                               entry.data(), num_entry);
   assert(rv == 0);
 
-  if (version >= SPDYLAY_PROTO_SPDY3_1 &&
+  if (flow_control_ && version >= SPDYLAY_PROTO_SPDY3_1 &&
       http2conf.upstream.connection_window_bits > 16) {
     int32_t delta = (1 << http2conf.upstream.connection_window_bits) -
                     SPDYLAY_INITIAL_WINDOW_SIZE;
@@ -969,6 +998,8 @@ Downstream *SpdyUpstream::add_pending_downstream(int32_t stream_id) {
 
   downstream_queue_.add_pending(std::move(downstream));
 
+  handler_->stop_read_timer();
+
   return res;
 }
 
@@ -984,6 +1015,10 @@ void SpdyUpstream::remove_downstream(Downstream *downstream) {
 
   if (next_downstream) {
     initiate_downstream(next_downstream);
+  }
+
+  if (downstream_queue_.get_downstreams() == nullptr) {
+    handler_->repeat_read_timer();
   }
 }
 
@@ -1194,6 +1229,10 @@ int SpdyUpstream::on_downstream_abort_request(Downstream *downstream,
 
 int SpdyUpstream::consume(int32_t stream_id, size_t len) {
   int rv;
+
+  if (!get_flow_control()) {
+    return 0;
+  }
 
   rv = spdylay_session_consume(session_, stream_id, len);
 

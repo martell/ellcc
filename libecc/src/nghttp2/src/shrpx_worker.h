@@ -56,6 +56,7 @@ class ConnectBlocker;
 class LiveCheck;
 class MemcachedDispatcher;
 struct UpstreamAddr;
+class ConnectionHandler;
 
 #ifdef HAVE_MRUBY
 namespace mruby {
@@ -85,6 +86,9 @@ struct DownstreamAddr {
 
   std::unique_ptr<ConnectBlocker> connect_blocker;
   std::unique_ptr<LiveCheck> live_check;
+  // Connection pool for this particular address if session affinity
+  // is enabled
+  std::unique_ptr<DownstreamConnectionPool> dconn_pool;
   size_t fall;
   size_t rise;
   // Client side TLS session cache
@@ -92,6 +96,9 @@ struct DownstreamAddr {
   // Http2Session object created for this address.  This list chains
   // all Http2Session objects that is not in group scope
   // http2_avail_freelist, and is not reached in maximum concurrency.
+  //
+  // If session affinity is enabled, http2_avail_freelist is not used,
+  // and this list is solely used.
   DList<Http2Session> http2_extra_freelist;
   // true if Http2Session for this address is in group scope
   // SharedDownstreamAddr.http2_avail_freelist
@@ -120,10 +127,16 @@ struct WeightedPri {
 
 struct SharedDownstreamAddr {
   std::vector<DownstreamAddr> addrs;
+  // Bunch of session affinity hash.  Only used if affinity ==
+  // AFFINITY_IP.
+  std::vector<AffinityHash> affinity_hash;
   // List of Http2Session which is not fully utilized (i.e., the
   // server advertized maximum concurrency is not reached).  We will
   // coalesce as much stream as possible in one Http2Session to fully
   // utilize TCP connection.
+  //
+  // If session affinity is enabled, this list is not used.  Per
+  // address http2_extra_freelist is used instead.
   //
   // TODO Verify that this approach performs better in performance
   // wise.
@@ -138,11 +151,17 @@ struct SharedDownstreamAddr {
   // HTTP/1.1.  Otherwise, choose HTTP/2.
   WeightedPri http1_pri;
   WeightedPri http2_pri;
+  // Session affinity
+  shrpx_session_affinity affinity;
 };
 
 struct DownstreamAddrGroup {
   ImmutableString pattern;
   std::shared_ptr<SharedDownstreamAddr> shared_addr;
+  // true if this group is no longer used for new request.  If this is
+  // true, the connection made using one of address in shared_addr
+  // must not be pooled.
+  bool retired;
 };
 
 struct WorkerStat {
@@ -153,6 +172,7 @@ enum WorkerEventType {
   NEW_CONNECTION = 0x01,
   REOPEN_LOG = 0x02,
   GRACEFUL_SHUTDOWN = 0x03,
+  REPLACE_DOWNSTREAM = 0x04,
 };
 
 struct WorkerEvent {
@@ -164,6 +184,7 @@ struct WorkerEvent {
     const UpstreamAddr *faddr;
   };
   std::shared_ptr<TicketKeys> ticket_keys;
+  std::shared_ptr<DownstreamConfig> downstreamconf;
 };
 
 class Worker {
@@ -171,7 +192,9 @@ public:
   Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
          SSL_CTX *tls_session_cache_memcached_ssl_ctx,
          ssl::CertLookupTree *cert_tree,
-         const std::shared_ptr<TicketKeys> &ticket_keys);
+         const std::shared_ptr<TicketKeys> &ticket_keys,
+         ConnectionHandler *conn_handler,
+         std::shared_ptr<DownstreamConfig> downstreamconf);
   ~Worker();
   void run_async();
   void wait();
@@ -206,22 +229,32 @@ public:
   mruby::MRubyContext *get_mruby_context() const;
 #endif // HAVE_MRUBY
 
-  std::vector<DownstreamAddrGroup> &get_downstream_addr_groups();
+  std::vector<std::shared_ptr<DownstreamAddrGroup>> &
+  get_downstream_addr_groups();
 
   ConnectBlocker *get_connect_blocker() const;
+
+  const DownstreamConfig *get_downstream_config() const;
+
+  void
+  replace_downstream_config(std::shared_ptr<DownstreamConfig> downstreamconf);
+
+  ConnectionHandler *get_connection_handler() const;
 
 private:
 #ifndef NOTHREADS
   std::future<void> fut_;
 #endif // NOTHREADS
   std::mutex m_;
-  std::vector<WorkerEvent> q_;
+  std::deque<WorkerEvent> q_;
   std::mt19937 randgen_;
   ev_async w_;
   ev_timer mcpool_clear_timer_;
+  ev_timer proc_wev_timer_;
   MemchunkPool mcpool_;
   WorkerStat worker_stat_;
 
+  std::shared_ptr<DownstreamConfig> downstreamconf_;
   std::unique_ptr<MemcachedDispatcher> session_cache_memcached_dispatcher_;
 #ifdef HAVE_MRUBY
   std::unique_ptr<mruby::MRubyContext> mruby_ctx_;
@@ -233,9 +266,10 @@ private:
   SSL_CTX *sv_ssl_ctx_;
   SSL_CTX *cl_ssl_ctx_;
   ssl::CertLookupTree *cert_tree_;
+  ConnectionHandler *conn_handler_;
 
   std::shared_ptr<TicketKeys> ticket_keys_;
-  std::vector<DownstreamAddrGroup> downstream_addr_groups_;
+  std::vector<std::shared_ptr<DownstreamAddrGroup>> downstream_addr_groups_;
   // Worker level blocker for downstream connection.  For example,
   // this is used when file decriptor is exhausted.
   std::unique_ptr<ConnectBlocker> connect_blocker_;
@@ -250,9 +284,10 @@ private:
 // group.  The catch-all group index is given in |catch_all|.  All
 // patterns are given in |groups|.
 size_t match_downstream_addr_group(
-    const Router &router, const std::vector<WildcardPattern> &wildcard_patterns,
-    const StringRef &hostport, const StringRef &path,
-    const std::vector<DownstreamAddrGroup> &groups, size_t catch_all);
+    const RouterConfig &routerconfig, const StringRef &hostport,
+    const StringRef &path,
+    const std::vector<std::shared_ptr<DownstreamAddrGroup>> &groups,
+    size_t catch_all, BlockAllocator &balloc);
 
 void downstream_failure(DownstreamAddr *addr);
 

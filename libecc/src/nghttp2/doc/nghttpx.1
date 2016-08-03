@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "NGHTTPX" "1" "May 26, 2016" "1.11.0" "nghttp2"
+.TH "NGHTTPX" "1" "Jul 21, 2016" "1.13.0" "nghttp2"
 .SH NAME
 nghttpx \- HTTP/2 proxy
 .
@@ -120,12 +120,13 @@ together forming  load balancing  group.
 Several parameters <PARAM> are accepted after <PATTERN>.
 The  parameters are  delimited  by  ";".  The  available
 parameters       are:      "proto=<PROTO>",       "tls",
-"sni=<SNI_HOST>",   "fall=<N>",  and   "rise=<N>".   The
-parameter consists  of keyword, and  optionally followed
-by "=" and value.  For example, the parameter "proto=h2"
-consists  of the  keyword "proto"  and value  "h2".  The
-parameter "tls"  consists of  the keyword  "tls" without
-value.  Each parameter is described as follows.
+"sni=<SNI_HOST>",     "fall=<N>",    "rise=<N>",     and
+"affinity=<METHOD>".  The parameter consists of keyword,
+and optionally followed by  "=" and value.  For example,
+the parameter "proto=h2" consists of the keyword "proto"
+and  value "h2".   The parameter  "tls" consists  of the
+keyword   "tls"  without   value.   Each   parameter  is
+described as follows.
 .sp
 The backend application protocol  can be specified using
 optional  "proto"   parameter,  and   in  the   form  of
@@ -160,6 +161,20 @@ eligible  for load  balancing target.   If <N>  is 0,  a
 backend  is permanently  offline, once  it goes  in that
 state, and this is the default behaviour.
 .sp
+The     session     affinity    is     enabled     using
+"affinity=<METHOD>"  parameter.   If  "ip" is  given  in
+<METHOD>, client  IP based session affinity  is enabled.
+If  "none" is  given  in <METHOD>,  session affinity  is
+disabled, and this is the default.  The session affinity
+is enabled per  <PATTERN>.  If at least  one backend has
+"affinity" parameter,  and its  <METHOD> is  not "none",
+session  affinity is  enabled  for  all backend  servers
+sharing  the  same  <PATTERN>.   It is  advised  to  set
+"affinity"  parameter  to   all  backend  explicitly  if
+session affinity  is desired.  The session  affinity may
+break if one of the backend gets unreachable, or backend
+settings are reloaded or replaced by API.
+.sp
 Since ";" and ":" are  used as delimiter, <PATTERN> must
 not  contain these  characters.  Since  ";" has  special
 meaning in shell, the option value must be quoted.
@@ -168,7 +183,7 @@ Default: \fB127.0.0.1,80\fP
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-f, \-\-frontend=(<HOST>,<PORT>|unix:<PATH>)[;no\-tls]
+.B \-f, \-\-frontend=(<HOST>,<PORT>|unix:<PATH>)[[;PARAM]...]
 Set  frontend  host and  port.   If  <HOST> is  \(aq*\(aq,  it
 assumes  all addresses  including  both  IPv4 and  IPv6.
 UNIX domain  socket can  be specified by  prefixing path
@@ -176,8 +191,24 @@ name  with  "unix:" (e.g.,  unix:/var/run/nghttpx.sock).
 This  option can  be used  multiple times  to listen  to
 multiple addresses.
 .sp
+This option  can take  0 or  more parameters,  which are
+described  below.   Note   that  "api"  and  "healthmon"
+parameters are mutually exclusive.
+.sp
 Optionally, TLS  can be disabled by  specifying "no\-tls"
 parameter.  TLS is enabled by default.
+.sp
+To  make this  frontend as  API endpoint,  specify "api"
+parameter.   This   is  disabled  by  default.    It  is
+important  to  limit the  access  to  the API  frontend.
+Otherwise, someone  may change  the backend  server, and
+break your services,  or expose confidential information
+to the outside the world.
+.sp
+To  make  this  frontend  as  health  monitor  endpoint,
+specify  "healthmon"  parameter.   This is  disabled  by
+default.  Any  requests which come through  this address
+are replied with 200 HTTP status, without no body.
 .sp
 Default: \fB*,3000\fP
 .UNINDENT
@@ -454,6 +485,20 @@ Specify  timeout before  SETTINGS ACK  is received  from
 backend server.
 .sp
 Default: \fB10s\fP
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-backend\-max\-backoff=<DURATION>
+Specify  maximum backoff  interval.  This  is used  when
+doing health  check against offline backend  (see "fail"
+parameter  in \fI\%\-\-backend\fP  option).   It is  also used  to
+limit  the  maximum   interval  to  temporarily  disable
+backend  when nghttpx  failed to  connect to  it.  These
+intervals are calculated  using exponential backoff, and
+consecutive failed attempts increase the interval.  This
+option caps its maximum value.
+.sp
+Default: \fB2m\fP
 .UNINDENT
 .SS SSL/TLS
 .INDENT 0.0
@@ -1078,6 +1123,14 @@ originally  generates  HTTP  error status  code  <CODE>.
 HTTP  status  code.  If  error  status  code comes  from
 backend server, the custom error pages are not used.
 .UNINDENT
+.SS API
+.INDENT 0.0
+.TP
+.B \-\-api\-max\-request\-body=<SIZE>
+Set the maximum size of request body for API request.
+.sp
+Default: \fB16K\fP
+.UNINDENT
 .SS Debug
 .INDENT 0.0
 .TP
@@ -1682,9 +1735,64 @@ App.new
 .fi
 .UNINDENT
 .UNINDENT
+.SH API ENDPOINTS
+.sp
+nghttpx exposes API endpoints to manipulate it via HTTP based API.  By
+default, API endpoint is disabled.  To enable it, add a dedicated
+frontend for API using \fI\%\-\-frontend\fP option with "api"
+parameter.  All requests which come from this frontend address, will
+be treated as API request.
+.sp
+The response is normally JSON dictionary, and at least includes the
+following keys:
+.INDENT 0.0
+.TP
+.B status
+The status of the request processing.  The following values are
+defined:
+.INDENT 7.0
+.TP
+.B Success
+The request was successful.
+.TP
+.B Failure
+The request was failed.  No change has been made.
+.UNINDENT
+.TP
+.B code
+HTTP status code
+.UNINDENT
+.sp
+We wrote "normally", since nghttpx may return ordinal HTML response in
+some cases where the error has occurred before reaching API endpoint
+(e.g., header field is too large).
+.sp
+The following section describes available API endpoints.
+.SS PUT /api/v1beta1/backendconfig
+.sp
+This API replaces the current backend server settings with the
+requested ones.  The request method should be PUT, but POST is also
+acceptable.  The request body must be nghttpx configuration file
+format.  For configuration file format, see \fI\%FILES\fP section.  The
+line separator inside the request body must be single LF (0x0A).
+Currently, only \fI\%backend\fP option is parsed, the
+others are simply ignored.  The semantics of this API is replace the
+current backend with the backend options in request body.  Describe
+the desired set of backend severs, and nghttpx makes it happen.  If
+there is no \fI\%backend\fP option is found in request
+body, the current set of backend is replaced with the \fI\%backend\fP option\(aqs default value, which is \fB127.0.0.1,80\fP\&.
+.sp
+The replacement is done instantly without breaking existing
+connections or requests.  It also avoids any process creation as is
+the case with hot swapping with signals.
+.sp
+The one limitation is that only numeric IP address is allowd in
+\fI\%backend\fP in request body while non numeric
+hostname is allowed in command\-line or configuration file is read
+using \fI\%\-\-conf\fP\&.
 .SH SEE ALSO
 .sp
-\fInghttp(1)\fP, \fInghttpd(1)\fP, \fIh2load(1)\fP
+\fBnghttp(1)\fP, \fBnghttpd(1)\fP, \fBh2load(1)\fP
 .SH AUTHOR
 Tatsuhiro Tsujikawa
 .SH COPYRIGHT

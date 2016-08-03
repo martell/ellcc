@@ -3,6 +3,7 @@ package nghttp2
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"golang.org/x/net/http2/hpack"
 	"golang.org/x/net/websocket"
@@ -791,5 +792,199 @@ func TestH1H2RespPhaseReturn(t *testing.T) {
 
 	if got, want := string(res.body), "Hello World from resp"; got != want {
 		t.Errorf("body = %v; want %v", got, want)
+	}
+}
+
+// TestH1APIBackendconfig exercise backendconfig API endpoint routine
+// for successful case.
+func TestH1APIBackendconfig(t *testing.T) {
+	st := newServerTesterConnectPort([]string{"-f127.0.0.1,3010;api;no-tls"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be forwarded")
+	}, 3010)
+	defer st.Close()
+
+	res, err := st.http1(requestParam{
+		name:   "TestH1APIBackendconfig",
+		path:   "/api/v1beta1/backendconfig",
+		method: "PUT",
+		body: []byte(`# comment
+backend=127.0.0.1,3011
+
+`),
+	})
+	if err != nil {
+		t.Fatalf("Error st.http1() = %v", err)
+	}
+	if got, want := res.status, 200; got != want {
+		t.Errorf("res.status: %v; want %v", got, want)
+	}
+
+	var apiResp APIResponse
+	err = json.Unmarshal(res.body, &apiResp)
+	if err != nil {
+		t.Fatalf("Error unmarshaling API response: %v", err)
+	}
+	if got, want := apiResp.Status, "Success"; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+	if got, want := apiResp.Code, 200; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+}
+
+// TestH1APIBackendconfigQuery exercise backendconfig API endpoint
+// routine with query.
+func TestH1APIBackendconfigQuery(t *testing.T) {
+	st := newServerTesterConnectPort([]string{"-f127.0.0.1,3010;api;no-tls"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be forwarded")
+	}, 3010)
+	defer st.Close()
+
+	res, err := st.http1(requestParam{
+		name:   "TestH1APIBackendconfigQuery",
+		path:   "/api/v1beta1/backendconfig?foo=bar",
+		method: "PUT",
+		body: []byte(`# comment
+backend=127.0.0.1,3011
+
+`),
+	})
+	if err != nil {
+		t.Fatalf("Error st.http1() = %v", err)
+	}
+	if got, want := res.status, 200; got != want {
+		t.Errorf("res.status: %v; want %v", got, want)
+	}
+
+	var apiResp APIResponse
+	err = json.Unmarshal(res.body, &apiResp)
+	if err != nil {
+		t.Fatalf("Error unmarshaling API response: %v", err)
+	}
+	if got, want := apiResp.Status, "Success"; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+	if got, want := apiResp.Code, 200; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+}
+
+// TestH1APIBackendconfigBadMethod exercise backendconfig API endpoint
+// routine with bad method.
+func TestH1APIBackendconfigBadMethod(t *testing.T) {
+	st := newServerTesterConnectPort([]string{"-f127.0.0.1,3010;api;no-tls"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be forwarded")
+	}, 3010)
+	defer st.Close()
+
+	res, err := st.http1(requestParam{
+		name:   "TestH1APIBackendconfigBadMethod",
+		path:   "/api/v1beta1/backendconfig",
+		method: "GET",
+		body: []byte(`# comment
+backend=127.0.0.1,3011
+
+`),
+	})
+	if err != nil {
+		t.Fatalf("Error st.http1() = %v", err)
+	}
+	if got, want := res.status, 405; got != want {
+		t.Errorf("res.status: %v; want %v", got, want)
+	}
+
+	var apiResp APIResponse
+	err = json.Unmarshal(res.body, &apiResp)
+	if err != nil {
+		t.Fatalf("Error unmarshaling API response: %v", err)
+	}
+	if got, want := apiResp.Status, "Failure"; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+	if got, want := apiResp.Code, 405; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+}
+
+// TestH1APINotFound exercise backendconfig API endpoint routine when
+// API endpoint is not found.
+func TestH1APINotFound(t *testing.T) {
+	st := newServerTesterConnectPort([]string{"-f127.0.0.1,3010;api;no-tls"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be forwarded")
+	}, 3010)
+	defer st.Close()
+
+	res, err := st.http1(requestParam{
+		name:   "TestH1APINotFound",
+		path:   "/api/notfound",
+		method: "GET",
+		body: []byte(`# comment
+backend=127.0.0.1,3011
+
+`),
+	})
+	if err != nil {
+		t.Fatalf("Error st.http1() = %v", err)
+	}
+	if got, want := res.status, 404; got != want {
+		t.Errorf("res.status: %v; want %v", got, want)
+	}
+
+	var apiResp APIResponse
+	err = json.Unmarshal(res.body, &apiResp)
+	if err != nil {
+		t.Fatalf("Error unmarshaling API response: %v", err)
+	}
+	if got, want := apiResp.Status, "Failure"; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+	if got, want := apiResp.Code, 404; got != want {
+		t.Errorf("apiResp.Status: %v; want %v", got, want)
+	}
+}
+
+// TestH1Healthmon tests health monitor endpoint.
+func TestH1Healthmon(t *testing.T) {
+	st := newServerTesterConnectPort([]string{"-f127.0.0.1,3011;healthmon;no-tls"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be forwarded")
+	}, 3011)
+	defer st.Close()
+
+	res, err := st.http1(requestParam{
+		name: "TestH1Healthmon",
+		path: "/alpha/bravo",
+	})
+	if err != nil {
+		t.Fatalf("Error st.http1() = %v", err)
+	}
+	if got, want := res.status, 200; got != want {
+		t.Errorf("res.status: %v; want %v", got, want)
+	}
+}
+
+// TestH1ResponseBeforeRequestEnd tests the situation where response
+// ends before request body finishes.
+func TestH1ResponseBeforeRequestEnd(t *testing.T) {
+	st := newServerTester([]string{"--mruby-file=" + testDir + "/req-return.rb"}, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("request should not be forwarded")
+	})
+	defer st.Close()
+
+	if _, err := io.WriteString(st.conn, fmt.Sprintf(`POST / HTTP/1.1
+Host: %v
+Test-Case: TestH1ResponseBeforeRequestEnd
+Content-Length: 1000000
+
+`, st.authority)); err != nil {
+		t.Fatalf("Error io.WriteString() = %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(st.conn), nil)
+	if err != nil {
+		t.Fatalf("Error http.ReadResponse() = %v", err)
+	}
+
+	if got, want := resp.StatusCode, 404; got != want {
+		t.Errorf("status: %v; want %v", got, want)
 	}
 }

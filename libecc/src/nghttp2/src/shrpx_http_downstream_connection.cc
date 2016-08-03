@@ -147,12 +147,12 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
 }
 } // namespace
 
-HttpDownstreamConnection::HttpDownstreamConnection(DownstreamAddrGroup *group,
-                                                   struct ev_loop *loop,
-                                                   Worker *worker)
+HttpDownstreamConnection::HttpDownstreamConnection(
+    const std::shared_ptr<DownstreamAddrGroup> &group, ssize_t initial_addr_idx,
+    struct ev_loop *loop, Worker *worker)
     : conn_(loop, -1, nullptr, worker->get_mcpool(),
-            get_config()->conn.downstream.timeout.write,
-            get_config()->conn.downstream.timeout.read, {}, {}, connectcb,
+            worker->get_downstream_config()->timeout.write,
+            worker->get_downstream_config()->timeout.read, {}, {}, connectcb,
             readcb, connect_timeoutcb, this,
             get_config()->tls.dyn_rec.warmup_threshold,
             get_config()->tls.dyn_rec.idle_timeout, PROTO_HTTP1),
@@ -164,9 +164,14 @@ HttpDownstreamConnection::HttpDownstreamConnection(DownstreamAddrGroup *group,
       group_(group),
       addr_(nullptr),
       ioctrl_(&conn_.rlimit),
-      response_htp_{0} {}
+      response_htp_{0},
+      initial_addr_idx_(initial_addr_idx) {}
 
-HttpDownstreamConnection::~HttpDownstreamConnection() {}
+HttpDownstreamConnection::~HttpDownstreamConnection() {
+  if (LOG_ENABLED(INFO)) {
+    DCLOG(INFO, this) << "Deleted";
+  }
+}
 
 int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
   if (LOG_ENABLED(INFO)) {
@@ -182,12 +187,18 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
     return SHRPX_ERR_NETWORK;
   }
 
-  auto &downstreamconf = get_config()->conn.downstream;
+  auto &downstreamconf = *worker_->get_downstream_config();
 
   if (conn_.fd == -1) {
     auto &shared_addr = group_->shared_addr;
     auto &addrs = shared_addr->addrs;
-    auto &next_downstream = shared_addr->next;
+
+    // If session affinity is enabled, we always start with address at
+    // initial_addr_idx_.
+    size_t temp_idx = initial_addr_idx_;
+
+    auto &next_downstream =
+        shared_addr->affinity == AFFINITY_NONE ? shared_addr->next : temp_idx;
     auto end = next_downstream;
     for (;;) {
       auto &addr = addrs[next_downstream];
@@ -303,7 +314,8 @@ int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
     // we may set read timer cb to idle_timeoutcb.  Reset again.
     conn_.rt.repeat = downstreamconf.timeout.read;
     ev_set_cb(&conn_.rt, timeoutcb);
-    ev_timer_again(conn_.loop, &conn_.rt);
+    ev_timer_stop(conn_.loop, &conn_.rt);
+
     ev_set_cb(&conn_.rev, readcb);
   }
 
@@ -373,9 +385,9 @@ int HttpDownstreamConnection::push_request_headers() {
     buf->append("\r\n");
   }
 
-  if (!connect_method && req.http2_expect_body &&
-      !req.fs.header(http2::HD_CONTENT_LENGTH)) {
-
+  // set transfer-encoding only when content-length is unknown and
+  // request body is expected.
+  if (!connect_method && req.http2_expect_body && req.fs.content_length == -1) {
     downstream_->set_chunked_request(true);
     buf->append("Transfer-Encoding: chunked\r\n");
   }
@@ -552,15 +564,32 @@ int HttpDownstreamConnection::end_upload_data() {
 }
 
 namespace {
+void remove_from_pool(HttpDownstreamConnection *dconn) {
+  auto group = dconn->get_downstream_addr_group();
+  auto &shared_addr = group->shared_addr;
+
+  if (shared_addr->affinity == AFFINITY_NONE) {
+    auto &dconn_pool =
+        dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
+    dconn_pool.remove_downstream_connection(dconn);
+    return;
+  }
+
+  auto addr = dconn->get_addr();
+  auto &dconn_pool = addr->dconn_pool;
+  dconn_pool->remove_downstream_connection(dconn);
+}
+} // namespace
+
+namespace {
 void idle_readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Idle connection EOF";
   }
-  auto &dconn_pool =
-      dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
-  dconn_pool.remove_downstream_connection(dconn);
+
+  remove_from_pool(dconn);
   // dconn was deleted
 }
 } // namespace
@@ -572,9 +601,8 @@ void idle_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   if (LOG_ENABLED(INFO)) {
     DCLOG(INFO, dconn) << "Idle connection timeout";
   }
-  auto &dconn_pool =
-      dconn->get_downstream_addr_group()->shared_addr->dconn_pool;
-  dconn_pool.remove_downstream_connection(dconn);
+
+  remove_from_pool(dconn);
   // dconn was deleted
 }
 } // namespace
@@ -588,7 +616,9 @@ void HttpDownstreamConnection::detach_downstream(Downstream *downstream) {
   ev_set_cb(&conn_.rev, idle_readcb);
   ioctrl_.force_resume_read();
 
-  conn_.rt.repeat = get_config()->conn.downstream.timeout.idle_read;
+  auto &downstreamconf = *worker_->get_downstream_config();
+
+  conn_.rt.repeat = downstreamconf.timeout.idle_read;
   ev_set_cb(&conn_.rt, idle_timeoutcb);
   ev_timer_again(conn_.loop, &conn_.rt);
 
@@ -602,8 +632,10 @@ void HttpDownstreamConnection::pause_read(IOCtrlReason reason) {
 
 int HttpDownstreamConnection::resume_read(IOCtrlReason reason,
                                           size_t consumed) {
+  auto &downstreamconf = *worker_->get_downstream_config();
+
   if (downstream_->get_response_buf()->rleft() <=
-      get_config()->conn.downstream.request_buffer_size / 2) {
+      downstreamconf.request_buffer_size / 2) {
     ioctrl_.resume_read(reason);
   }
 
@@ -861,7 +893,6 @@ http_parser_settings htp_hooks = {
 } // namespace
 
 int HttpDownstreamConnection::read_clear() {
-  ev_timer_again(conn_.loop, &conn_.rt);
   std::array<uint8_t, 16_k> buf;
   int rv;
 
@@ -887,8 +918,6 @@ int HttpDownstreamConnection::read_clear() {
 }
 
 int HttpDownstreamConnection::write_clear() {
-  ev_timer_again(conn_.loop, &conn_.rt);
-
   auto upstream = downstream_->get_upstream();
   auto input = downstream_->get_request_buf();
 
@@ -934,6 +963,8 @@ int HttpDownstreamConnection::tls_handshake() {
   }
 
   if (rv < 0) {
+    downstream_failure(addr_);
+
     return rv;
   }
 
@@ -943,6 +974,8 @@ int HttpDownstreamConnection::tls_handshake() {
 
   if (!get_config()->tls.insecure &&
       ssl::check_cert(conn_.tls.ssl, addr_) != 0) {
+    downstream_failure(addr_);
+
     return -1;
   }
 
@@ -958,7 +991,8 @@ int HttpDownstreamConnection::tls_handshake() {
 
   connect_blocker->on_success();
 
-  conn_.timeoutcb = timeoutcb;
+  ev_set_cb(&conn_.rt, timeoutcb);
+  ev_set_cb(&conn_.wt, timeoutcb);
 
   do_read_ = &HttpDownstreamConnection::read_tls;
   do_write_ = &HttpDownstreamConnection::write_tls;
@@ -971,7 +1005,6 @@ int HttpDownstreamConnection::tls_handshake() {
 int HttpDownstreamConnection::read_tls() {
   ERR_clear_error();
 
-  ev_timer_again(conn_.loop, &conn_.rt);
   std::array<uint8_t, 16_k> buf;
   int rv;
 
@@ -998,8 +1031,6 @@ int HttpDownstreamConnection::read_tls() {
 
 int HttpDownstreamConnection::write_tls() {
   ERR_clear_error();
-
-  ev_timer_again(conn_.loop, &conn_.rt);
 
   auto upstream = downstream_->get_upstream();
   auto input = downstream_->get_request_buf();
@@ -1137,7 +1168,8 @@ int HttpDownstreamConnection::connected() {
 
   connect_blocker->on_success();
 
-  conn_.timeoutcb = timeoutcb;
+  ev_set_cb(&conn_.rt, timeoutcb);
+  ev_set_cb(&conn_.wt, timeoutcb);
 
   do_read_ = &HttpDownstreamConnection::read_clear;
   do_write_ = &HttpDownstreamConnection::write_clear;
@@ -1162,9 +1194,11 @@ int HttpDownstreamConnection::noop() { return 0; }
 
 DownstreamAddrGroup *
 HttpDownstreamConnection::get_downstream_addr_group() const {
-  return group_;
+  return group_.get();
 }
 
 DownstreamAddr *HttpDownstreamConnection::get_addr() const { return addr_; }
+
+bool HttpDownstreamConnection::poolable() const { return !group_->retired; }
 
 } // namespace shrpx

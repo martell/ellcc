@@ -21,7 +21,7 @@ Macros
 .. macro:: NGHTTP2_PROTO_ALPN
 
     
-    The seriazlied form of ALPN protocol identifier this library
+    The serialized form of ALPN protocol identifier this library
     supports.  Notice that first byte is the length of following
     protocol identifier.  This is the same wire format of `TLS ALPN
     extension <https://tools.ietf.org/html/rfc7301>`_.  This is useful

@@ -269,7 +269,7 @@ bool check_stop_client_request_timeout(Client *client, ev_timer *w) {
   auto nreq = client->req_todo - client->req_started;
 
   if (nreq == 0 ||
-      client->streams.size() >= (size_t)config.max_concurrent_streams) {
+      client->streams.size() >= client->session->max_concurrent_streams()) {
     // no more requests to make, stop timer
     ev_timer_stop(client->worker->loop, w);
     return true;
@@ -318,7 +318,8 @@ void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 } // namespace
 
 Client::Client(uint32_t id, Worker *worker, size_t req_todo)
-    : cstat{},
+    : wb(&worker->mcpool),
+      cstat{},
       worker(worker),
       ssl(nullptr),
       next_addr(config.addrs),
@@ -330,7 +331,8 @@ Client::Client(uint32_t id, Worker *worker, size_t req_todo)
       req_done(0),
       id(id),
       fd(-1),
-      new_connection_requested(false) {
+      new_connection_requested(false),
+      final(false) {
   ev_io_init(&wev, writecb, 0, EV_WRITE);
   ev_io_init(&rev, readcb, 0, EV_READ);
 
@@ -518,6 +520,8 @@ void Client::disconnect() {
     close(fd);
     fd = -1;
   }
+
+  final = false;
 }
 
 int Client::submit_request() {
@@ -860,7 +864,7 @@ int Client::connection_made() {
 
   if (!config.timing_script) {
     auto nreq =
-        std::min(req_todo - req_started, (size_t)config.max_concurrent_streams);
+        std::min(req_todo - req_started, session->max_concurrent_streams());
     for (; nreq > 0; --nreq) {
       if (submit_request() != 0) {
         process_request_failure();
@@ -907,6 +911,10 @@ int Client::on_read(const uint8_t *data, size_t len) {
 }
 
 int Client::on_write() {
+  if (wb.rleft() >= BACKOFF_WRITE_BUFFER_THRES) {
+    return 0;
+  }
+
   if (session->on_write() != 0) {
     return -1;
   }
@@ -940,28 +948,32 @@ int Client::read_clear() {
 }
 
 int Client::write_clear() {
+  std::array<struct iovec, 2> iov;
+
   for (;;) {
-    if (wb.rleft() > 0) {
-      ssize_t nwrite;
-      while ((nwrite = write(fd, wb.pos, wb.rleft())) == -1 && errno == EINTR)
-        ;
-      if (nwrite == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-          ev_io_start(worker->loop, &wev);
-          return 0;
-        }
-        return -1;
-      }
-      wb.drain(nwrite);
-      continue;
-    }
-    wb.reset();
     if (on_write() != 0) {
       return -1;
     }
-    if (wb.rleft() == 0) {
+
+    auto iovcnt = wb.riovec(iov.data(), iov.size());
+
+    if (iovcnt == 0) {
       break;
     }
+
+    ssize_t nwrite;
+    while ((nwrite = writev(fd, iov.data(), iovcnt)) == -1 && errno == EINTR)
+      ;
+
+    if (nwrite == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        ev_io_start(worker->loop, &wev);
+        return 0;
+      }
+      return -1;
+    }
+
+    wb.drain(nwrite);
   }
 
   ev_io_stop(worker->loop, &wev);
@@ -1054,35 +1066,36 @@ int Client::read_tls() {
 int Client::write_tls() {
   ERR_clear_error();
 
+  struct iovec iov;
+
   for (;;) {
-    if (wb.rleft() > 0) {
-      auto rv = SSL_write(ssl, wb.pos, wb.rleft());
-
-      if (rv <= 0) {
-        auto err = SSL_get_error(ssl, rv);
-        switch (err) {
-        case SSL_ERROR_WANT_READ:
-          // renegotiation started
-          return -1;
-        case SSL_ERROR_WANT_WRITE:
-          ev_io_start(worker->loop, &wev);
-          return 0;
-        default:
-          return -1;
-        }
-      }
-
-      wb.drain(rv);
-
-      continue;
-    }
-    wb.reset();
     if (on_write() != 0) {
       return -1;
     }
-    if (wb.rleft() == 0) {
+
+    auto iovcnt = wb.riovec(&iov, 1);
+
+    if (iovcnt == 0) {
       break;
     }
+
+    auto rv = SSL_write(ssl, iov.iov_base, iov.iov_len);
+
+    if (rv <= 0) {
+      auto err = SSL_get_error(ssl, rv);
+      switch (err) {
+      case SSL_ERROR_WANT_READ:
+        // renegotiation started
+        return -1;
+      case SSL_ERROR_WANT_WRITE:
+        ev_io_start(worker->loop, &wev);
+        return 0;
+      default:
+        return -1;
+      }
+    }
+
+    wb.drain(rv);
   }
 
   ev_io_stop(worker->loop, &wev);
@@ -1667,7 +1680,9 @@ Options:
               Default: )" << NGHTTP2_CLEARTEXT_PROTO_VERSION_ID << R"(
   -d, --data=<PATH>
               Post FILE to  server.  The request method  is changed to
-              POST.
+              POST.   For  http/1.1 connection,  if  -d  is used,  the
+              maximum number of in-flight pipelined requests is set to
+              1.
   -r, --rate=<N>
               Specifies  the  fixed  rate  at  which  connections  are
               created.   The   rate  must   be  a   positive  integer,
@@ -2214,6 +2229,11 @@ int main(int argc, char **argv) {
     }
   }
 
+  std::string content_length_str;
+  if (config.data_fd != -1) {
+    content_length_str = util::utos(config.data_length);
+  }
+
   auto method_it =
       std::find_if(std::begin(shared_nva), std::end(shared_nva),
                    [](const Header &nv) { return nv.name == ":method"; });
@@ -2244,14 +2264,20 @@ int main(int argc, char **argv) {
       h1req += nv.value;
       h1req += "\r\n";
     }
+
+    if (!content_length_str.empty()) {
+      h1req += "Content-Length: ";
+      h1req += content_length_str;
+      h1req += "\r\n";
+    }
     h1req += "\r\n";
 
     config.h1reqs.push_back(std::move(h1req));
 
     // For nghttp2
     std::vector<nghttp2_nv> nva;
-    // 1 for :path
-    nva.reserve(1 + shared_nva.size());
+    // 2 for :path, and possible content-length
+    nva.reserve(2 + shared_nva.size());
 
     nva.push_back(http2::make_nv_ls(":path", req));
 
@@ -2259,12 +2285,18 @@ int main(int argc, char **argv) {
       nva.push_back(http2::make_nv(nv.name, nv.value, false));
     }
 
+    if (!content_length_str.empty()) {
+      nva.push_back(http2::make_nv(StringRef::from_lit("content-length"),
+                                   StringRef{content_length_str}));
+    }
+
     config.nva.push_back(std::move(nva));
 
     // For spdylay
     std::vector<const char *> cva;
-    // 2 for :path and :version, 1 for terminal nullptr
-    cva.reserve(2 * (2 + shared_nva.size()) + 1);
+    // 3 for :path, :version, and possible content-length, 1 for
+    // terminal nullptr
+    cva.reserve(2 * (3 + shared_nva.size()) + 1);
 
     cva.push_back(":path");
     cva.push_back(req.c_str());
@@ -2279,6 +2311,12 @@ int main(int argc, char **argv) {
     }
     cva.push_back(":version");
     cva.push_back("HTTP/1.1");
+
+    if (!content_length_str.empty()) {
+      cva.push_back("content-length");
+      cva.push_back(content_length_str.c_str());
+    }
+
     cva.push_back(nullptr);
 
     config.nv.push_back(std::move(cva));

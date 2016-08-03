@@ -81,7 +81,7 @@ extern "C" {
 /**
  * @macro
  *
- * The seriazlied form of ALPN protocol identifier this library
+ * The serialized form of ALPN protocol identifier this library
  * supports.  Notice that first byte is the length of following
  * protocol identifier.  This is the same wire format of `TLS ALPN
  * extension <https://tools.ietf.org/html/rfc7301>`_.  This is useful
@@ -1454,9 +1454,19 @@ typedef int (*nghttp2_on_data_chunk_recv_callback)(nghttp2_session *session,
  * `nghttp2_session_server_new()`.
  *
  * The implementation of this function must return 0 if it succeeds.
- * If nonzero is returned, it is treated as fatal error and
- * `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
- * immediately return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+ * It can also return :enum:`NGHTTP2_ERR_CANCEL` to cancel the
+ * transmission of the given frame.
+ *
+ * If there is a fatal error while executing this callback, the
+ * implementation should return :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`,
+ * which makes `nghttp2_session_send()` and
+ * `nghttp2_session_mem_send()` functions immediately return
+ * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+ *
+ * If the other value is returned, it is treated as if
+ * :enum:`NGHTTP2_ERR_CALLBACK_FAILURE` is returned.  But the
+ * implementation should not rely on this since the library may define
+ * new return value to extend its capability.
  *
  * To set this callback to :type:`nghttp2_session_callbacks`, use
  * `nghttp2_session_callbacks_set_before_frame_send_callback()`.
@@ -2415,6 +2425,21 @@ NGHTTP2_EXTERN void nghttp2_option_set_no_auto_ping_ack(nghttp2_option *option,
 /**
  * @function
  *
+ * This option sets the maximum length of header block (a set of
+ * header fields per one HEADERS frame) to send.  The length of a
+ * given set of header fields is calculated using
+ * `nghttp2_hd_deflate_bound()`.  The default value is 64KiB.  If
+ * application attempts to send header fields larger than this limit,
+ * the transmission of the frame fails with error code
+ * :enum:`NGHTTP2_ERR_FRAME_SIZE_ERROR`.
+ */
+NGHTTP2_EXTERN void
+nghttp2_option_set_max_send_header_block_length(nghttp2_option *option,
+                                                size_t val);
+
+/**
+ * @function
+ *
  * Initializes |*session_ptr| for client use.  The all members of
  * |callbacks| are copied to |*session_ptr|.  Therefore |*session_ptr|
  * does not store |callbacks|.  The |user_data| is an arbitrary user
@@ -2604,14 +2629,20 @@ NGHTTP2_EXTERN void nghttp2_session_del(nghttp2_session *session);
  *
  * 6. :type:`nghttp2_before_frame_send_callback` is invoked.
  *
- * 7. :type:`nghttp2_send_callback` is invoked one or more times to
+ * 7. If :enum:`NGHTTP2_ERR_CANCEL` is returned from
+ *    :type:`nghttp2_before_frame_send_callback`, the current frame
+ *    transmission is canceled, and
+ *    :type:`nghttp2_on_frame_not_send_callback` is invoked.  Abort
+ *    the following steps.
+ *
+ * 8. :type:`nghttp2_send_callback` is invoked one or more times to
  *    send the frame.
  *
- * 8. :type:`nghttp2_on_frame_send_callback` is invoked.
+ * 9. :type:`nghttp2_on_frame_send_callback` is invoked.
  *
- * 9. If the transmission of the frame triggers closure of the stream,
- *    the stream is closed and
- *    :type:`nghttp2_on_stream_close_callback` is invoked.
+ * 10. If the transmission of the frame triggers closure of the
+ *     stream, the stream is closed and
+ *     :type:`nghttp2_on_stream_close_callback` is invoked.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
@@ -3583,8 +3614,8 @@ nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  *
  * The |nva| is an array of name/value pair :type:`nghttp2_nv` with
  * |nvlen| elements.  The application is responsible not to include
- * required pseudo-header fields (header field whose name starts with
- * ":") in |nva|.
+ * pseudo-header fields (header field whose name starts with ":") in
+ * |nva|.
  *
  * This function creates copies of all name/value pairs in |nva|.  It
  * also lower-cases all names in |nva|.  The order of elements in
@@ -3599,20 +3630,20 @@ nghttp2_submit_response(nghttp2_session *session, int32_t stream_id,
  * :type:`nghttp2_on_frame_not_send_callback` is called.
  *
  * For server, trailer fields must follow response HEADERS or response
- * DATA with END_STREAM flag set.  The library does not enforce this
- * requirement, and applications should do this for themselves.  If
- * `nghttp2_submit_trailer()` is called before any response HEADERS
+ * DATA without END_STREAM flat set.  The library does not enforce
+ * this requirement, and applications should do this for themselves.
+ * If `nghttp2_submit_trailer()` is called before any response HEADERS
  * submission (usually by `nghttp2_submit_response()`), the content of
  * |nva| will be sent as response headers, which will result in error.
  *
  * This function has the same effect with `nghttp2_submit_headers()`,
- * with flags = :enum:`NGHTTP2_FLAG_END_HEADERS` and both pri_spec and
+ * with flags = :enum:`NGHTTP2_FLAG_END_STREAM` and both pri_spec and
  * stream_user_data to NULL.
  *
  * To submit trailer fields after `nghttp2_submit_response()` is
  * called, the application has to specify
- * :type:`nghttp2_data_provider` to `nghttp2_submit_response()`.  In
- * side :type:`nghttp2_data_source_read_callback`, when setting
+ * :type:`nghttp2_data_provider` to `nghttp2_submit_response()`.
+ * Inside of :type:`nghttp2_data_source_read_callback`, when setting
  * :enum:`NGHTTP2_DATA_FLAG_EOF`, also set
  * :enum:`NGHTTP2_DATA_FLAG_NO_END_STREAM`.  After that, the
  * application can send trailer fields using
@@ -4071,14 +4102,17 @@ nghttp2_session_check_server_session(nghttp2_session *session);
  * that value as window_size_increment is queued.  If the
  * |window_size_increment| is larger than the received bytes from the
  * remote endpoint, the local window size is increased by that
- * difference.
+ * difference.  If the sole purpose is to increase the local window
+ * size, consider to use `nghttp2_session_set_local_window_size()`.
  *
  * If the |window_size_increment| is negative, the local window size
  * is decreased by -|window_size_increment|.  If automatic
  * WINDOW_UPDATE is enabled
  * (`nghttp2_option_set_no_auto_window_update()`), and the library
  * decided that the WINDOW_UPDATE should be submitted, then
- * WINDOW_UPDATE is queued with the current received bytes count.
+ * WINDOW_UPDATE is queued with the current received bytes count.  If
+ * the sole purpose is to decrease the local window size, consider to
+ * use `nghttp2_session_set_local_window_size()`.
  *
  * If the |window_size_increment| is 0, the function does nothing and
  * returns 0.
@@ -4095,6 +4129,44 @@ NGHTTP2_EXTERN int nghttp2_submit_window_update(nghttp2_session *session,
                                                 uint8_t flags,
                                                 int32_t stream_id,
                                                 int32_t window_size_increment);
+
+/**
+ * @function
+ *
+ * Set local window size (local endpoints's window size) to the given
+ * |window_size| for the given stream denoted by |stream_id|.  To
+ * change connection level window size, specify 0 to |stream_id|.  To
+ * increase window size, this function may submit WINDOW_UPDATE frame
+ * to transmission queue.
+ *
+ * The |flags| is currently ignored and should be
+ * :enum:`NGHTTP2_FLAG_NONE`.
+ *
+ * This sounds similar to `nghttp2_submit_window_update()`, but there
+ * are 2 differences.  The first difference is that this function
+ * takes the absolute value of window size to set, rather than the
+ * delta.  To change the window size, this may be easier to use since
+ * the application just declares the intended window size, rather than
+ * calculating delta.  The second difference is that
+ * `nghttp2_submit_window_update()` affects the received bytes count
+ * which has not acked yet.  By the specification of
+ * `nghttp2_submit_window_update()`, to strictly increase the local
+ * window size, we have to submit delta including all received bytes
+ * count, which might not be desirable in some cases.  On the other
+ * hand, this function does not affect the received bytes count.  It
+ * just sets the local window size to the given value.
+ *
+ * This function returns 0 if it succeeds, or one of the following
+ * negative error codes:
+ *
+ * :enum:`NGHTTP2_ERR_INVALID_ARGUMENT`
+ *     The |stream_id| is negative.
+ * :enum:`NGHTTP2_ERR_NOMEM`
+ *     Out of memory.
+ */
+NGHTTP2_EXTERN int
+nghttp2_session_set_local_window_size(nghttp2_session *session, uint8_t flags,
+                                      int32_t stream_id, int32_t window_size);
 
 /**
  * @function

@@ -98,9 +98,9 @@ void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 LiveCheck::LiveCheck(struct ev_loop *loop, SSL_CTX *ssl_ctx, Worker *worker,
                      DownstreamAddr *addr, std::mt19937 &gen)
     : conn_(loop, -1, nullptr, worker->get_mcpool(),
-            get_config()->conn.downstream.timeout.write,
-            get_config()->conn.downstream.timeout.read, {}, {}, writecb, readcb,
-            timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
+            worker->get_downstream_config()->timeout.write,
+            worker->get_downstream_config()->timeout.read, {}, {}, writecb,
+            readcb, timeoutcb, this, get_config()->tls.dyn_rec.warmup_threshold,
             get_config()->tls.dyn_rec.idle_timeout, PROTO_NONE),
       wb_(worker->get_mcpool()),
       gen_(gen),
@@ -157,10 +157,15 @@ constexpr auto JITTER = 0.2;
 } // namespace
 
 void LiveCheck::schedule() {
-  auto base_backoff = pow(MULTIPLIER, std::min(fail_count_, MAX_BACKOFF_EXP));
+  auto base_backoff =
+      util::int_pow(MULTIPLIER, std::min(fail_count_, MAX_BACKOFF_EXP));
   auto dist = std::uniform_real_distribution<>(-JITTER * base_backoff,
                                                JITTER * base_backoff);
-  auto backoff = base_backoff + dist(gen_);
+
+  auto &downstreamconf = *get_config()->conn.downstream;
+
+  auto backoff =
+      std::min(downstreamconf.timeout.max_backoff, base_backoff + dist(gen_));
 
   ev_timer_set(&backoff_timer_, backoff, 0.);
   ev_timer_start(conn_.loop, &backoff_timer_);
@@ -394,8 +399,6 @@ int LiveCheck::read_tls() {
 }
 
 int LiveCheck::write_tls() {
-  ev_timer_again(conn_.loop, &conn_.rt);
-
   ERR_clear_error();
 
   struct iovec iov;
@@ -462,8 +465,6 @@ int LiveCheck::read_clear() {
 }
 
 int LiveCheck::write_clear() {
-  ev_timer_again(conn_.loop, &conn_.rt);
-
   struct iovec iov;
 
   for (;;) {

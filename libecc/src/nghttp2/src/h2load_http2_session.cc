@@ -169,11 +169,11 @@ ssize_t send_callback(nghttp2_session *session, const uint8_t *data,
   auto client = static_cast<Client *>(user_data);
   auto &wb = client->wb;
 
-  if (wb.wleft() == 0) {
+  if (wb.rleft() >= BACKOFF_WRITE_BUFFER_THRES) {
     return NGHTTP2_ERR_WOULDBLOCK;
   }
 
-  return wb.write(data, length);
+  return wb.append(data, length);
 }
 } // namespace
 
@@ -219,13 +219,10 @@ void Http2Session::on_connect() {
 
   assert(rv == 0);
 
-  auto extra_connection_window =
-      (1 << client_->worker->config->connection_window_bits) - 1 -
-      NGHTTP2_INITIAL_CONNECTION_WINDOW_SIZE;
-  if (extra_connection_window != 0) {
-    nghttp2_submit_window_update(session_, NGHTTP2_FLAG_NONE, 0,
-                                 extra_connection_window);
-  }
+  auto connection_window =
+      (1 << client_->worker->config->connection_window_bits) - 1;
+  nghttp2_session_set_local_window_size(session_, NGHTTP2_FLAG_NONE, 0,
+                                        connection_window);
 
   client_->signal_write();
 }
@@ -290,6 +287,10 @@ int Http2Session::on_write() {
 
 void Http2Session::terminate() {
   nghttp2_session_terminate_session(session_, NGHTTP2_NO_ERROR);
+}
+
+size_t Http2Session::max_concurrent_streams() {
+  return (size_t)client_->worker->config->max_concurrent_streams;
 }
 
 } // namespace h2load

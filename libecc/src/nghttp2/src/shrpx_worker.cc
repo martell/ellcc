@@ -64,10 +64,21 @@ void mcpool_clear_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 } // namespace
 
 namespace {
+void proc_wev_cb(struct ev_loop *loop, ev_timer *w, int revents) {
+  auto worker = static_cast<Worker *>(w->data);
+  worker->process_events();
+}
+} // namespace
+
+namespace {
 bool match_shared_downstream_addr(
     const std::shared_ptr<SharedDownstreamAddr> &lhs,
     const std::shared_ptr<SharedDownstreamAddr> &rhs) {
   if (lhs->addrs.size() != rhs->addrs.size()) {
+    return false;
+  }
+
+  if (lhs->affinity != rhs->affinity) {
     return false;
   }
 
@@ -106,15 +117,17 @@ std::random_device rd;
 Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
                SSL_CTX *tls_session_cache_memcached_ssl_ctx,
                ssl::CertLookupTree *cert_tree,
-               const std::shared_ptr<TicketKeys> &ticket_keys)
+               const std::shared_ptr<TicketKeys> &ticket_keys,
+               ConnectionHandler *conn_handler,
+               std::shared_ptr<DownstreamConfig> downstreamconf)
     : randgen_(rd()),
       worker_stat_{},
       loop_(loop),
       sv_ssl_ctx_(sv_ssl_ctx),
       cl_ssl_ctx_(cl_ssl_ctx),
       cert_tree_(cert_tree),
+      conn_handler_(conn_handler),
       ticket_keys_(ticket_keys),
-      downstream_addr_groups_(get_config()->conn.downstream.addr_groups.size()),
       connect_blocker_(
           make_unique<ConnectBlocker>(randgen_, loop_, []() {}, []() {})),
       graceful_shutdown_(false) {
@@ -125,31 +138,61 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
   ev_timer_init(&mcpool_clear_timer_, mcpool_clear_cb, 0., 0.);
   mcpool_clear_timer_.data = this;
 
+  ev_timer_init(&proc_wev_timer_, proc_wev_cb, 0., 0.);
+  proc_wev_timer_.data = this;
+
   auto &session_cacheconf = get_config()->tls.session_cache;
 
   if (!session_cacheconf.memcached.host.empty()) {
     session_cache_memcached_dispatcher_ = make_unique<MemcachedDispatcher>(
         &session_cacheconf.memcached.addr, loop,
         tls_session_cache_memcached_ssl_ctx,
-        StringRef{session_cacheconf.memcached.host}, &mcpool_);
+        StringRef{session_cacheconf.memcached.host}, &mcpool_, randgen_);
   }
 
-  auto &downstreamconf = get_config()->conn.downstream;
+  replace_downstream_config(std::move(downstreamconf));
+}
 
-  for (size_t i = 0; i < downstreamconf.addr_groups.size(); ++i) {
-    auto &src = downstreamconf.addr_groups[i];
+void Worker::replace_downstream_config(
+    std::shared_ptr<DownstreamConfig> downstreamconf) {
+  for (auto &g : downstream_addr_groups_) {
+    g->retired = true;
+
+    auto &shared_addr = g->shared_addr;
+
+    if (shared_addr->affinity == AFFINITY_NONE) {
+      shared_addr->dconn_pool.remove_all();
+      continue;
+    }
+
+    for (auto &addr : shared_addr->addrs) {
+      addr.dconn_pool->remove_all();
+    }
+  }
+
+  downstreamconf_ = downstreamconf;
+
+  // Making a copy is much faster with multiple thread on
+  // backendconfig API call.
+  auto groups = downstreamconf->addr_groups;
+
+  downstream_addr_groups_ =
+      std::vector<std::shared_ptr<DownstreamAddrGroup>>(groups.size());
+
+  for (size_t i = 0; i < groups.size(); ++i) {
+    auto &src = groups[i];
     auto &dst = downstream_addr_groups_[i];
 
-    dst.pattern = src.pattern;
-
-    auto shared_addr = std::make_shared<SharedDownstreamAddr>();
+    dst = std::make_shared<DownstreamAddrGroup>();
+    dst->pattern = src.pattern;
 
     // TODO for some reason, clang-3.6 which comes with Ubuntu 15.10
-    // does not value initialize SharedDownstreamAddr above.
-    shared_addr->next = 0;
+    // does not value initialize with std::make_shared.
+    auto shared_addr = std::make_shared<SharedDownstreamAddr>();
+
     shared_addr->addrs.resize(src.addrs.size());
-    shared_addr->http1_pri = {};
-    shared_addr->http2_pri = {};
+    shared_addr->affinity = src.affinity;
+    shared_addr->affinity_hash = src.affinity_hash;
 
     size_t num_http1 = 0;
     size_t num_http2 = 0;
@@ -169,27 +212,29 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       dst_addr.fall = src_addr.fall;
       dst_addr.rise = src_addr.rise;
 
+      auto shared_addr_ptr = shared_addr.get();
+
       dst_addr.connect_blocker =
           make_unique<ConnectBlocker>(randgen_, loop_,
-                                      [shared_addr, &dst_addr]() {
+                                      [shared_addr_ptr, &dst_addr]() {
                                         switch (dst_addr.proto) {
                                         case PROTO_HTTP1:
-                                          --shared_addr->http1_pri.weight;
+                                          --shared_addr_ptr->http1_pri.weight;
                                           break;
                                         case PROTO_HTTP2:
-                                          --shared_addr->http2_pri.weight;
+                                          --shared_addr_ptr->http2_pri.weight;
                                           break;
                                         default:
                                           assert(0);
                                         }
                                       },
-                                      [shared_addr, &dst_addr]() {
+                                      [shared_addr_ptr, &dst_addr]() {
                                         switch (dst_addr.proto) {
                                         case PROTO_HTTP1:
-                                          ++shared_addr->http1_pri.weight;
+                                          ++shared_addr_ptr->http1_pri.weight;
                                           break;
                                         case PROTO_HTTP2:
-                                          ++shared_addr->http2_pri.weight;
+                                          ++shared_addr_ptr->http2_pri.weight;
                                           break;
                                         default:
                                           assert(0);
@@ -210,11 +255,11 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
     // share the connection if patterns have the same set of backend
     // addresses.
     auto end = std::begin(downstream_addr_groups_) + i;
-    auto it = std::find_if(std::begin(downstream_addr_groups_), end,
-                           [&shared_addr](const DownstreamAddrGroup &group) {
-                             return match_shared_downstream_addr(
-                                 group.shared_addr, shared_addr);
-                           });
+    auto it = std::find_if(
+        std::begin(downstream_addr_groups_), end,
+        [&shared_addr](const std::shared_ptr<DownstreamAddrGroup> &group) {
+          return match_shared_downstream_addr(group->shared_addr, shared_addr);
+        });
 
     if (it == end) {
       if (LOG_ENABLED(INFO)) {
@@ -225,13 +270,19 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
       shared_addr->http1_pri.weight = num_http1;
       shared_addr->http2_pri.weight = num_http2;
 
-      dst.shared_addr = shared_addr;
+      if (shared_addr->affinity != AFFINITY_NONE) {
+        for (auto &addr : shared_addr->addrs) {
+          addr.dconn_pool = make_unique<DownstreamConnectionPool>();
+        }
+      }
+
+      dst->shared_addr = shared_addr;
     } else {
       if (LOG_ENABLED(INFO)) {
-        LOG(INFO) << dst.pattern << " shares the same backend group with "
-                  << (*it).pattern;
+        LOG(INFO) << dst->pattern << " shares the same backend group with "
+                  << (*it)->pattern;
       }
-      dst.shared_addr = (*it).shared_addr;
+      dst->shared_addr = (*it)->shared_addr;
     }
   }
 }
@@ -239,6 +290,7 @@ Worker::Worker(struct ev_loop *loop, SSL_CTX *sv_ssl_ctx, SSL_CTX *cl_ssl_ctx,
 Worker::~Worker() {
   ev_async_stop(loop_, &w_);
   ev_timer_stop(loop_, &mcpool_clear_timer_);
+  ev_timer_stop(loop_, &proc_wev_timer_);
 }
 
 void Worker::schedule_clear_mcpool() {
@@ -275,73 +327,91 @@ void Worker::send(const WorkerEvent &event) {
 }
 
 void Worker::process_events() {
-  std::vector<WorkerEvent> q;
+  WorkerEvent wev;
   {
     std::lock_guard<std::mutex> g(m_);
-    q.swap(q_);
+
+    // Process event one at a time.  This is important for
+    // NEW_CONNECTION event since accepting large number of new
+    // connections at once may delay time to 1st byte for existing
+    // connections.
+
+    if (q_.empty()) {
+      ev_timer_stop(loop_, &proc_wev_timer_);
+      return;
+    }
+
+    wev = q_.front();
+    q_.pop_front();
   }
+
+  ev_timer_start(loop_, &proc_wev_timer_);
 
   auto worker_connections = get_config()->conn.upstream.worker_connections;
 
-  for (auto &wev : q) {
-    switch (wev.type) {
-    case NEW_CONNECTION: {
-      if (LOG_ENABLED(INFO)) {
-        WLOG(INFO, this) << "WorkerEvent: client_fd=" << wev.client_fd
-                         << ", addrlen=" << wev.client_addrlen;
-      }
+  switch (wev.type) {
+  case NEW_CONNECTION: {
+    if (LOG_ENABLED(INFO)) {
+      WLOG(INFO, this) << "WorkerEvent: client_fd=" << wev.client_fd
+                       << ", addrlen=" << wev.client_addrlen;
+    }
 
-      if (worker_stat_.num_connections >= worker_connections) {
-
-        if (LOG_ENABLED(INFO)) {
-          WLOG(INFO, this) << "Too many connections >= " << worker_connections;
-        }
-
-        close(wev.client_fd);
-
-        break;
-      }
-
-      auto client_handler =
-          ssl::accept_connection(this, wev.client_fd, &wev.client_addr.sa,
-                                 wev.client_addrlen, wev.faddr);
-      if (!client_handler) {
-        if (LOG_ENABLED(INFO)) {
-          WLOG(ERROR, this) << "ClientHandler creation failed";
-        }
-        close(wev.client_fd);
-        break;
-      }
+    if (worker_stat_.num_connections >= worker_connections) {
 
       if (LOG_ENABLED(INFO)) {
-        WLOG(INFO, this) << "CLIENT_HANDLER:" << client_handler << " created ";
+        WLOG(INFO, this) << "Too many connections >= " << worker_connections;
       }
+
+      close(wev.client_fd);
 
       break;
     }
-    case REOPEN_LOG:
-      WLOG(NOTICE, this) << "Reopening log files: worker process (thread "
-                         << this << ")";
 
-      reopen_log_files();
-
-      break;
-    case GRACEFUL_SHUTDOWN:
-      WLOG(NOTICE, this) << "Graceful shutdown commencing";
-
-      graceful_shutdown_ = true;
-
-      if (worker_stat_.num_connections == 0) {
-        ev_break(loop_);
-
-        return;
-      }
-
-      break;
-    default:
+    auto client_handler =
+        ssl::accept_connection(this, wev.client_fd, &wev.client_addr.sa,
+                               wev.client_addrlen, wev.faddr);
+    if (!client_handler) {
       if (LOG_ENABLED(INFO)) {
-        WLOG(INFO, this) << "unknown event type " << wev.type;
+        WLOG(ERROR, this) << "ClientHandler creation failed";
       }
+      close(wev.client_fd);
+      break;
+    }
+
+    if (LOG_ENABLED(INFO)) {
+      WLOG(INFO, this) << "CLIENT_HANDLER:" << client_handler << " created ";
+    }
+
+    break;
+  }
+  case REOPEN_LOG:
+    WLOG(NOTICE, this) << "Reopening log files: worker process (thread " << this
+                       << ")";
+
+    reopen_log_files();
+
+    break;
+  case GRACEFUL_SHUTDOWN:
+    WLOG(NOTICE, this) << "Graceful shutdown commencing";
+
+    graceful_shutdown_ = true;
+
+    if (worker_stat_.num_connections == 0) {
+      ev_break(loop_);
+
+      return;
+    }
+
+    break;
+  case REPLACE_DOWNSTREAM:
+    WLOG(NOTICE, this) << "Replace downstream";
+
+    replace_downstream_config(wev.downstreamconf);
+
+    break;
+  default:
+    if (LOG_ENABLED(INFO)) {
+      WLOG(INFO, this) << "unknown event type " << wev.type;
     }
   }
 }
@@ -395,7 +465,8 @@ mruby::MRubyContext *Worker::get_mruby_context() const {
 }
 #endif // HAVE_MRUBY
 
-std::vector<DownstreamAddrGroup> &Worker::get_downstream_addr_groups() {
+std::vector<std::shared_ptr<DownstreamAddrGroup>> &
+Worker::get_downstream_addr_groups() {
   return downstream_addr_groups_;
 }
 
@@ -403,17 +474,31 @@ ConnectBlocker *Worker::get_connect_blocker() const {
   return connect_blocker_.get();
 }
 
+const DownstreamConfig *Worker::get_downstream_config() const {
+  return downstreamconf_.get();
+}
+
+ConnectionHandler *Worker::get_connection_handler() const {
+  return conn_handler_;
+}
+
 namespace {
 size_t match_downstream_addr_group_host(
-    const Router &router, const std::vector<WildcardPattern> &wildcard_patterns,
-    const StringRef &host, const StringRef &path,
-    const std::vector<DownstreamAddrGroup> &groups, size_t catch_all) {
+    const RouterConfig &routerconf, const StringRef &host,
+    const StringRef &path,
+    const std::vector<std::shared_ptr<DownstreamAddrGroup>> &groups,
+    size_t catch_all, BlockAllocator &balloc) {
+
+  const auto &router = routerconf.router;
+  const auto &rev_wildcard_router = routerconf.rev_wildcard_router;
+  const auto &wildcard_patterns = routerconf.wildcard_patterns;
+
   if (path.empty() || path[0] != '/') {
     auto group = router.match(host, StringRef::from_lit("/"));
     if (group != -1) {
       if (LOG_ENABLED(INFO)) {
         LOG(INFO) << "Found pattern with query " << host
-                  << ", matched pattern=" << groups[group].pattern;
+                  << ", matched pattern=" << groups[group]->pattern;
       }
       return group;
     }
@@ -429,28 +514,47 @@ size_t match_downstream_addr_group_host(
   if (group != -1) {
     if (LOG_ENABLED(INFO)) {
       LOG(INFO) << "Found pattern with query " << host << path
-                << ", matched pattern=" << groups[group].pattern;
+                << ", matched pattern=" << groups[group]->pattern;
     }
     return group;
   }
 
-  for (auto it = std::begin(wildcard_patterns);
-       it != std::end(wildcard_patterns); ++it) {
-    /* left most '*' must match at least one character */
-    if (host.size() <= (*it).host.size() ||
-        !util::ends_with(std::begin(host), std::end(host),
-                         std::begin((*it).host), std::end((*it).host))) {
-      continue;
-    }
-    auto group = (*it).router.match(StringRef{}, path);
-    if (group != -1) {
-      // We sorted wildcard_patterns in a way that first match is the
-      // longest host pattern.
-      if (LOG_ENABLED(INFO)) {
-        LOG(INFO) << "Found wildcard pattern with query " << host << path
-                  << ", matched pattern=" << groups[group].pattern;
+  if (!wildcard_patterns.empty() && !host.empty()) {
+    auto rev_host_src = make_byte_ref(balloc, host.size() - 1);
+    auto ep =
+        std::copy(std::begin(host) + 1, std::end(host), rev_host_src.base);
+    std::reverse(rev_host_src.base, ep);
+    auto rev_host = StringRef{rev_host_src.base, ep};
+
+    ssize_t best_group = -1;
+    const RNode *last_node = nullptr;
+
+    for (;;) {
+      size_t nread = 0;
+      auto wcidx =
+          rev_wildcard_router.match_prefix(&nread, &last_node, rev_host);
+      if (wcidx == -1) {
+        break;
       }
-      return group;
+
+      rev_host = StringRef{std::begin(rev_host) + nread, std::end(rev_host)};
+
+      auto &wc = wildcard_patterns[wcidx];
+      auto group = wc.router.match(StringRef{}, path);
+      if (group != -1) {
+        // We sorted wildcard_patterns in a way that first match is the
+        // longest host pattern.
+        if (LOG_ENABLED(INFO)) {
+          LOG(INFO) << "Found wildcard pattern with query " << host << path
+                    << ", matched pattern=" << groups[group]->pattern;
+        }
+
+        best_group = group;
+      }
+    }
+
+    if (best_group != -1) {
+      return best_group;
     }
   }
 
@@ -458,7 +562,7 @@ size_t match_downstream_addr_group_host(
   if (group != -1) {
     if (LOG_ENABLED(INFO)) {
       LOG(INFO) << "Found pattern with query " << path
-                << ", matched pattern=" << groups[group].pattern;
+                << ", matched pattern=" << groups[group]->pattern;
     }
     return group;
   }
@@ -471,9 +575,10 @@ size_t match_downstream_addr_group_host(
 } // namespace
 
 size_t match_downstream_addr_group(
-    const Router &router, const std::vector<WildcardPattern> &wildcard_patterns,
-    const StringRef &hostport, const StringRef &raw_path,
-    const std::vector<DownstreamAddrGroup> &groups, size_t catch_all) {
+    const RouterConfig &routerconf, const StringRef &hostport,
+    const StringRef &raw_path,
+    const std::vector<std::shared_ptr<DownstreamAddrGroup>> &groups,
+    size_t catch_all, BlockAllocator &balloc) {
   if (std::find(std::begin(hostport), std::end(hostport), '/') !=
       std::end(hostport)) {
     // We use '/' specially, and if '/' is included in host, it breaks
@@ -486,8 +591,8 @@ size_t match_downstream_addr_group(
   auto path = StringRef{std::begin(raw_path), query};
 
   if (hostport.empty()) {
-    return match_downstream_addr_group_host(router, wildcard_patterns, hostport,
-                                            path, groups, catch_all);
+    return match_downstream_addr_group_host(routerconf, hostport, path, groups,
+                                            catch_all, balloc);
   }
 
   StringRef host;
@@ -509,16 +614,17 @@ size_t match_downstream_addr_group(
     host = StringRef{std::begin(hostport), p};
   }
 
-  std::string low_host;
   if (std::find_if(std::begin(host), std::end(host), [](char c) {
         return 'A' <= c || c <= 'Z';
       }) != std::end(host)) {
-    low_host = host.str();
-    util::inp_strlower(low_host);
-    host = StringRef{low_host};
+    auto low_host = make_byte_ref(balloc, host.size() + 1);
+    auto ep = std::copy(std::begin(host), std::end(host), low_host.base);
+    *ep = '\0';
+    util::inp_strlower(low_host.base, ep);
+    host = StringRef{low_host.base, ep};
   }
-  return match_downstream_addr_group_host(router, wildcard_patterns, host, path,
-                                          groups, catch_all);
+  return match_downstream_addr_group_host(routerconf, host, path, groups,
+                                          catch_all, balloc);
 }
 
 void downstream_failure(DownstreamAddr *addr) {
