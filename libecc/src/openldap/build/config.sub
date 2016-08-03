@@ -967,10 +967,10 @@ case $basic_machine in
 		;;
 	ppc64-*) basic_machine=powerpc64-`echo $basic_machine | sed 's/^[^-]*-//'`
 		;;
-	ppc64le | powerpc64little | ppc64-le | powerpc64-little)
+	ppc64le | powerpc64little | ppc64-le | powerpc64-little | ppc64el)
 		basic_machine=powerpc64le-unknown
 		;;
-	ppc64le-* | powerpc64little-*)
+	ppc64le-* | powerpc64little-* | ppc64el-*)
 		basic_machine=powerpc64le-`echo $basic_machine | sed 's/^[^-]*-//'`
 		;;
 	ps2)
