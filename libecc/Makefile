@@ -17,7 +17,7 @@ else
 endif
 
 OBJ := $(PWD)/musl-build
-install: c++-headers clang-headers $(Configs) # $(ElkConfigs)
+install: c++-headers clang-headers $(Configs) $(ElkConfigs)
 
 elk: $(ElkConfigs)
 
