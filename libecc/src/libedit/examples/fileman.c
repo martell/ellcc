@@ -328,10 +328,10 @@ com_history(char* arg __attribute__((__unused__)))
    HIST_ENTRY *he;
 
    /* rewind history */
-   while (next_history())
+   while (previous_history())
       ;
 
-   for (he = current_history(); he != NULL; he = previous_history()) {
+   for (he = current_history(); he != NULL; he = next_history()) {
       //printf("%5d  %s\n", *((int*)he->data) - 1, he->line);
       printf("%s\n", he->line);
    }

@@ -89,16 +89,16 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-@WIDECHAR_TRUE@am__append_1 = tokenizern.c historyn.c
-@HAVE_STRLCPY_FALSE@am__append_2 = strlcpy.c
-@HAVE_STRLCAT_FALSE@am__append_3 = strlcat.c
-@HAVE_VIS_FALSE@am__append_4 = vis.c
-@HAVE_UNVIS_FALSE@am__append_5 = unvis.c
-@WIDECHAR_TRUE@am__append_6 = eln.c
+@HAVE_STRLCPY_FALSE@am__append_1 = strlcpy.c
+@HAVE_STRLCAT_FALSE@am__append_2 = strlcat.c
+@HAVE_VIS_FALSE@am__append_3 = vis.c
+@HAVE_UNVIS_FALSE@am__append_4 = unvis.c
 subdir = src
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/m4/libtool.m4 \
+	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
+	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(nobase_include_HEADERS) \
@@ -137,28 +137,26 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(libdir)" "$(DESTDIR)$(includedir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libedit_la_LIBADD =
-am__libedit_la_SOURCES_DIST = chared.c common.c el.c emacs.c hist.c \
-	keymacro.c map.c chartype.c parse.c prompt.c read.c refresh.c \
-	search.c sig.c terminal.c tty.c vi.c fgetln.c wcsdup.c \
-	tokenizer.c history.c filecomplete.c readline.c chared.h el.h \
-	hist.h histedit.h keymacro.h map.h chartype.h parse.h prompt.h \
-	read.h refresh.h search.h sig.h sys.h terminal.h tty.h vis.h \
-	filecomplete.h editline/readline.h strlcpy.c strlcat.c vis.c \
-	unvis.c eln.c
+am__libedit_la_SOURCES_DIST = chared.c common.c el.c eln.c emacs.c \
+	hist.c keymacro.c map.c chartype.c parse.c prompt.c read.c \
+	refresh.c search.c sig.c terminal.c tty.c vi.c wcsdup.c \
+	tokenizer.c tokenizern.c history.c historyn.c filecomplete.c \
+	readline.c chared.h el.h hist.h histedit.h keymacro.h map.h \
+	chartype.h parse.h prompt.h read.h refresh.h search.h sig.h \
+	sys.h terminal.h tty.h vis.h filecomplete.h \
+	editline/readline.h strlcpy.c strlcat.c vis.c unvis.c
 @HAVE_STRLCPY_FALSE@am__objects_1 = strlcpy.lo
 @HAVE_STRLCAT_FALSE@am__objects_2 = strlcat.lo
 @HAVE_VIS_FALSE@am__objects_3 = vis.lo
 @HAVE_UNVIS_FALSE@am__objects_4 = unvis.lo
-@WIDECHAR_TRUE@am__objects_5 = eln.lo
-am_libedit_la_OBJECTS = chared.lo common.lo el.lo emacs.lo hist.lo \
-	keymacro.lo map.lo chartype.lo parse.lo prompt.lo read.lo \
-	refresh.lo search.lo sig.lo terminal.lo tty.lo vi.lo fgetln.lo \
-	wcsdup.lo tokenizer.lo history.lo filecomplete.lo readline.lo \
-	$(am__objects_1) $(am__objects_2) $(am__objects_3) \
-	$(am__objects_4) $(am__objects_5)
-@WIDECHAR_TRUE@am__objects_6 = tokenizern.lo historyn.lo
-am__objects_7 = fcns.lo help.lo $(am__objects_6)
-nodist_libedit_la_OBJECTS = $(am__objects_7)
+am_libedit_la_OBJECTS = chared.lo common.lo el.lo eln.lo emacs.lo \
+	hist.lo keymacro.lo map.lo chartype.lo parse.lo prompt.lo \
+	read.lo refresh.lo search.lo sig.lo terminal.lo tty.lo vi.lo \
+	wcsdup.lo tokenizer.lo tokenizern.lo history.lo historyn.lo \
+	filecomplete.lo readline.lo $(am__objects_1) $(am__objects_2) \
+	$(am__objects_3) $(am__objects_4)
+am__objects_5 =
+nodist_libedit_la_OBJECTS = $(am__objects_5)
 libedit_la_OBJECTS = $(am_libedit_la_OBJECTS) \
 	$(nodist_libedit_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -349,21 +347,20 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-BUILT_SOURCES = vi.h emacs.h common.h fcns.h help.h fcns.c help.c \
-	$(am__append_1)
+BUILT_SOURCES = vi.h emacs.h common.h fcns.h help.h func.h
 AHDR = vi.h emacs.h common.h 
 ASRC = $(srcdir)/vi.c $(srcdir)/emacs.c $(srcdir)/common.c
 CLEANFILES = $(BUILT_SOURCES)
 lib_LTLIBRARIES = libedit.la
-libedit_la_SOURCES = chared.c common.c el.c emacs.c hist.c keymacro.c \
-	map.c chartype.c parse.c prompt.c read.c refresh.c search.c \
-	sig.c terminal.c tty.c vi.c fgetln.c wcsdup.c tokenizer.c \
-	history.c filecomplete.c readline.c chared.h el.h hist.h \
-	histedit.h keymacro.h map.h chartype.h parse.h prompt.h read.h \
-	refresh.h search.h sig.h sys.h terminal.h tty.h vis.h \
-	filecomplete.h editline/readline.h $(am__append_2) \
-	$(am__append_3) $(am__append_4) $(am__append_5) \
-	$(am__append_6)
+libedit_la_SOURCES = chared.c common.c el.c eln.c emacs.c hist.c \
+	keymacro.c map.c chartype.c parse.c prompt.c read.c refresh.c \
+	search.c sig.c terminal.c tty.c vi.c wcsdup.c tokenizer.c \
+	tokenizern.c history.c historyn.c filecomplete.c readline.c \
+	chared.h el.h hist.h histedit.h keymacro.h map.h chartype.h \
+	parse.h prompt.h read.h refresh.h search.h sig.h sys.h \
+	terminal.h tty.h vis.h filecomplete.h editline/readline.h \
+	$(am__append_1) $(am__append_2) $(am__append_3) \
+	$(am__append_4)
 EXTRA_DIST = makelist shlib_version
 nobase_include_HEADERS = histedit.h editline/readline.h
 nodist_libedit_la_SOURCES = $(BUILT_SOURCES)
@@ -382,9 +379,9 @@ $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu src/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign src/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --gnu src/Makefile
+	  $(AUTOMAKE) --foreign src/Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
 	  *config.status*) \
@@ -453,10 +450,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/el.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eln.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/emacs.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fcns.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fgetln.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filecomplete.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/help.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hist.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/history.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/historyn.Plo@am__quote@
@@ -761,17 +755,8 @@ fcns.h: Makefile $(AHDR)
 help.h: Makefile $(ASRC)
 	AWK=$(AWK) sh $(srcdir)/makelist -bh $(ASRC) > $@
 
-fcns.c: Makefile $(AHDR)
+func.h: Makefile $(AHDR)
 	AWK=$(AWK) sh $(srcdir)/makelist -fc $(AHDR) > $@
-
-help.c: Makefile $(ASRC)
-	AWK=$(AWK) sh $(srcdir)/makelist -bc $(ASRC) > $@
-
-tokenizern.c: Makefile $(srcdir)/tokenizer.c
-	AWK=$(AWK) sh $(srcdir)/makelist -n $(srcdir)/tokenizer.c > $@
-
-historyn.c: Makefile $(srcdir)/history.c
-	AWK=$(AWK) sh $(srcdir)/makelist -n $(srcdir)/history.c > $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

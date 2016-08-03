@@ -586,7 +586,7 @@ MAKEFLAGS=
 
 # Identity of this package.
 PACKAGE_NAME='libedit'
-PACKAGE_TARNAME='libedit-20160308'
+PACKAGE_TARNAME='libedit-20160618'
 PACKAGE_VERSION='3.1'
 PACKAGE_STRING='libedit 3.1'
 PACKAGE_BUGREPORT=''
@@ -643,8 +643,6 @@ HAVE_STRLCPY_TRUE
 LIBOBJS
 ENABLE_EXAMPLES_FALSE
 ENABLE_EXAMPLES_TRUE
-WIDECHAR_FALSE
-WIDECHAR_TRUE
 MANTYPE
 NROFF
 LT_VERSION
@@ -1376,7 +1374,7 @@ Fine tuning of the installation directories:
   --localedir=DIR         locale-dependent data [DATAROOTDIR/locale]
   --mandir=DIR            man documentation [DATAROOTDIR/man]
   --docdir=DIR            documentation root
-                          [DATAROOTDIR/doc/libedit-20160308]
+                          [DATAROOTDIR/doc/libedit-20160618]
   --htmldir=DIR           html documentation [DOCDIR]
   --dvidir=DIR            dvi documentation [DOCDIR]
   --pdfdir=DIR            pdf documentation [DOCDIR]
@@ -1417,7 +1415,7 @@ Optional Features:
   --enable-fast-install[=PKGS]
                           optimize for fast installation [default=yes]
   --disable-libtool-lock  avoid locking (might break parallel builds)
-  --enable-widec          compile with wide-char/UTF-8 code
+  --enable-widec          deprecated, wide-character/UTF-8 is always enabled
   --enable-examples       build the example programs [default=yes]
 
 Optional Packages:
@@ -4225,7 +4223,7 @@ fi
 
 
 # Define the identity of the package.
- PACKAGE='libedit-20160308'
+ PACKAGE='libedit-20160618'
  VERSION='3.1'
 
 
@@ -8326,6 +8324,10 @@ _lt_linker_boilerplate=`cat conftest.err`
 $RM -r conftest*
 
 
+## CAVEAT EMPTOR:
+## There is no encapsulation within the following macros, do not change
+## the running order or otherwise move them around unless you know exactly
+## what you are doing...
 if test -n "$compiler"; then
 
 lt_prog_compiler_no_builtin_flag=
@@ -12119,7 +12121,7 @@ CC=$lt_save_CC
 
 
 # libtool -version-info
-LT_VERSION=0:53:0
+LT_VERSION=0:54:0
 
 
 # Check whether --enable-silent-rules was given.
@@ -12449,14 +12451,13 @@ test -n "$NROFF" || NROFF="/bin/false"
 
 
 
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltinfo" >&5
-$as_echo_n "checking for tgetent in -ltinfo... " >&6; }
-if ${ac_cv_lib_tinfo_tgetent+:} false; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -lncurses" >&5
+$as_echo_n "checking for tgetent in -lncurses... " >&6; }
+if ${ac_cv_lib_ncurses_tgetent+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-ltinfo  $LIBS"
+LIBS="-lncurses  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -12476,154 +12477,22 @@ return tgetent ();
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_tinfo_tgetent=yes
+  ac_cv_lib_ncurses_tgetent=yes
 else
-  ac_cv_lib_tinfo_tgetent=no
+  ac_cv_lib_ncurses_tgetent=no
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_tinfo_tgetent" >&5
-$as_echo "$ac_cv_lib_tinfo_tgetent" >&6; }
-if test "x$ac_cv_lib_tinfo_tgetent" = xyes; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ncurses_tgetent" >&5
+$as_echo "$ac_cv_lib_ncurses_tgetent" >&6; }
+if test "x$ac_cv_lib_ncurses_tgetent" = xyes; then :
   cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBTINFO 1
+#define HAVE_LIBNCURSES 1
 _ACEOF
 
-  LIBS="-ltinfo $LIBS"
-
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -lterminfo" >&5
-$as_echo_n "checking for tgetent in -lterminfo... " >&6; }
-if ${ac_cv_lib_terminfo_tgetent+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lterminfo  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char tgetent ();
-int
-main ()
-{
-return tgetent ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_terminfo_tgetent=yes
-else
-  ac_cv_lib_terminfo_tgetent=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_terminfo_tgetent" >&5
-$as_echo "$ac_cv_lib_terminfo_tgetent" >&6; }
-if test "x$ac_cv_lib_terminfo_tgetent" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBTERMINFO 1
-_ACEOF
-
-  LIBS="-lterminfo $LIBS"
-
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltermcap" >&5
-$as_echo_n "checking for tgetent in -ltermcap... " >&6; }
-if ${ac_cv_lib_termcap_tgetent+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-ltermcap  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char tgetent ();
-int
-main ()
-{
-return tgetent ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_termcap_tgetent=yes
-else
-  ac_cv_lib_termcap_tgetent=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_termcap_tgetent" >&5
-$as_echo "$ac_cv_lib_termcap_tgetent" >&6; }
-if test "x$ac_cv_lib_termcap_tgetent" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBTERMCAP 1
-_ACEOF
-
-  LIBS="-ltermcap $LIBS"
-
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltermlib" >&5
-$as_echo_n "checking for tgetent in -ltermlib... " >&6; }
-if ${ac_cv_lib_termlib_tgetent+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-ltermlib  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char tgetent ();
-int
-main ()
-{
-return tgetent ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_termlib_tgetent=yes
-else
-  ac_cv_lib_termlib_tgetent=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_termlib_tgetent" >&5
-$as_echo "$ac_cv_lib_termlib_tgetent" >&6; }
-if test "x$ac_cv_lib_termlib_tgetent" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBTERMLIB 1
-_ACEOF
-
-  LIBS="-ltermlib $LIBS"
+  LIBS="-lncurses $LIBS"
 
 else
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -lcurses" >&5
@@ -12670,13 +12539,13 @@ _ACEOF
   LIBS="-lcurses $LIBS"
 
 else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -lncurses" >&5
-$as_echo_n "checking for tgetent in -lncurses... " >&6; }
-if ${ac_cv_lib_ncurses_tgetent+:} false; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for tgetent in -ltermcap" >&5
+$as_echo_n "checking for tgetent in -ltermcap... " >&6; }
+if ${ac_cv_lib_termcap_tgetent+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lncurses  $LIBS"
+LIBS="-ltermcap  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -12696,25 +12565,25 @@ return tgetent ();
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_ncurses_tgetent=yes
+  ac_cv_lib_termcap_tgetent=yes
 else
-  ac_cv_lib_ncurses_tgetent=no
+  ac_cv_lib_termcap_tgetent=no
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ncurses_tgetent" >&5
-$as_echo "$ac_cv_lib_ncurses_tgetent" >&6; }
-if test "x$ac_cv_lib_ncurses_tgetent" = xyes; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_termcap_tgetent" >&5
+$as_echo "$ac_cv_lib_termcap_tgetent" >&6; }
+if test "x$ac_cv_lib_termcap_tgetent" = xyes; then :
   cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBNCURSES 1
+#define HAVE_LIBTERMCAP 1
 _ACEOF
 
-  LIBS="-lncurses $LIBS"
+  LIBS="-ltermcap $LIBS"
 
 else
-  as_fn_error $? "libcurses or libncurses are required!" "$LINENO" 5
+  as_fn_error $? "libncurses, libcurses, or libtermcap is required!" "$LINENO" 5
 
 fi
 
@@ -12725,17 +12594,7 @@ fi
 fi
 
 
-fi
-
-
-fi
-
-
-fi
-
-
-
-### use option --enable-widec to turn on use of wide-character support
+### deprecate option --enable-widec to turn on use of wide-character support
 
    { $as_echo "$as_me:${as_lineno-$LINENO}: checking if you want wide-character code" >&5
 $as_echo_n "checking if you want wide-character code... " >&6; }
@@ -12748,19 +12607,8 @@ fi
 
    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_widec" >&5
 $as_echo "$with_widec" >&6; }
-   if test "$with_widec" = yes ; then
-
-$as_echo "#define WIDECHAR 1" >>confdefs.h
-
-   fi
-    if test "$with_widec" = yes; then
-  WIDECHAR_TRUE=
-  WIDECHAR_FALSE='#'
-else
-  WIDECHAR_TRUE='#'
-  WIDECHAR_FALSE=
-fi
-
+   { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: --enable-widec is deprecated, wide-character/UTF-8 is always enabled" >&5
+$as_echo "$as_me: WARNING: --enable-widec is deprecated, wide-character/UTF-8 is always enabled" >&2;}
 
 
 # Check whether --enable-examples was given.
@@ -13105,6 +12953,29 @@ _ACEOF
 fi
 
 done
+
+
+ac_fn_c_check_header_mongrel "$LINENO" "ncurses.h" "ac_cv_header_ncurses_h" "$ac_includes_default"
+if test "x$ac_cv_header_ncurses_h" = xyes; then :
+
+else
+  ac_fn_c_check_header_mongrel "$LINENO" "curses.h" "ac_cv_header_curses_h" "$ac_includes_default"
+if test "x$ac_cv_header_curses_h" = xyes; then :
+
+else
+  ac_fn_c_check_header_mongrel "$LINENO" "termcap.h" "ac_cv_header_termcap_h" "$ac_includes_default"
+if test "x$ac_cv_header_termcap_h" = xyes; then :
+
+else
+  as_fn_error $? "ncurses.h, curses.h, or termcap.h is required!" "$LINENO" 5
+fi
+
+
+fi
+
+
+fi
+
 
 
 ac_fn_c_check_header_mongrel "$LINENO" "termios.h" "ac_cv_header_termios_h" "$ac_includes_default"
@@ -13708,7 +13579,7 @@ _ACEOF
 
 fi
 
-for ac_func in endpwent isascii memchr memset re_comp regcomp strcasecmp strchr strcspn strdup strerror strrchr strstr strtol issetugid wcsdup strlcpy strlcat fgetln vis strvis strunvis __secure_getenv secure_getenv
+for ac_func in endpwent isascii memchr memset re_comp regcomp strcasecmp strchr strcspn strdup strerror strrchr strstr strtol issetugid wcsdup strlcpy strlcat getline vis strvis strunvis __secure_getenv secure_getenv
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
@@ -13995,10 +13866,6 @@ else
   am__EXEEXT_FALSE=
 fi
 
-if test -z "${WIDECHAR_TRUE}" && test -z "${WIDECHAR_FALSE}"; then
-  as_fn_error $? "conditional \"WIDECHAR\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
 if test -z "${ENABLE_EXAMPLES_TRUE}" && test -z "${ENABLE_EXAMPLES_FALSE}"; then
   as_fn_error $? "conditional \"ENABLE_EXAMPLES\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5

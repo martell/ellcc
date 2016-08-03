@@ -88,12 +88,13 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-noinst_PROGRAMS = tc1$(EXEEXT) fileman$(EXEEXT) $(am__EXEEXT_1)
-@WIDECHAR_TRUE@am__append_1 = wtc1
+noinst_PROGRAMS = tc1$(EXEEXT) fileman$(EXEEXT) wtc1$(EXEEXT)
 subdir = examples
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/m4/libtool.m4 \
+	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
+	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -101,7 +102,6 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-@WIDECHAR_TRUE@am__EXEEXT_1 = wtc1$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS)
 am_fileman_OBJECTS = fileman.$(OBJEXT)
 fileman_OBJECTS = $(am_fileman_OBJECTS)
@@ -115,8 +115,7 @@ am_tc1_OBJECTS = tc1.$(OBJEXT)
 tc1_OBJECTS = $(am_tc1_OBJECTS)
 tc1_LDADD = $(LDADD)
 tc1_DEPENDENCIES = $(top_builddir)/src/libedit.la
-am__wtc1_SOURCES_DIST = wtc1.c
-@WIDECHAR_TRUE@am_wtc1_OBJECTS = wtc1.$(OBJEXT)
+am_wtc1_OBJECTS = wtc1.$(OBJEXT)
 wtc1_OBJECTS = $(am_wtc1_OBJECTS)
 wtc1_LDADD = $(LDADD)
 wtc1_DEPENDENCIES = $(top_builddir)/src/libedit.la
@@ -155,8 +154,7 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(fileman_SOURCES) $(tc1_SOURCES) $(wtc1_SOURCES)
-DIST_SOURCES = $(fileman_SOURCES) $(tc1_SOURCES) \
-	$(am__wtc1_SOURCES_DIST)
+DIST_SOURCES = $(fileman_SOURCES) $(tc1_SOURCES) $(wtc1_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -305,7 +303,7 @@ LDADD = $(top_builddir)/src/libedit.la
 AM_CFLAGS = -I$(top_srcdir)/src
 tc1_SOURCES = tc1.c
 fileman_SOURCES = fileman.c
-@WIDECHAR_TRUE@wtc1_SOURCES = wtc1.c
+wtc1_SOURCES = wtc1.c
 all: all-am
 
 .SUFFIXES:
@@ -319,9 +317,9 @@ $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu examples/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign examples/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --gnu examples/Makefile
+	  $(AUTOMAKE) --foreign examples/Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
 	  *config.status*) \

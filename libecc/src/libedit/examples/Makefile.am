@@ -7,8 +7,6 @@ noinst_PROGRAMS  = tc1 fileman
 tc1_SOURCES      = tc1.c
 fileman_SOURCES  = fileman.c
 
-if WIDECHAR
 noinst_PROGRAMS += wtc1
 wtc1_SOURCES     = wtc1.c
-endif
 
