@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the curl library to version 7.50.0.
 * Update ithe mbedtls library to version 2.2.1.
 * Added support for 64 bit LE PowerPC 64.
 * Added support for 64 bit MIPS.

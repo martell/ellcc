@@ -91,7 +91,7 @@
 extern "C" {
 #endif
 
-typedef void CURL;
+typedef struct Curl_easy CURL;
 
 /*
  * libcurl external API function linkage decorations.
@@ -2193,9 +2193,10 @@ typedef enum {
   CURLINFO_TLS_SESSION      = CURLINFO_SLIST  + 43,
   CURLINFO_ACTIVESOCKET     = CURLINFO_SOCKET + 44,
   CURLINFO_TLS_SSL_PTR      = CURLINFO_SLIST  + 45,
+  CURLINFO_HTTP_VERSION     = CURLINFO_LONG   + 46,
   /* Fill in new entries below here! */
 
-  CURLINFO_LASTONE          = 45
+  CURLINFO_LASTONE          = 46
 } CURLINFO;
 
 /* CURLINFO_RESPONSE_CODE is the new name for the option previously known as
@@ -2257,7 +2258,7 @@ typedef void (*curl_unlock_function)(CURL *handle,
                                      curl_lock_data data,
                                      void *userptr);
 
-typedef void CURLSH;
+typedef struct Curl_share CURLSH;
 
 typedef enum {
   CURLSHE_OK,  /* all is fine */
