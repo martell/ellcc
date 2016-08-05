@@ -1268,7 +1268,7 @@ bool X86AsmParser::ParseIntelExpression(IntelExprStateMachine &SM, SMLoc &End) {
 
     // The period in the dot operator (e.g., [ebx].foo.bar) is parsed as an
     // identifier.  Don't try an parse it as a register.
-    if (Tok.getString().startswith("."))
+    if (PrevTK != AsmToken::Error && Tok.getString().startswith("."))
       break;
 
     // If we're parsing an immediate expression, we don't expect a '['.

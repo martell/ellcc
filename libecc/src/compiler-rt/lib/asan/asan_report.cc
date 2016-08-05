@@ -549,7 +549,7 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
     return;
   }
   DescribeAccessToHeapChunk(chunk, addr, access_size);
-  CHECK(chunk.AllocTid() != kInvalidTid);
+  CHECK_NE(chunk.AllocTid(), kInvalidTid);
   asanThreadRegistry().CheckLocked();
   AsanThreadContext *alloc_thread =
       GetThreadContextByTidLocked(chunk.AllocTid());

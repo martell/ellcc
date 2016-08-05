@@ -2141,6 +2141,10 @@ public:
     }
   }
 
+  LangAS::ID getOpenCLImageAddrSpace() const override {
+    return LangAS::opencl_constant;
+  }
+
   CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
     switch (CC) {
       default:
