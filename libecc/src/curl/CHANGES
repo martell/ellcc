@@ -6,6 +6,171 @@
 
                                   Changelog
 
+Version 7.50.1 (3 Aug 2016)
+
+Daniel Stenberg (3 Aug 2016)
+- THANKS: 7 new contributors from the 7.50.1 release
+
+- RELEASE-NOTES: 7.50.1
+
+- TLS: only reuse connections with the same client cert
+  
+  CVE-2016-5420
+  Bug: https://curl.haxx.se/docs/adv_20160803B.html
+
+- TLS: switch off SSL session id when client cert is used
+  
+  CVE-2016-5419
+  Bug: https://curl.haxx.se/docs/adv_20160803A.html
+  Reported-by: Bru Rom
+  Contributions-by: Eric Rescorla and Ray Satiro
+
+- curl_multi_cleanup: clear connection pointer for easy handles
+  
+  CVE-2016-5421
+  Bug: https://curl.haxx.se/docs/adv_20160803C.html
+  Reported-by: Marcelo Echeverria and Fernando Muñoz
+
+- KNOWN_BUGS: SOCKS proxy not working via IPv6
+  
+  Closes #835
+
+- KNOWN_BUGS: CURLOPT_SEEKFUNCTION not called with CURLFORM_STREAM
+  
+  Closes #768
+
+- KNOWN_BUGS: transfer-encoding: chunked in HTTP/2
+  
+  Closes #662
+
+- TODO: Provide cmake config-file
+  
+  Closes #885
+
+Patrick Monnerat (2 Aug 2016)
+- os400: define BUILDING_LIBCURL in make script.
+
+Daniel Stenberg (1 Aug 2016)
+- RELEASE-NOTES: synced with aa9f536a18b
+
+Jay Satiro (1 Aug 2016)
+- [Thomas Glanzmann brought this change]
+
+  mbedtls: Fix debug function name
+  
+  This patch is necessary so that curl compiles if MBEDTLS_DEBUG is
+  defined.
+  
+  Bug: https://curl.haxx.se/mail/lib-2016-08/0001.html
+
+Daniel Stenberg (1 Aug 2016)
+- [Sergei Nikulov brought this change]
+
+  travis: fix OSX build by re-installing libtool
+  
+  Apparently due to a broken homebrew install
+  
+  fixes #934
+  Closes #939
+
+- [Martin Vejnár brought this change]
+
+  win32: fix a potential memory leak in Curl_load_library
+  
+  If a call to GetSystemDirectory fails, the `path` pointer that was
+  previously allocated would be leaked. This makes sure that `path` is
+  always freed.
+  
+  Closes #938
+
+- include: revert 9adf3c4 and make public types void * again
+  
+  Many applications assume the actual contents of the public types and use
+  that do for example forward declarations (saving them from including our
+  public header) which then breaks when we switch from void * to a struct
+  *.
+  
+  I'm not convinced we were wrong, but since this practise seems
+  widespread enough I'm willing to (partly) step down.
+  
+  Now libcurl uses the struct itself when it is built and it allows
+  applications to use the struct type if CURL_STRICTER is defined at the
+  time of the #include.
+  
+  Reported-by: Peter Frühberger
+  Fixes #926
+
+Jay Satiro (28 Jul 2016)
+- [Yonggang Luo brought this change]
+
+  cmake: Fix for schannel support
+  
+  The check_library_exists_concat do not check crypt32 library properly.
+  So include it directly.
+  
+  Bug: https://github.com/curl/curl/pull/917
+  Reported-by: Yonggang Luo
+  
+  Bug: https://github.com/curl/curl/issues/935
+  Reported-by: Alain Danteny
+
+- Revert "travis: Install libtool for OS X builds"
+  
+  Didn't work.
+  
+  This reverts commit 50723585ed380744358de054e2a55dccee65dfd7.
+
+- travis: Install libtool for OS X builds
+  
+  CI is failing due to missing libtoolize, so I'm trying this.
+
+Daniel Stenberg (26 Jul 2016)
+- [Viktor Szakats brought this change]
+
+  TODO: minor typo in last commit
+  
+  merged #931
+
+- TODO: Timeout idle connections from the pool
+
+Patrick Monnerat (25 Jul 2016)
+- os400: minimum supported OS version: V6R1M0.
+  Do not log compilation informational messages.
+
+Jay Satiro (24 Jul 2016)
+- tests: Fix for http/2 feature
+  
+  Bug: https://curl.haxx.se/mail/lib-2016-07/0070.html
+  Reported-by: Paul Howarth
+
+Steve Holme (23 Jul 2016)
+- README: Mention wolfSSL in the 'Dependencies' section
+
+- vauth.h: No need to query HAVE_GSSAPI || USE_WINDOWS_SSPI for SPNEGO
+  
+  As SPNEGO is only defined when these pre-processor variables are defined
+  there is no need to query them explicitly.
+
+- spnego: Corrected miss-placed * in Curl_auth_spnego_cleanup() declaration
+  
+  Typo introduced in commit ad5e9bfd5d.
+
+Daniel Stenberg (22 Jul 2016)
+- SECURITY: mention how to get windows-specific CVEs
+  
+  ... and make the distros link a proper link
+
+Dan Fandrich (21 Jul 2016)
+- test558: fix test by stripping file paths from FD lines
+
+Kamil Dudka (21 Jul 2016)
+- tests: distribute the http2-server.pl script, too
+
+- docs: distribute the CURLINFO_HTTP_VERSION(3) man page, too
+
+Daniel Stenberg (21 Jul 2016)
+- bump: start working on 7.50.1
+
 Version 7.50.0 (21 Jul 2016)
 
 Daniel Stenberg (21 Jul 2016)
@@ -5503,170 +5668,3 @@ Daniel Stenberg (19 Sep 2015)
   
   With NTLM a new connection will always require authentication.
   Fixes #435
-
-- [Daniel Hwang brought this change]
-
-  ssl: add server cert's "sha256//" hash to verbose
-  
-  Add a "pinnedpubkey" section to the "Server Certificate" verbose
-  
-  Bug: https://github.com/bagder/curl/issues/410
-  Reported-by: W. Mark Kubacki
-  
-  Closes #430
-  Closes #410
-
-- [Jakub Zakrzewski brought this change]
-
-  openldap: only part of LDAP query results received
-  
-  Introduced with commit 65d141e6da5c6003a1592bbc87ee550b0ad75c2f
-  
-  Closes #440
-
-- [Alessandro Ghedini brought this change]
-
-  openssl: don't output certinfo data
-
-- [Alessandro Ghedini brought this change]
-
-  openssl: refactor certificate parsing to use OpenSSL memory BIO
-  
-  Fixes #427
-
-Kamil Dudka (18 Sep 2015)
-- nss: prevent NSS from incorrectly re-using a session
-  
-  Without this workaround, NSS re-uses a session cache entry despite the
-  server name does not match.  This causes SNI host name to differ from
-  the actual host name.  Consequently, certain servers (e.g. github.com)
-  respond by 400 to such requests.
-  
-  Bug: https://bugzilla.mozilla.org/1202264
-
-- nss: check return values of NSS functions
-
-Daniel Stenberg (17 Sep 2015)
-- CURLOPT_PINNEDPUBLICKEY.3: mention error code
-
-- openssl: build with < 0.9.8
-  
-  ... without sha256 support and no define saying so.
-  
-  Reported-by: Rajkumar Mandal
-
-- libcurl-errors.3: add two missing error codes
-  
-  CURLE_SSL_PINNEDPUBKEYNOTMATCH and CURLE_SSL_INVALIDCERTSTATUS
-
-Jay Satiro (14 Sep 2015)
-- CURLOPT_PINNEDPUBLICKEY.3: Improve pubkey extraction example
-  
-  - Show how a certificate can be obtained using OpenSSL.
-  
-  Bug: https://github.com/bagder/curl/pull/430
-  Reported-by: Daniel Hwang
-
-Daniel Stenberg (13 Sep 2015)
-- http2: removed unused function
-
-- CURLINFO_ACTIVESOCKET.3: mention it replaces *LASTSOCKET
-
-- opts: add CURLINFO_* man pages to dist
-
-- opts: 19 more CURLINFO_* options made into stand-alone man pages
-
-- RELEASE-NOTES: synced with fad9604613
-
-- curl: customrequest_helper: deal with NULL custom method
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLOPT_FNMATCH_FUNCTION.3: fix typo
-  
-  s => is
-  
-  Closes #428
-
-- curl: point out unnecessary uses of -X in verbose mode
-  
-  It uses 'Note:' as a prefix as opposed to the common 'Warning:' to take
-  down the tone a bit.
-  
-  It adds a warning for using -XHEAD on other methods becasue that may
-  lead to a hanging connection.
-
-Jay Satiro (10 Sep 2015)
-- curl_sspi: fix possibly undefined CRYPT_E_REVOKED
-  
-  Bug: https://github.com/bagder/curl/pull/411
-  Reported-by: Viktor Szakats
-
-- buildconf.bat: fix syntax error
-
-- [Benjamin Kircher brought this change]
-
-  winbuild: run buildconf.bat if necessary
-
-- [Svyatoslav Mishyn brought this change]
-
-  docs: fix argument type for CURLINFO_SPEED_*, CURLINFO_SIZE_*
-  
-  long => double
-
-Daniel Stenberg (8 Sep 2015)
-- [Sergei Nikulov brought this change]
-
-  cmake: IPv6 : disable Unix header check on Windows platform
-  
-  Closes #409
-
-- parse_proxy: reject illegal port numbers
-  
-  If the port number in the proxy string ended weirdly or the number is
-  too large, skip it. Mostly as a means to bail out early if a "bare" IPv6
-  numerical address is used without enclosing brackets.
-  
-  Also mention the bracket requirement for IPv6 numerical addresses to the
-  man page for CURLOPT_PROXY.
-  
-  Closes #415
-  
-  Reported-by: Marcel Raad
-
-- FTP: do_more: add check for wait_data_conn in upload case
-  
-  In some timing-dependnt cases when a 4xx response immediately followed
-  after a 150 when a STOR was issued, this function would wrongly return
-  'complete == true' while 'wait_data_conn' was still set.
-  
-  Closes #405
-  
-  Reported-by: Patricia Muscalu
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLOPT_TLSAUTH_TYPE.3: update description
-  
-  Closes #414
-  Closes #413
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLOPT_PATH_AS_IS.3: fix typo
-  
-  leavit => leaveit
-  
-  closes #412
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLINFO_SSL_VERIFYRESULT.3: add short description
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLINFO_SSL_ENGINES.3: add short description
-
-- [Svyatoslav Mishyn brought this change]
-
-  CURLINFO_CONTENT_LENGTH_UPLOAD.3: replace "receive" with "get" for consistency
