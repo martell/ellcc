@@ -41,4 +41,4 @@ add_llvm_tool(lli
   lli.cpp
   OrcLazyJIT.cpp
   )
-export_executable_symbols(lli)
+# RICH: export_executable_symbols(lli)

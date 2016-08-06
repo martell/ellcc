@@ -34,7 +34,8 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 using namespace llvm;
 
-ARMException::ARMException(AsmPrinter *A) : DwarfCFIExceptionBase(A) {}
+ARMException::ARMException(AsmPrinter *A)
+    : DwarfCFIExceptionBase(A) {}
 
 ARMException::~ARMException() {}
 
@@ -46,8 +47,10 @@ ARMTargetStreamer &ARMException::getTargetStreamer() {
 /// endModule - Emit all exception information that should come after the
 /// content.
 void ARMException::endModule() {
+#if RICH
   if (shouldEmitCFI)
     Asm->OutStreamer->EmitCFISections(false, true);
+#endif
 }
 
 void ARMException::beginFunction(const MachineFunction *MF) {
@@ -59,6 +62,11 @@ void ARMException::beginFunction(const MachineFunction *MF) {
          "non-EH CFI not yet supported in prologue with EHABI lowering");
   if (MoveType == AsmPrinter::CFI_M_Debug) {
     shouldEmitCFI = true;
+    // RICH:
+    if (cfiSectionsNeeded) {
+      Asm->OutStreamer->EmitCFISections(false, true);
+      cfiSectionsNeeded = false;
+    }
     Asm->OutStreamer->EmitCFIStartProc(false);
   }
 }

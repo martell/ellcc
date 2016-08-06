@@ -16,7 +16,7 @@ set( LLVM_LINK_COMPONENTS
   Vectorize
   )
 
-option(CLANG_PLUGIN_SUPPORT "Build clang with plugin support" ON)
+option(CLANG_PLUGIN_SUPPORT "Build clang with plugin support" OFF)
 
 # Support plugins. This must be before add_clang_executable as it reads
 # LLVM_NO_DEAD_STRIP.
@@ -46,7 +46,7 @@ endif()
 
 # Support plugins.
 if(CLANG_PLUGIN_SUPPORT)
-  export_executable_symbols(clang)
+  # RICH: export_executable_symbols(clang)
 endif()
 
 add_dependencies(clang clang-headers)

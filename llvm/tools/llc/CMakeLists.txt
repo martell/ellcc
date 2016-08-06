@@ -20,4 +20,4 @@ set(LLVM_NO_DEAD_STRIP 1)
 add_llvm_tool(llc
   llc.cpp
   )
-export_executable_symbols(llc)
+# RICH: export_executable_symbols(llc)

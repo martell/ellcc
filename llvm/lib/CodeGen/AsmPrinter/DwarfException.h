@@ -29,6 +29,9 @@ protected:
   /// Per-function flag to indicate if frame CFI info should be emitted.
   bool shouldEmitCFI;
 
+  /// Cleared if the .cfi_sections directive has been output.
+  bool cfiSectionsNeeded;
+
   void markFunctionEnd() override;
   void endFragment() override;
 };
@@ -45,6 +48,7 @@ class LLVM_LIBRARY_VISIBILITY DwarfCFIException : public DwarfCFIExceptionBase {
 
   /// Per-function flag to indicate if frame moves info should be emitted.
   bool shouldEmitMoves;
+
 
   AsmPrinter::CFIMoveType moveTypeModule;
 

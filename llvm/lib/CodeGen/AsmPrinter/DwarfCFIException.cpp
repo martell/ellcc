@@ -39,7 +39,7 @@
 using namespace llvm;
 
 DwarfCFIExceptionBase::DwarfCFIExceptionBase(AsmPrinter *A)
-    : EHStreamer(A), shouldEmitCFI(false) {}
+    : EHStreamer(A), shouldEmitCFI(false), cfiSectionsNeeded(true) {}
 
 void DwarfCFIExceptionBase::markFunctionEnd() {
   endFragment();
@@ -70,8 +70,10 @@ void DwarfCFIException::endModule() {
   if (!Asm->MAI->usesCFIForEH())
     return;
 
+#if RICH
   if (moveTypeModule == AsmPrinter::CFI_M_Debug)
     Asm->OutStreamer->EmitCFISections(false, true);
+#endif
 
   const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
 
@@ -96,6 +98,13 @@ static MCSymbol *getExceptionSym(AsmPrinter *Asm) {
 void DwarfCFIException::beginFunction(const MachineFunction *MF) {
   shouldEmitMoves = shouldEmitPersonality = shouldEmitLSDA = false;
   const Function *F = MF->getFunction();
+
+  // RICH: SjLj uses this pass and it doesn't need this info.
+  if (cfiSectionsNeeded && Asm->MAI->usesCFIForEH()) {
+    if (moveTypeModule == AsmPrinter::CFI_M_Debug)
+      Asm->OutStreamer->EmitCFISections(false, true);
+  }
+  cfiSectionsNeeded = false;
 
   // If any landing pads survive, we need an EH table.
   bool hasLandingPads = !MMI->getLandingPads().empty();
