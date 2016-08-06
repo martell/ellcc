@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to binutils 2.27.
 * Update the libssh2 library to version 1.7.0.
 * Update to LLVM r277813.
 * Update to libedit-20150325-3.1.

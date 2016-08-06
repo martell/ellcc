@@ -1,5 +1,5 @@
 /* Parse options for the GNU linker.
-   Copyright (C) 1991-2015 Free Software Foundation, Inc.
+   Copyright (C) 1991-2016 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -1586,15 +1586,14 @@ parse_args (unsigned argc, char **argv)
   /* We may have -Bsymbolic, -Bsymbolic-functions, --dynamic-list-data,
      --dynamic-list-cpp-new, --dynamic-list-cpp-typeinfo and
      --dynamic-list FILE.  -Bsymbolic and -Bsymbolic-functions are
-     for shared libraries.  -Bsymbolic overrides all others and vice
-     versa.  */
+     for PIC outputs.  -Bsymbolic overrides all others and vice versa.  */
   switch (command_line.symbolic)
     {
     case symbolic_unset:
       break;
     case symbolic:
-      /* -Bsymbolic is for shared library only.  */
-      if (bfd_link_dll (&link_info))
+      /* -Bsymbolic is for PIC output only.  */
+      if (bfd_link_pic (&link_info))
 	{
 	  link_info.symbolic = TRUE;
 	  /* Should we free the unused memory?  */
@@ -1603,8 +1602,8 @@ parse_args (unsigned argc, char **argv)
 	}
       break;
     case symbolic_functions:
-      /* -Bsymbolic-functions is for shared library only.  */
-      if (bfd_link_dll (&link_info))
+      /* -Bsymbolic-functions is for PIC output only.  */
+      if (bfd_link_pic (&link_info))
 	command_line.dynamic_list = dynamic_list_data;
       break;
     }
@@ -1687,6 +1686,7 @@ set_segment_start (const char *section, char *valstr)
     if (strcmp (seg->name, name) == 0)
       {
 	seg->value = val;
+	lang_section_start (section, exp_intop (val), seg);
 	return;
       }
   /* There was no existing value so we must create a new segment
@@ -1755,10 +1755,21 @@ elf_shlib_list_options (FILE *file)
   fprintf (file, _("\
   -z origin                   Mark object requiring immediate $ORIGIN\n\
 				processing at runtime\n"));
+#if DEFAULT_LD_Z_RELRO
+  fprintf (file, _("\
+  -z relro                    Create RELRO program header (default)\n"));
+  fprintf (file, _("\
+  -z norelro                  Don't create RELRO program header\n"));
+#else
   fprintf (file, _("\
   -z relro                    Create RELRO program header\n"));
   fprintf (file, _("\
-  -z norelro                  Don't create RELRO program header\n"));
+  -z norelro                  Don't create RELRO program header (default)\n"));
+#endif
+  fprintf (file, _("\
+  -z common                   Generate common symbols with STT_COMMON type\n"));
+  fprintf (file, _("\
+  -z nocommon                 Generate common symbols with STT_OBJECT type\n"));
   fprintf (file, _("\
   -z stacksize=SIZE           Set size of stack segment\n"));
   fprintf (file, _("\

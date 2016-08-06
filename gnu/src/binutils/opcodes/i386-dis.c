@@ -1,5 +1,5 @@
 /* Print i386 instructions for GDB, the GNU debugger.
-   Copyright (C) 1988-2015 Free Software Foundation, Inc.
+   Copyright (C) 1988-2016 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -259,7 +259,7 @@ fetch_data (struct disassemble_info *info, bfd_byte *addr)
 #define Edw { OP_E, dw_mode }
 #define Edqd { OP_E, dqd_mode }
 #define Eq { OP_E, q_mode }
-#define indirEv { OP_indirE, stack_v_mode }
+#define indirEv { OP_indirE, indir_v_mode }
 #define indirEp { OP_indirE, f_mode }
 #define stackEv { OP_E, stack_v_mode }
 #define Em { OP_E, m_mode }
@@ -562,6 +562,8 @@ enum
   /* 4- or 6-byte pointer operand */
   f_mode,
   const_1_mode,
+  /* v_mode for indirect branch opcodes.  */
+  indir_v_mode,
   /* v_mode for stack-related opcodes.  */
   stack_v_mode,
   /* non-quad operand size depends on prefixes */
@@ -2484,6 +2486,9 @@ struct dis386 {
 	  suffix_always is true (lcall/ljmp).
    '@' => print 'q' for Intel64 ISA, 'w' or 'q' for AMD64 ISA depending
 	  on operand size prefix.
+   '&' => print 'q' in 64bit mode for Intel64 ISA or if instruction
+	  has no operand size prefix for AMD64 ISA, behave as 'P'
+	  otherwise
 
    2 upper case letter macros:
    "XY" => print 'x' or 'y' if suffix_always is true or no register
@@ -3532,9 +3537,9 @@ static const struct dis386 reg_table[][8] = {
   {
     { "incQ",	{ Evh1 }, 0 },
     { "decQ",	{ Evh1 }, 0 },
-    { "call{T|}", { indirEv, BND }, 0 },
+    { "call{&|}", { indirEv, BND }, 0 },
     { MOD_TABLE (MOD_FF_REG_3) },
-    { "jmp{T|}", { indirEv, BND }, 0 },
+    { "jmp{&|}", { indirEv, BND }, 0 },
     { MOD_TABLE (MOD_FF_REG_5) },
     { "pushU",	{ stackEv }, 0 },
     { Bad_Opcode },
@@ -4133,7 +4138,7 @@ static const struct dis386 prefix_table[][4] = {
   /* PREFIX_MOD_3_0FC7_REG_7 */
   {
     { "rdseed",	{ Ev }, 0 },
-    { Bad_Opcode },
+    { "rdpid",	{ Em }, 0 },
     { "rdseed",	{ Ev }, 0 },
   },
 
@@ -13328,6 +13333,13 @@ print_insn (bfd_vma pc, disassemble_info *info)
 	p++;
     }
 
+  if (address_mode == mode_64bit && sizeof (bfd_vma) < 8)
+    {
+      (*info->fprintf_func) (info->stream,
+			     _("64-bit address is disabled"));
+      return -1;
+    }
+
   if (intel_syntax)
     {
       names64 = intel_names64;
@@ -13645,7 +13657,7 @@ print_insn (bfd_vma pc, disassemble_info *info)
     if (op_index[i] != -1 && op_riprel[i])
       {
 	(*info->fprintf_func) (info->stream, "        # ");
-	(*info->print_address_func) ((bfd_vma) (start_pc + codep - start_codep
+	(*info->print_address_func) ((bfd_vma) (start_pc + (codep - start_codep)
 						+ op_address[op_index[i]]), info);
 	break;
       }
@@ -14290,6 +14302,15 @@ case_L:
 	  if (!(rex & REX_W))
 	    used_prefixes |= (prefixes & PREFIX_DATA);
 	  break;
+	case '&':
+	  if (!intel_syntax
+	      && address_mode == mode_64bit
+	      && isa64 == intel64)
+	    {
+	      *obufp++ = 'q';
+	      break;
+	    }
+	  /* Fall through.  */
 	case 'T':
 	  if (!intel_syntax
 	      && address_mode == mode_64bit
@@ -14819,6 +14840,12 @@ intel_operand_size (int bytemode, int sizeflag)
     case dqw_swap_mode:
       oappend ("WORD PTR ");
       break;
+    case indir_v_mode:
+      if (address_mode == mode_64bit && isa64 == intel64)
+	{
+	  oappend ("QWORD PTR ");
+	  break;
+	}
     case stack_v_mode:
       if (address_mode == mode_64bit && ((sizeflag & DFLAG) || (rex & REX_W)))
 	{
@@ -15196,6 +15223,12 @@ OP_E_register (int bytemode, int sizeflag)
     case bnd_mode:
       names = names_bnd;
       break;
+    case indir_v_mode:
+      if (address_mode == mode_64bit && isa64 == intel64)
+	{
+	  names = names64;
+	  break;
+	}
     case stack_v_mode:
       if (address_mode == mode_64bit && ((sizeflag & DFLAG) || (rex & REX_W)))
 	{
@@ -16168,7 +16201,7 @@ OP_J (int bytemode, int sizeflag)
 	     the displacement is added!  */
 	  mask = 0xffff;
 	  if ((prefixes & PREFIX_DATA) == 0)
-	    segment = ((start_pc + codep - start_codep)
+	    segment = ((start_pc + (codep - start_codep))
 		       & ~((bfd_vma) 0xffff));
 	}
       if (address_mode != mode_64bit
