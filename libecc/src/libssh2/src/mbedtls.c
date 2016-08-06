@@ -182,6 +182,44 @@ libssh2_sha1(const unsigned char *message, unsigned long len, unsigned char *out
 }
 
 int
+libssh2_sha256_init(libssh2_sha256_ctx *ctx)
+{
+    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (md == NULL) {
+      return -1;
+    }
+
+    mbedtls_md_init(ctx);
+
+    return mbedtls_md_setup(ctx, md, 0) == 0;
+}
+
+void
+libssh2_sha256(const unsigned char *message, unsigned long len, unsigned char *out)
+{
+    int ret;
+    libssh2_sha256_ctx ctx;
+    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (md == NULL) {
+      return;
+    }
+
+    mbedtls_md_init(&ctx);
+
+    ret = mbedtls_md_setup(&ctx, md, 0);
+    if (ret) {
+      return;
+    }
+
+    ret = mbedtls_md_update(&ctx, message, len);
+    if (ret) {
+      return;
+    }
+
+    mbedtls_md_finish(&ctx, out);
+}
+
+int
 libssh2_md5_init(libssh2_md5_ctx *ctx)
 {
     const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_MD5);
@@ -198,6 +236,20 @@ int
 libssh2_hmac_sha1_init(libssh2_hmac_ctx *ctx, const void *key, int len)
 {
     printf("libssh2_hmac_sha1_init(%d)\n", len);
+    return -1;  // RICH:
+}
+
+int
+libssh2_hmac_sha256_init(libssh2_hmac_ctx *ctx, const void *key, int len)
+{
+    printf("libssh2_hmac_sha256_init(%d)\n", len);
+    return -1;  // RICH:
+}
+
+int
+libssh2_hmac_sha512_init(libssh2_hmac_ctx *ctx, const void *key, int len)
+{
+    printf("libssh2_hmac_sha512_init(%d)\n", len);
     return -1;  // RICH:
 }
 

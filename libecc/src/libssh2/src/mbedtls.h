@@ -47,9 +47,11 @@
 #endif
 #ifdef MBEDTLS_SHA256_C
 #include <mbedtls/sha256.h>
+#define LIBSSH2_HMAC_SHA256 1
 #endif
 #ifdef MBEDTLS_SHA512_C
 #include <mbedtls/sha512.h>
+#define LIBSSH2_HMAC_SHA512 1
 #endif
 #ifdef MBEDTLS_MD5_C
 #include <mbedtls/md5.h>
@@ -113,16 +115,29 @@
 
 #define MD5_DIGEST_LENGTH 16
 #define SHA_DIGEST_LENGTH 20
+#define SHA256_DIGEST_LENGTH 32
 
 int _libssh2_random(unsigned char *buf, size_t len);
+
+#define libssh2_prepare_iovec(vec, len)  /* Empty. */
 
 #define libssh2_sha1_ctx mbedtls_md_context_t
 
 /* returns 0 in case of failure */
 int libssh2_sha1_init(libssh2_sha1_ctx *ctx);
-#define libssh2_sha1_update(ctx, data, len) mbedtls_md_update(&(ctx), data, len)
+#define libssh2_sha1_update(ctx, data, len) \
+  mbedtls_md_update(&(ctx), (const unsigned char *)(data), len)
 #define libssh2_sha1_final(ctx, out) mbedtls_md_finish(&(ctx), out)
 void libssh2_sha1(const unsigned char *message, unsigned long len, unsigned char *out);
+
+#define libssh2_sha256_ctx mbedtls_md_context_t
+
+/* returns 0 in case of failure */
+int libssh2_sha256_init(libssh2_sha256_ctx *ctx);
+#define libssh2_sha256_update(ctx, data, len) \
+  mbedtls_md_update(&(ctx), (const unsigned char *)(data), len)
+#define libssh2_sha256_final(ctx, out) mbedtls_md_finish(&(ctx), out)
+void libssh2_sha256(const unsigned char *message, unsigned long len, unsigned char *out);
 
 #define libssh2_md5_ctx mbedtls_md_context_t
 
@@ -137,6 +152,9 @@ void libssh2_md5(const unsigned char *message, unsigned long len, unsigned char 
 int libssh2_hmac_sha1_init(libssh2_hmac_ctx *ctx, const void *key, int len);
 int libssh2_hmac_md5_init(libssh2_hmac_ctx *ctx, const void *key, int len);
 int libssh2_hmac_ripemd160_init(libssh2_hmac_ctx *ctx, const void *key, int len);
+int libssh2_hmac_sha256_init(libssh2_hmac_ctx *ctx, const void *key, int len);
+int libssh2_hmac_sha512_init(libssh2_hmac_ctx *ctx, const void *key, int len);
+
 #define libssh2_hmac_update(ctx, data, datalen) \
   mbedtls_md_hmac_update(&(ctx), data, datalen)
 #define libssh2_hmac_final(ctx, data) mbedtls_md_hmac_finish(&(ctx), data)
