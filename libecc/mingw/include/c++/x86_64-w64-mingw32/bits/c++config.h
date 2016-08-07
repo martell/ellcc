@@ -1294,7 +1294,7 @@ namespace std
 #define _GLIBCXX_USE_DECIMAL_FLOAT 1
 
 /* Define if __float128 is supported on this host. */
-#define _GLIBCXX_USE_FLOAT128 1
+// RICH: #define _GLIBCXX_USE_FLOAT128 1
 
 /* Defined if gettimeofday is available. */
 #define _GLIBCXX_USE_GETTIMEOFDAY 1
