@@ -454,6 +454,9 @@ mips_linux_read_description (struct target_ops *ops)
 
   /* Report that target registers are a size we know for sure
      that we can get from ptrace.  */
+#ifndef _ABIO32	// RICH
+#define _ABIO32 1	// From _MIPS_SIM_ABI32 in sgidefs.h
+#endif
   if (_MIPS_SIM == _ABIO32)
     return have_dsp ? tdesc_mips_dsp_linux : tdesc_mips_linux;
   else

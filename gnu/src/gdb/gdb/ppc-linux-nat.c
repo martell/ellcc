@@ -45,6 +45,8 @@
 #define PT_FPR0 48
 #if !defined(__powerpc64__)
 #define PT_FPSCR (PT_FPR0 + (2 * 32) + 1)
+#else
+#define PT_FPSCR (PT_FPR0 + 32)
 #endif
 #endif /* __ELLCC__ */
 
