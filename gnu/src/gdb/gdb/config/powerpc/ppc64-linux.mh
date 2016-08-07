@@ -14,7 +14,7 @@ NAT_CDEPS = $(srcdir)/proc-service.list
 # for non-PIC code.  GDB overflows those tables when compiling with
 # -mfull-toc (the default), so we need to ask GCC to use as few TOC
 # entries as possible.
-MH_CFLAGS= -mminimal-toc
+# RICH: MH_CFLAGS= -mminimal-toc
 
 # The dynamically loaded libthread_db needs access to symbols in the
 # gdb executable.
