@@ -13747,7 +13747,8 @@ if test "${gdb_native}" = yes; then
    # may not be supported there.
    old_LDFLAGS="$LDFLAGS"
    # Older GNU ld supports --export-dynamic but --dynamic-list it does not.
-   RDYNAMIC="-Wl,--dynamic-list=${srcdir}/proc-service.list"
+   # RICH:
+   RDYNAMIC=#"-Wl,--dynamic-list=${srcdir}/proc-service.list"
    LDFLAGS="$LDFLAGS $RDYNAMIC"
    if test "${have_libpython}" = no; then
      cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -13807,10 +13808,12 @@ fi
 fi
 if $dynamic_list; then
   found="-Wl,--dynamic-list"
-  RDYNAMIC='-Wl,--dynamic-list=$(srcdir)/proc-service.list'
+  # RICH:
+  RDYNAMIC=#'-Wl,--dynamic-list=$(srcdir)/proc-service.list'
 else
   found="-rdynamic"
-  RDYNAMIC="-rdynamic"
+  # RICH:
+  RDYNAMIC=#"-rdynamic"
 fi
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $found" >&5

@@ -30,7 +30,7 @@ add_llvm_tool(bugpoint
   ToolRunner.cpp
   bugpoint.cpp
   )
-export_executable_symbols(bugpoint)
+# RICH: export_executable_symbols(bugpoint)
 
 if(WITH_POLLY AND LINK_POLLY_INTO_TOOLS)
   target_link_libraries(bugpoint Polly)
