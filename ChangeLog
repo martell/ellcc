@@ -1,8 +1,8 @@
 current SVN:
 
-version 0.1.31:
+version 0.1.32:
 
-* Update the curl library to version 7.50.1.
+s Update the curl library to version 7.50.1.
 * Update to binutils 2.27.
 * Update the libssh2 library to version 1.7.0.
 * Update to LLVM r277813.
