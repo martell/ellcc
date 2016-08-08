@@ -220,6 +220,8 @@ $llvmTargets{'mips32r2'} = { label => 'Mips',
                              triple => 'mips32r2-linux'  };
 $llvmTargets{'mips32r2sf'} = { label => 'Mips Soft Float', 
                                triple => 'mips32r2sf-linux'  };
+$llvmTargets{'mips64r2'} = { label => 'Mips 64-bit',
+                             triple => 'mips64r2-linux'  };
 $llvmTargets{'arm'} = { label => 'ARM 32-bit Soft Float',
                         triple => 'arm32v7sf-linux' };
 $llvmTargets{'arm'} = { label => 'ARM 32-bit',
@@ -230,10 +232,11 @@ $llvmTargets{'arm64v8'} = { label => 'ARM AArch64',
                             triple => 'arm64v8-linux'  };
 $llvmTargets{'ppc32'} = { label => 'PowerPC 32-bit',
                           triple => 'ppc32-linux'  };
+$llvmTargets{'ppc64el'} = { label => 'PowerPC 64-bit',
+                          triple => 'ppc64el-linux'  };
 $llvmTargets{'x86_32'} = { label => 'X86 32-bit', triple => 'x86_32-linux'  };
 $llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
-$llvmTargets{'cpp'} = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
 sub llvmTargetsSortedByLabel {
   $llvmTargets{$a}->{'label'} cmp $llvmTargets{$b}->{'label'};
@@ -474,11 +477,6 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
         $disassemblyFile = getname(".ll");
         try_run( "llvm-dis",
             "llvm-dis -o=$disassemblyFile $bytecodeFile > $outputFile 2>&1",
-            $outputFile );
-    } elsif ( $target eq 'cpp' ) {
-        $disassemblyFile = getname(".cpp");
-        try_run( "lcc",
-            "llc -march=cpp -o=$disassemblyFile $bytecodeFile > $outputFile 2>&1",
             $outputFile );
     } else {
         $disassemblyFile = getname(".s");
