@@ -1,10 +1,12 @@
 current SVN:
 
+version 0.1.31:
+
 * Update the curl library to version 7.50.1.
 * Update to binutils 2.27.
 * Update the libssh2 library to version 1.7.0.
 * Update to LLVM r277813.
-* Update to libedit-20150325-3.1.
+* Update to libedit-20160618-3.1.
 * Update to GDB 7.11.1.
 * Update the nghttp2 library to version 1.13.0.
 * Update the expat library to version 2.2.0.
