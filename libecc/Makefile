@@ -6,7 +6,11 @@ LIBECC := $(ELLCC)/libecc
 Configs := $(shell cat $(LIBECC)/config/libraries | grep -v ^\# | sed -e 's/.*-elk*//g')
 ElkConfigs := $(shell cat $(LIBECC)/config/libraries | grep -v ^\# | sed -e 's/.*-linux*//g')
 CFLAGS := -g
-CPFLAGS := -pfru
+ifeq ($(shell uname),Darwin)
+  CPFLAGS := -pfr
+else
+  CPFLAGS := -pfru
+endif
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
