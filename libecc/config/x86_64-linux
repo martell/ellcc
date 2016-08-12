@@ -11,8 +11,6 @@ compiler:
     - -integrated-as
 assembler:
   exe: $E/x86_64-elf-as$X
-  options:
-    - -32
   output:
     - -o $O
 linker:
@@ -48,7 +46,7 @@ linker:
     - -lc++
     - -lm
   profile_libraries:
-    - -lprofile-rt
+    - -u __ecc_profile_runtime
   c_libraries:
     - -(
     - -lc

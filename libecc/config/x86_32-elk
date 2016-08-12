@@ -52,7 +52,7 @@ linker:
     - -lc++
     - -lm
   profile_libraries:
-    - -lprofile-rt
+    - -u __ecc_profile_runtime
   c_libraries:
     - -lelk
     - -(

@@ -3658,6 +3658,13 @@ static void addPGOAndCoverageFlags(Compilation &C, const Driver &D,
     }
   }
 
+  // RICH:
+#if 1
+  if (Args.hasArg(options::OPT_coverage)) {
+    CmdArgs.push_back("-fprofile-instrument=clang");
+    CmdArgs.push_back("-fcoverage-mapping");
+  }
+#else
   if (Args.hasArg(options::OPT_ftest_coverage) ||
       Args.hasArg(options::OPT_coverage))
     CmdArgs.push_back("-femit-coverage-notes");
@@ -3665,6 +3672,7 @@ static void addPGOAndCoverageFlags(Compilation &C, const Driver &D,
                    false) ||
       Args.hasArg(options::OPT_coverage))
     CmdArgs.push_back("-femit-coverage-data");
+#endif
 
   if (Args.hasFlag(options::OPT_fcoverage_mapping,
                    options::OPT_fno_coverage_mapping, false) &&
