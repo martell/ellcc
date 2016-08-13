@@ -1539,7 +1539,7 @@ static Value *isSafeToSpeculateStore(Instruction *I, BasicBlock *BrBB,
       continue;
     --MaxNumInstToLookAt;
 
-    // Could be calling an instruction that effects memory like free().
+    // Could be calling an instruction that affects memory like free().
     if (CurI.mayHaveSideEffects() && !isa<StoreInst>(CurI))
       return nullptr;
 
@@ -1822,7 +1822,7 @@ static bool FoldCondBranchOnPHI(BranchInst *BI, const DataLayout &DL) {
     return false;
 
   // Can't fold blocks that contain noduplicate or convergent calls.
-  if (llvm::any_of(*BB, [](const Instruction &I) {
+  if (any_of(*BB, [](const Instruction &I) {
         const CallInst *CI = dyn_cast<CallInst>(&I);
         return CI && (CI->cannotDuplicate() || CI->isConvergent());
       }))
@@ -5128,8 +5128,9 @@ static bool ReduceSwitchRange(SwitchInst *SI, IRBuilder<> &Builder,
   Builder.SetInsertPoint(SI);
   auto *ShiftC = ConstantInt::get(Ty, Shift);
   auto *Sub = Builder.CreateSub(SI->getCondition(), ConstantInt::get(Ty, Base));
-  auto *Rot = Builder.CreateOr(Builder.CreateLShr(Sub, ShiftC),
-                               Builder.CreateShl(Sub, Ty->getBitWidth() - Shift));
+  auto *LShr = Builder.CreateLShr(Sub, ShiftC);
+  auto *Shl = Builder.CreateShl(Sub, Ty->getBitWidth() - Shift);
+  auto *Rot = Builder.CreateOr(LShr, Shl);
   SI->replaceUsesOfWith(SI->getCondition(), Rot);
 
   for (SwitchInst::CaseIt C = SI->case_begin(), E = SI->case_end(); C != E;

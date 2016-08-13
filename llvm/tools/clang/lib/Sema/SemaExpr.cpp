@@ -103,18 +103,9 @@ static bool HasRedeclarationWithoutAvailabilityInCategory(const Decl *D) {
   return false;
 }
 
-static AvailabilityResult
-DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
-                           const ObjCInterfaceDecl *UnknownObjCClass,
-                           bool ObjCPropertyAccess) {
-  VersionTuple ContextVersion;
-  if (const DeclContext *DC = S.getCurObjCLexicalContext())
-    ContextVersion = S.getVersionForDecl(cast<Decl>(DC));
-
-  // See if this declaration is unavailable, deprecated, or partial in the
-  // current context.
-  std::string Message;
-  AvailabilityResult Result = D->getAvailability(&Message, ContextVersion);
+AvailabilityResult Sema::ShouldDiagnoseAvailabilityOfDecl(
+    NamedDecl *&D, VersionTuple ContextVersion, std::string *Message) {
+  AvailabilityResult Result = D->getAvailability(Message, ContextVersion);
 
   // For typedefs, if the typedef declaration appears available look
   // to the underlying type to see if it is more restrictive.
@@ -122,18 +113,18 @@ DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
     if (Result == AR_Available) {
       if (const TagType *TT = TD->getUnderlyingType()->getAs<TagType>()) {
         D = TT->getDecl();
-        Result = D->getAvailability(&Message, ContextVersion);
+        Result = D->getAvailability(Message, ContextVersion);
         continue;
       }
     }
     break;
   }
-    
+
   // Forward class declarations get their attributes from their definition.
   if (ObjCInterfaceDecl *IDecl = dyn_cast<ObjCInterfaceDecl>(D)) {
     if (IDecl->getDefinition()) {
       D = IDecl->getDefinition();
-      Result = D->getAvailability(&Message, ContextVersion);
+      Result = D->getAvailability(Message, ContextVersion);
     }
   }
 
@@ -141,12 +132,59 @@ DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
     if (Result == AR_Available) {
       const DeclContext *DC = ECD->getDeclContext();
       if (const EnumDecl *TheEnumDecl = dyn_cast<EnumDecl>(DC))
-        Result = TheEnumDecl->getAvailability(&Message, ContextVersion);
+        Result = TheEnumDecl->getAvailability(Message, ContextVersion);
     }
 
-  const ObjCPropertyDecl *ObjCPDecl = nullptr;
-  if (Result == AR_Deprecated || Result == AR_Unavailable ||
-      Result == AR_NotYetIntroduced) {
+  switch (Result) {
+  case AR_Available:
+    return Result;
+
+  case AR_Unavailable:
+  case AR_Deprecated:
+    return getCurContextAvailability() != Result ? Result : AR_Available;
+
+  case AR_NotYetIntroduced: {
+    // Don't do this for enums, they can't be redeclared.
+    if (isa<EnumConstantDecl>(D) || isa<EnumDecl>(D))
+      return AR_Available;
+
+    bool Warn = !D->getAttr<AvailabilityAttr>()->isInherited();
+    // Objective-C method declarations in categories are not modelled as
+    // redeclarations, so manually look for a redeclaration in a category
+    // if necessary.
+    if (Warn && HasRedeclarationWithoutAvailabilityInCategory(D))
+      Warn = false;
+    // In general, D will point to the most recent redeclaration. However,
+    // for `@class A;` decls, this isn't true -- manually go through the
+    // redecl chain in that case.
+    if (Warn && isa<ObjCInterfaceDecl>(D))
+      for (Decl *Redecl = D->getMostRecentDecl(); Redecl && Warn;
+           Redecl = Redecl->getPreviousDecl())
+        if (!Redecl->hasAttr<AvailabilityAttr>() ||
+            Redecl->getAttr<AvailabilityAttr>()->isInherited())
+          Warn = false;
+
+    return Warn ? AR_NotYetIntroduced : AR_Available;
+  }
+  }
+  llvm_unreachable("Unknown availability result!");
+}
+
+static void
+DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
+                           const ObjCInterfaceDecl *UnknownObjCClass,
+                           bool ObjCPropertyAccess) {
+  VersionTuple ContextVersion;
+  if (const DeclContext *DC = S.getCurObjCLexicalContext())
+    ContextVersion = S.getVersionForDecl(cast<Decl>(DC));
+
+  std::string Message;
+  // See if this declaration is unavailable, deprecated, or partial in the
+  // current context.
+  if (AvailabilityResult Result =
+          S.ShouldDiagnoseAvailabilityOfDecl(D, ContextVersion, &Message)) {
+
+    const ObjCPropertyDecl *ObjCPDecl = nullptr;
     if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D)) {
       if (const ObjCPropertyDecl *PD = MD->findPropertyDecl()) {
         AvailabilityResult PDeclResult =
@@ -155,56 +193,10 @@ DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
           ObjCPDecl = PD;
       }
     }
+
+    S.EmitAvailabilityWarning(Result, D, Message, Loc, UnknownObjCClass,
+                              ObjCPDecl, ObjCPropertyAccess);
   }
-  
-  switch (Result) {
-    case AR_Available:
-      break;
-
-    case AR_Deprecated:
-      if (S.getCurContextAvailability() != AR_Deprecated)
-        S.EmitAvailabilityWarning(Sema::AD_Deprecation,
-                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl,
-                                  ObjCPropertyAccess);
-      break;
-
-    case AR_NotYetIntroduced: {
-      // Don't do this for enums, they can't be redeclared.
-      if (isa<EnumConstantDecl>(D) || isa<EnumDecl>(D))
-        break;
- 
-      bool Warn = !D->getAttr<AvailabilityAttr>()->isInherited();
-      // Objective-C method declarations in categories are not modelled as
-      // redeclarations, so manually look for a redeclaration in a category
-      // if necessary.
-      if (Warn && HasRedeclarationWithoutAvailabilityInCategory(D))
-        Warn = false;
-      // In general, D will point to the most recent redeclaration. However,
-      // for `@class A;` decls, this isn't true -- manually go through the
-      // redecl chain in that case.
-      if (Warn && isa<ObjCInterfaceDecl>(D))
-        for (Decl *Redecl = D->getMostRecentDecl(); Redecl && Warn;
-             Redecl = Redecl->getPreviousDecl())
-          if (!Redecl->hasAttr<AvailabilityAttr>() ||
-              Redecl->getAttr<AvailabilityAttr>()->isInherited())
-            Warn = false;
- 
-      if (Warn)
-        S.EmitAvailabilityWarning(Sema::AD_Partial, D, Message, Loc,
-                                  UnknownObjCClass, ObjCPDecl,
-                                  ObjCPropertyAccess);
-      break;
-    }
-
-    case AR_Unavailable:
-      if (S.getCurContextAvailability() != AR_Unavailable)
-        S.EmitAvailabilityWarning(Sema::AD_Unavailable,
-                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl,
-                                  ObjCPropertyAccess);
-      break;
-
-    }
-  return Result;
 }
 
 /// \brief Emit a note explaining that this function is deleted.
@@ -1749,7 +1741,7 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
   if (getLangOpts().CUDA)
     if (const FunctionDecl *Caller = dyn_cast<FunctionDecl>(CurContext))
       if (const FunctionDecl *Callee = dyn_cast<FunctionDecl>(D)) {
-        if (CheckCUDATarget(Caller, Callee)) {
+        if (!IsAllowedCUDACall(Caller, Callee)) {
           Diag(NameInfo.getLoc(), diag::err_ref_bad_target)
             << IdentifyCUDATarget(Callee) << D->getIdentifier()
             << IdentifyCUDATarget(Caller);
@@ -1795,6 +1787,12 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
     if (FD->isBitField())
       E->setObjectKind(OK_BitField);
   }
+
+  // C++ [expr.prim]/8: The expression [...] is a bit-field if the identifier
+  // designates a bit-field.
+  if (auto *BD = dyn_cast<BindingDecl>(D))
+    if (auto *BE = BD->getBinding())
+      E->setObjectKind(BE->getObjectKind());
 
   return E;
 }
@@ -2951,7 +2949,6 @@ ExprResult Sema::BuildDeclarationNameExpr(
     case Decl::VarTemplateSpecialization:
     case Decl::VarTemplatePartialSpecialization:
     case Decl::Decomposition:
-    case Decl::Binding:
     case Decl::OMPCapturedExpr:
       // In C, "extern void blah;" is valid and is an r-value.
       if (!getLangOpts().CPlusPlus &&
@@ -2977,6 +2974,14 @@ ExprResult Sema::BuildDeclarationNameExpr(
           type = CapturedType;
       }
       
+      break;
+    }
+
+    case Decl::Binding: {
+      // These are always lvalues.
+      valueKind = VK_LValue;
+      type = type.getNonReferenceType();
+      // FIXME: Adjust cv-qualifiers for capture.
       break;
     }
         
@@ -6017,7 +6022,9 @@ Sema::ActOnCastExpr(Scope *S, SourceLocation LParenLoc,
   CheckTollFreeBridgeCast(castType, CastExpr);
   
   CheckObjCBridgeRelatedCast(castType, CastExpr);
-  
+
+  DiscardMisalignedMemberAddress(castType.getTypePtr(), CastExpr);
+
   return BuildCStyleCastExpr(LParenLoc, castTInfo, RParenLoc, CastExpr);
 }
 
@@ -8677,11 +8684,10 @@ static void DiagnoseBadShiftValues(Sema& S, ExprResult &LHS, ExprResult &RHS,
     << RHS.get()->getSourceRange();
 }
 
-/// \brief Return the resulting type when an OpenCL vector is shifted
+/// \brief Return the resulting type when a vector is shifted
 ///        by a scalar or vector shift amount.
-static QualType checkOpenCLVectorShift(Sema &S,
-                                       ExprResult &LHS, ExprResult &RHS,
-                                       SourceLocation Loc, bool IsCompAssign) {
+static QualType checkVectorShift(Sema &S, ExprResult &LHS, ExprResult &RHS,
+                                 SourceLocation Loc, bool IsCompAssign) {
   // OpenCL v1.1 s6.3.j says RHS can be a vector only if LHS is a vector.
   if (!LHS.get()->getType()->isVectorType()) {
     S.Diag(Loc, diag::err_shift_rhs_only_vector)
@@ -8749,11 +8755,9 @@ QualType Sema::CheckShiftOperands(ExprResult &LHS, ExprResult &RHS,
   // Vector shifts promote their scalar inputs to vector type.
   if (LHS.get()->getType()->isVectorType() ||
       RHS.get()->getType()->isVectorType()) {
-    if (LangOpts.OpenCL)
-      return checkOpenCLVectorShift(*this, LHS, RHS, Loc, IsCompAssign);
     if (LangOpts.ZVector) {
       // The shift operators for the z vector extensions work basically
-      // like OpenCL shifts, except that neither the LHS nor the RHS is
+      // like general shifts, except that neither the LHS nor the RHS is
       // allowed to be a "vector bool".
       if (auto LHSVecType = LHS.get()->getType()->getAs<VectorType>())
         if (LHSVecType->getVectorKind() == VectorType::AltiVecBool)
@@ -8761,11 +8765,8 @@ QualType Sema::CheckShiftOperands(ExprResult &LHS, ExprResult &RHS,
       if (auto RHSVecType = RHS.get()->getType()->getAs<VectorType>())
         if (RHSVecType->getVectorKind() == VectorType::AltiVecBool)
           return InvalidOperands(Loc, LHS, RHS);
-      return checkOpenCLVectorShift(*this, LHS, RHS, Loc, IsCompAssign);
     }
-    return CheckVectorOperands(LHS, RHS, Loc, IsCompAssign,
-                               /*AllowBothBool*/true,
-                               /*AllowBoolConversions*/false);
+    return checkVectorShift(*this, LHS, RHS, Loc, IsCompAssign);
   }
 
   // Shifts don't perform usual arithmetic conversions, they just do integer
@@ -10588,7 +10589,8 @@ QualType Sema::CheckAddressOfOperand(ExprResult &OrigOp, SourceLocation OpLoc) {
           return MPTy;
         }
       }
-    } else if (!isa<FunctionDecl>(dcl) && !isa<NonTypeTemplateParmDecl>(dcl))
+    } else if (!isa<FunctionDecl>(dcl) && !isa<NonTypeTemplateParmDecl>(dcl) &&
+               !isa<BindingDecl>(dcl))
       llvm_unreachable("Unknown/unexpected decl type");
   }
 
@@ -10607,6 +10609,8 @@ QualType Sema::CheckAddressOfOperand(ExprResult &OrigOp, SourceLocation OpLoc) {
   // If the operand has type "type", the result has type "pointer to type".
   if (op->getType()->isObjCObjectType())
     return Context.getObjCObjectPointerType(op->getType());
+
+  CheckAddressOfPackedMember(op);
 
   return Context.getPointerType(op->getType());
 }

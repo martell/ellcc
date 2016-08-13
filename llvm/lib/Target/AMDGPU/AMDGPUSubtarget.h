@@ -24,6 +24,7 @@
 #include "SIFrameLowering.h"
 #include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/CodeGen/GlobalISel/GISelAccessor.h"
+#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 
 #define GET_SUBTARGETINFO_HEADER
@@ -108,6 +109,7 @@ protected:
   bool FeatureDisable;
 
   InstrItineraryData InstrItins;
+  SelectionDAGTargetInfo TSInfo;
 
 public:
   AMDGPUSubtarget(const Triple &TT, StringRef GPU, StringRef FS,
@@ -123,6 +125,11 @@ public:
 
   const InstrItineraryData *getInstrItineraryData() const override {
     return &InstrItins;
+  }
+
+  // Nothing implemented, just prevent crashes on use.
+  const SelectionDAGTargetInfo *getSelectionDAGInfo() const override {
+    return &TSInfo;
   }
 
   void ParseSubtargetFeatures(StringRef CPU, StringRef FS);
@@ -333,7 +340,9 @@ public:
 class SISubtarget final : public AMDGPUSubtarget {
 public:
   enum {
-    FIXED_SGPR_COUNT_FOR_INIT_BUG = 80
+    // The closed Vulkan driver sets 96, which limits the wave count to 8 but
+    // doesn't spill SGPRs as much as when 80 is set.
+    FIXED_SGPR_COUNT_FOR_INIT_BUG = 96
   };
 
 private:

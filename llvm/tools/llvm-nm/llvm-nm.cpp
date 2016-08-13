@@ -1066,9 +1066,9 @@ static bool checkMachOAndArchFlags(SymbolicFile *O, std::string &Filename) {
     H = MachO->MachOObjectFile::getHeader();
     T = MachOObjectFile::getArchTriple(H.cputype, H.cpusubtype);
   }
-  if (std::none_of(
-          ArchFlags.begin(), ArchFlags.end(),
-          [&](const std::string &Name) { return Name == T.getArchName(); })) {
+  if (none_of(ArchFlags, [&](const std::string &Name) {
+        return Name == T.getArchName();
+      })) {
     error("No architecture specified", Filename);
     return false;
   }
@@ -1085,7 +1085,7 @@ static void dumpSymbolNamesFromFile(std::string &Filename) {
   Expected<std::unique_ptr<Binary>> BinaryOrErr = createBinary(
       BufferOrErr.get()->getMemBufferRef(), NoLLVMBitcode ? nullptr : &Context);
   if (!BinaryOrErr) {
-    error(errorToErrorCode(BinaryOrErr.takeError()), Filename);
+    error(BinaryOrErr.takeError(), Filename);
     return;
   }
   Binary &Bin = *BinaryOrErr.get();

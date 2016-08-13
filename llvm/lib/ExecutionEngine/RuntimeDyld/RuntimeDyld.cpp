@@ -224,11 +224,25 @@ RuntimeDyldImpl::loadObjectImpl(const object::ObjectFile &Obj) {
         return NameOrErr.takeError();
 
       // Compute JIT symbol flags.
-      JITSymbolFlags RTDyldSymFlags = JITSymbolFlags::None;
-      if (Flags & SymbolRef::SF_Weak)
-        RTDyldSymFlags |= JITSymbolFlags::Weak;
-      if (Flags & SymbolRef::SF_Exported)
-        RTDyldSymFlags |= JITSymbolFlags::Exported;
+      JITSymbolFlags JITSymFlags = JITSymbolFlags::fromObjectSymbol(*I);
+
+      // If this is a weak definition, check to see if there's a strong one.
+      // If there is, skip this symbol (we won't be providing it: the strong
+      // definition will). If there's no strong definition, make this definition
+      // strong.
+      if (JITSymFlags.isWeak()) {
+        // First check whether there's already a definition in this instance.
+        // FIXME: Override existing weak definitions with strong ones.
+        if (GlobalSymbolTable.count(Name))
+          continue;
+        // Then check the symbol resolver to see if there's a definition
+        // elsewhere in this logical dylib.
+        if (auto Sym = Resolver.findSymbolInLogicalDylib(Name))
+          if (Sym.getFlags().isStrongDefinition())
+            continue;
+        // else
+        JITSymFlags &= ~JITSymbolFlags::Weak;
+      }
 
       if (Flags & SymbolRef::SF_Absolute &&
           SymType != object::SymbolRef::ST_File) {
@@ -245,7 +259,7 @@ RuntimeDyldImpl::loadObjectImpl(const object::ObjectFile &Obj) {
                      << format("%p", (uintptr_t)Addr)
                      << " flags: " << Flags << "\n");
         GlobalSymbolTable[Name] =
-          SymbolTableEntry(SectionID, Addr, RTDyldSymFlags);
+          SymbolTableEntry(SectionID, Addr, JITSymFlags);
       } else if (SymType == object::SymbolRef::ST_Function ||
                  SymType == object::SymbolRef::ST_Data ||
                  SymType == object::SymbolRef::ST_Unknown ||
@@ -278,7 +292,7 @@ RuntimeDyldImpl::loadObjectImpl(const object::ObjectFile &Obj) {
                      << format("%p", (uintptr_t)SectOffset)
                      << " flags: " << Flags << "\n");
         GlobalSymbolTable[Name] =
-          SymbolTableEntry(SectionID, SectOffset, RTDyldSymFlags);
+          SymbolTableEntry(SectionID, SectOffset, JITSymFlags);
       }
     }
   }
@@ -634,16 +648,11 @@ Error RuntimeDyldImpl::emitCommonSymbols(const ObjectFile &Obj,
       Addr += AlignOffset;
       Offset += AlignOffset;
     }
-    uint32_t Flags = Sym.getFlags();
-    JITSymbolFlags RTDyldSymFlags = JITSymbolFlags::None;
-    if (Flags & SymbolRef::SF_Weak)
-      RTDyldSymFlags |= JITSymbolFlags::Weak;
-    if (Flags & SymbolRef::SF_Exported)
-      RTDyldSymFlags |= JITSymbolFlags::Exported;
+    JITSymbolFlags JITSymFlags = JITSymbolFlags::fromObjectSymbol(Sym);
     DEBUG(dbgs() << "Allocating common symbol " << Name << " address "
                  << format("%p", Addr) << "\n");
     GlobalSymbolTable[Name] =
-      SymbolTableEntry(SectionID, Offset, RTDyldSymFlags);
+      SymbolTableEntry(SectionID, Offset, JITSymFlags);
     Offset += Size;
     Addr += Size;
   }

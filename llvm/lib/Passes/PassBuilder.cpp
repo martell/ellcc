@@ -38,6 +38,7 @@
 #include "llvm/Analysis/LoopAccessAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
+#include "llvm/Analysis/ModuleSummaryAnalysis.h"
 #include "llvm/Analysis/OptimizationDiagnosticInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
@@ -118,8 +119,10 @@
 #include "llvm/Transforms/Utils/BreakCriticalEdges.h"
 #include "llvm/Transforms/Utils/LCSSA.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
+#include "llvm/Transforms/Utils/LowerInvoke.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Utils/MemorySSA.h"
+#include "llvm/Transforms/Utils/NameAnonFunctions.h"
 #include "llvm/Transforms/Utils/SimplifyInstructions.h"
 #include "llvm/Transforms/Utils/SymbolRewriter.h"
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
@@ -135,7 +138,7 @@ namespace {
 
 /// \brief No-op module pass which does nothing.
 struct NoOpModulePass {
-  PreservedAnalyses run(Module &M, AnalysisManager<Module> &) {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
   }
   static StringRef name() { return "NoOpModulePass"; }
@@ -148,14 +151,14 @@ class NoOpModuleAnalysis : public AnalysisInfoMixin<NoOpModuleAnalysis> {
 
 public:
   struct Result {};
-  Result run(Module &, AnalysisManager<Module> &) { return Result(); }
+  Result run(Module &, ModuleAnalysisManager &) { return Result(); }
   static StringRef name() { return "NoOpModuleAnalysis"; }
 };
 
 /// \brief No-op CGSCC pass which does nothing.
 struct NoOpCGSCCPass {
   PreservedAnalyses run(LazyCallGraph::SCC &C,
-                        AnalysisManager<LazyCallGraph::SCC> &) {
+                        CGSCCAnalysisManager &) {
     return PreservedAnalyses::all();
   }
   static StringRef name() { return "NoOpCGSCCPass"; }
@@ -168,7 +171,7 @@ class NoOpCGSCCAnalysis : public AnalysisInfoMixin<NoOpCGSCCAnalysis> {
 
 public:
   struct Result {};
-  Result run(LazyCallGraph::SCC &, AnalysisManager<LazyCallGraph::SCC> &) {
+  Result run(LazyCallGraph::SCC &, CGSCCAnalysisManager &) {
     return Result();
   }
   static StringRef name() { return "NoOpCGSCCAnalysis"; }
@@ -176,7 +179,7 @@ public:
 
 /// \brief No-op function pass which does nothing.
 struct NoOpFunctionPass {
-  PreservedAnalyses run(Function &F, AnalysisManager<Function> &) {
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &) {
     return PreservedAnalyses::all();
   }
   static StringRef name() { return "NoOpFunctionPass"; }
@@ -189,13 +192,13 @@ class NoOpFunctionAnalysis : public AnalysisInfoMixin<NoOpFunctionAnalysis> {
 
 public:
   struct Result {};
-  Result run(Function &, AnalysisManager<Function> &) { return Result(); }
+  Result run(Function &, FunctionAnalysisManager &) { return Result(); }
   static StringRef name() { return "NoOpFunctionAnalysis"; }
 };
 
 /// \brief No-op loop pass which does nothing.
 struct NoOpLoopPass {
-  PreservedAnalyses run(Loop &L, AnalysisManager<Loop> &) {
+  PreservedAnalyses run(Loop &L, LoopAnalysisManager &) {
     return PreservedAnalyses::all();
   }
   static StringRef name() { return "NoOpLoopPass"; }
@@ -208,7 +211,7 @@ class NoOpLoopAnalysis : public AnalysisInfoMixin<NoOpLoopAnalysis> {
 
 public:
   struct Result {};
-  Result run(Loop &, AnalysisManager<Loop> &) { return Result(); }
+  Result run(Loop &, LoopAnalysisManager &) { return Result(); }
   static StringRef name() { return "NoOpLoopAnalysis"; }
 };
 

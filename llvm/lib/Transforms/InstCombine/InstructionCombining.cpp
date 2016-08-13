@@ -1899,6 +1899,25 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     }
   }
 
+  if (!GEP.isInBounds()) {
+    unsigned PtrWidth =
+        DL.getPointerSizeInBits(PtrOp->getType()->getPointerAddressSpace());
+    APInt BasePtrOffset(PtrWidth, 0);
+    Value *UnderlyingPtrOp =
+            PtrOp->stripAndAccumulateInBoundsConstantOffsets(DL,
+                                                             BasePtrOffset);
+    if (auto *AI = dyn_cast<AllocaInst>(UnderlyingPtrOp)) {
+      if (GEP.accumulateConstantOffset(DL, BasePtrOffset) &&
+          BasePtrOffset.isNonNegative()) {
+        APInt AllocSize(PtrWidth, DL.getTypeAllocSize(AI->getAllocatedType()));
+        if (BasePtrOffset.ule(AllocSize)) {
+          return GetElementPtrInst::CreateInBounds(
+              PtrOp, makeArrayRef(Ops).slice(1), GEP.getName());
+        }
+      }
+    }
+  }
+
   return nullptr;
 }
 
@@ -2942,10 +2961,8 @@ bool InstCombiner::run() {
 
         eraseInstFromFunction(*I);
       } else {
-#ifndef NDEBUG
         DEBUG(dbgs() << "IC: Mod = " << OrigI << '\n'
                      << "    New = " << *I << '\n');
-#endif
 
         // If the instruction was modified, it's possible that it is now dead.
         // if so, remove it.
@@ -3156,7 +3173,7 @@ combineInstructionsOverFunction(Function &F, InstCombineWorklist &Worklist,
 }
 
 PreservedAnalyses InstCombinePass::run(Function &F,
-                                       AnalysisManager<Function> &AM) {
+                                       FunctionAnalysisManager &AM) {
   auto &AC = AM.getResult<AssumptionAnalysis>(F);
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(F);

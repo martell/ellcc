@@ -143,9 +143,6 @@ COMMON_FLAG(bool, coverage_direct, SANITIZER_ANDROID,
 COMMON_FLAG(const char *, coverage_dir, ".",
             "Target directory for coverage dumps. Defaults to the current "
             "directory.")
-COMMON_FLAG(bool, coverage_pc_buffer, true,
-            "If set (and if 'coverage' is set too), the pcs would be collected "
-            "in a buffer.")
 COMMON_FLAG(bool, full_address_space, false,
             "Sanitize complete address space; "
             "by default kernel area on 32-bit platforms will not be sanitized")
@@ -215,7 +212,7 @@ COMMON_FLAG(bool, decorate_proc_maps, false, "If set, decorate sanitizer "
 COMMON_FLAG(int, exitcode, 1, "Override the program exit status if the tool "
                               "found an error")
 COMMON_FLAG(
-    bool, abort_on_error, SANITIZER_MAC,
+    bool, abort_on_error, SANITIZER_ANDROID || SANITIZER_MAC,
     "If set, the tool calls abort() instead of _exit() after printing the "
     "error report.")
 COMMON_FLAG(bool, suppress_equal_pcs, true,

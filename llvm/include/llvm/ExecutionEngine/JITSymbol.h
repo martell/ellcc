@@ -15,6 +15,7 @@
 #define LLVM_EXECUTIONENGINE_JITSYMBOL_H
 
 #include "llvm/Support/DataTypes.h"
+#include <string>
 #include <cassert>
 #include <functional>
 
@@ -57,6 +58,10 @@ public:
   /// @brief Returns true is the Weak flag is set.
   bool isCommon() const {
     return (Flags & Common) == Common;
+  }
+
+  bool isStrongDefinition() const {
+    return !isWeak() && !isCommon();
   }
 
   /// @brief Returns true is the Weak flag is set.

@@ -395,8 +395,9 @@ template <class ELFT> unsigned RelocationSection<ELFT>::getRelocOffset() {
 }
 
 template <class ELFT> void RelocationSection<ELFT>::finalize() {
-  this->Header.sh_link = Static ? Out<ELFT>::SymTab->SectionIndex
-                                : Out<ELFT>::DynSymTab->SectionIndex;
+  this->Header.sh_link = Out<ELFT>::DynSymTab
+                             ? Out<ELFT>::DynSymTab->SectionIndex
+                             : Out<ELFT>::SymTab->SectionIndex;
   this->Header.sh_size = Relocs.size() * this->Header.sh_entsize;
 }
 
@@ -678,17 +679,17 @@ template <class ELFT> void DynamicSection<ELFT>::finalize() {
   if (Out<ELFT>::HashTab)
     Add({DT_HASH, Out<ELFT>::HashTab});
 
-  if (PreInitArraySec) {
-    Add({DT_PREINIT_ARRAY, PreInitArraySec});
-    Add({DT_PREINIT_ARRAYSZ, PreInitArraySec->getSize()});
+  if (Out<ELFT>::PreinitArray) {
+    Add({DT_PREINIT_ARRAY, Out<ELFT>::PreinitArray});
+    Add({DT_PREINIT_ARRAYSZ, Out<ELFT>::PreinitArray->getSize()});
   }
-  if (InitArraySec) {
-    Add({DT_INIT_ARRAY, InitArraySec});
-    Add({DT_INIT_ARRAYSZ, (uintX_t)InitArraySec->getSize()});
+  if (Out<ELFT>::InitArray) {
+    Add({DT_INIT_ARRAY, Out<ELFT>::InitArray});
+    Add({DT_INIT_ARRAYSZ, (uintX_t)Out<ELFT>::InitArray->getSize()});
   }
-  if (FiniArraySec) {
-    Add({DT_FINI_ARRAY, FiniArraySec});
-    Add({DT_FINI_ARRAYSZ, (uintX_t)FiniArraySec->getSize()});
+  if (Out<ELFT>::FiniArray) {
+    Add({DT_FINI_ARRAY, Out<ELFT>::FiniArray});
+    Add({DT_FINI_ARRAYSZ, (uintX_t)Out<ELFT>::FiniArray->getSize()});
   }
 
   if (SymbolBody *B = Symtab<ELFT>::X->find(Config->Init))
@@ -1737,6 +1738,46 @@ void MipsOptionsOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
 }
 
 template <class ELFT>
+MipsAbiFlagsOutputSection<ELFT>::MipsAbiFlagsOutputSection()
+    : OutputSectionBase<ELFT>(".MIPS.abiflags", SHT_MIPS_ABIFLAGS, SHF_ALLOC) {
+  this->Header.sh_addralign = 8;
+  this->Header.sh_entsize = sizeof(Elf_Mips_ABIFlags);
+  this->Header.sh_size = sizeof(Elf_Mips_ABIFlags);
+  memset(&Flags, 0, sizeof(Flags));
+}
+
+template <class ELFT>
+void MipsAbiFlagsOutputSection<ELFT>::writeTo(uint8_t *Buf) {
+  memcpy(Buf, &Flags, sizeof(Flags));
+}
+
+template <class ELFT>
+void MipsAbiFlagsOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  // Check compatibility and merge fields from input .MIPS.abiflags
+  // to the output one.
+  auto *S = cast<MipsAbiFlagsInputSection<ELFT>>(C);
+  S->OutSec = this;
+  if (S->Flags->version != 0) {
+    error(getFilename(S->getFile()) + ": unexpected .MIPS.abiflags version " +
+          Twine(S->Flags->version));
+    return;
+  }
+  // LLD checks ISA compatibility in getMipsEFlags(). Here we just
+  // select the highest number of ISA/Rev/Ext.
+  Flags.isa_level = std::max(Flags.isa_level, S->Flags->isa_level);
+  Flags.isa_rev = std::max(Flags.isa_rev, S->Flags->isa_rev);
+  Flags.isa_ext = std::max(Flags.isa_ext, S->Flags->isa_ext);
+  Flags.gpr_size = std::max(Flags.gpr_size, S->Flags->gpr_size);
+  Flags.cpr1_size = std::max(Flags.cpr1_size, S->Flags->cpr1_size);
+  Flags.cpr2_size = std::max(Flags.cpr2_size, S->Flags->cpr2_size);
+  Flags.ases |= S->Flags->ases;
+  Flags.flags1 |= S->Flags->flags1;
+  Flags.flags2 |= S->Flags->flags2;
+  Flags.fp_abi = elf::getMipsFpAbiFlag(Flags.fp_abi, S->Flags->fp_abi,
+                                       getFilename(S->getFile()));
+}
+
+template <class ELFT>
 std::pair<OutputSectionBase<ELFT> *, bool>
 OutputSectionFactory<ELFT>::create(InputSectionBase<ELFT> *C,
                                    StringRef OutsecName) {
@@ -1761,16 +1802,14 @@ OutputSectionFactory<ELFT>::create(InputSectionBase<ELFT> *C,
   case InputSectionBase<ELFT>::MipsOptions:
     Sec = new MipsOptionsOutputSection<ELFT>();
     break;
+  case InputSectionBase<ELFT>::MipsAbiFlags:
+    Sec = new MipsAbiFlagsOutputSection<ELFT>();
+    break;
+  case InputSectionBase<ELFT>::Layout:
+    llvm_unreachable("Invalid section type");
   }
-  OwningSections.emplace_back(Sec);
+  Out<ELFT>::Pool.emplace_back(Sec);
   return {Sec, true};
-}
-
-template <class ELFT>
-OutputSectionBase<ELFT> *OutputSectionFactory<ELFT>::lookup(StringRef Name,
-                                                            uint32_t Type,
-                                                            uintX_t Flags) {
-  return Map.lookup({Name, Type, Flags, 0});
 }
 
 template <class ELFT>
@@ -1894,6 +1933,11 @@ template class MipsOptionsOutputSection<ELF32LE>;
 template class MipsOptionsOutputSection<ELF32BE>;
 template class MipsOptionsOutputSection<ELF64LE>;
 template class MipsOptionsOutputSection<ELF64BE>;
+
+template class MipsAbiFlagsOutputSection<ELF32LE>;
+template class MipsAbiFlagsOutputSection<ELF32BE>;
+template class MipsAbiFlagsOutputSection<ELF64LE>;
+template class MipsAbiFlagsOutputSection<ELF64BE>;
 
 template class MergeOutputSection<ELF32LE>;
 template class MergeOutputSection<ELF32BE>;

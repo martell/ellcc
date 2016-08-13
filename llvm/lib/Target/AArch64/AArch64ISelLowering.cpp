@@ -2434,6 +2434,12 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
   }
 }
 
+CCAssignFn *
+AArch64TargetLowering::CCAssignFnForReturn(CallingConv::ID CC) const {
+  return CC == CallingConv::WebKit_JS ? RetCC_AArch64_WebKit_JS
+                                      : RetCC_AArch64_AAPCS;
+}
+
 SDValue AArch64TargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
@@ -4970,7 +4976,7 @@ SDValue AArch64TargetLowering::ReconstructShuffle(SDValue Op,
 
     // Add this element source to the list if it's not already there.
     SDValue SourceVec = V.getOperand(0);
-    auto Source = std::find(Sources.begin(), Sources.end(), SourceVec);
+    auto Source = find(Sources, SourceVec);
     if (Source == Sources.end())
       Source = Sources.insert(Sources.end(), ShuffleSourceInfo(SourceVec));
 
@@ -5086,7 +5092,7 @@ SDValue AArch64TargetLowering::ReconstructShuffle(SDValue Op,
     if (Entry.isUndef())
       continue;
 
-    auto Src = std::find(Sources.begin(), Sources.end(), Entry.getOperand(0));
+    auto Src = find(Sources, Entry.getOperand(0));
     int EltNo = cast<ConstantSDNode>(Entry.getOperand(1))->getSExtValue();
 
     // EXTRACT_VECTOR_ELT performs an implicit any_ext; BUILD_VECTOR an implicit
@@ -5156,8 +5162,7 @@ static bool isSingletonEXTMask(ArrayRef<int> M, EVT VT, unsigned &Imm) {
 static bool isEXTMask(ArrayRef<int> M, EVT VT, bool &ReverseEXT,
                       unsigned &Imm) {
   // Look for the first non-undef element.
-  const int *FirstRealElt = std::find_if(M.begin(), M.end(),
-      [](int Elt) {return Elt >= 0;});
+  const int *FirstRealElt = find_if(M, [](int Elt) { return Elt >= 0; });
 
   // Benefit form APInt to handle overflow when calculating expected element.
   unsigned NumElts = VT.getVectorNumElements();
@@ -7684,6 +7689,7 @@ static SDValue performIntToFpCombine(SDNode *N, SelectionDAG &DAG,
 /// Fold a floating-point multiply by power of two into floating-point to
 /// fixed-point conversion.
 static SDValue performFpToIntCombine(SDNode *N, SelectionDAG &DAG,
+                                     TargetLowering::DAGCombinerInfo &DCI,
                                      const AArch64Subtarget *Subtarget) {
   if (!Subtarget->hasNEON())
     return SDValue();
@@ -7727,9 +7733,15 @@ static SDValue performFpToIntCombine(SDNode *N, SelectionDAG &DAG,
     ResTy = FloatBits == 32 ? MVT::v2i32 : MVT::v2i64;
     break;
   case 4:
-    ResTy = MVT::v4i32;
+    ResTy = FloatBits == 32 ? MVT::v4i32 : MVT::v4i64;
     break;
   }
+
+  if (ResTy == MVT::v4i64 && DCI.isBeforeLegalizeOps())
+    return SDValue();
+
+  assert((ResTy != MVT::v4i64 || DCI.isBeforeLegalizeOps()) &&
+         "Illegal vector type after legalization");
 
   SDLoc DL(N);
   bool IsSigned = N->getOpcode() == ISD::FP_TO_SINT;
@@ -9852,7 +9864,7 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
     return performIntToFpCombine(N, DAG, Subtarget);
   case ISD::FP_TO_SINT:
   case ISD::FP_TO_UINT:
-    return performFpToIntCombine(N, DAG, Subtarget);
+    return performFpToIntCombine(N, DAG, DCI, Subtarget);
   case ISD::FDIV:
     return performFDivCombine(N, DAG, Subtarget);
   case ISD::OR:

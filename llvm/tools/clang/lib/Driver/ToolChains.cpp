@@ -3345,6 +3345,19 @@ Tool *CloudABI::buildLinker() const {
   return new tools::cloudabi::Linker(*this);
 }
 
+bool CloudABI::isPIEDefault() const {
+  // Only enable PIE on architectures that support PC-relative
+  // addressing. PC-relative addressing is required, as the process
+  // startup code must be able to relocate itself.
+  switch (getTriple().getArch()) {
+  case llvm::Triple::aarch64:
+  case llvm::Triple::x86_64:
+    return true;
+  default:
+    return false;
+  }
+}
+
 SanitizerMask CloudABI::getSupportedSanitizers() const {
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   Res |= SanitizerKind::SafeStack;
@@ -4277,19 +4290,28 @@ std::string Linux::getDynamicLinker(const ArgList &Args) const {
 
   if (Triple.isAndroid())
     return Triple.isArch64Bit() ? "/system/bin/linker64" : "/system/bin/linker";
-  else if (Triple.isMusl()) {
+
+  if (Triple.isMusl()) {
     std::string ArchName;
+    bool IsArm = false;
+
     switch (Arch) {
+    case llvm::Triple::arm:
     case llvm::Triple::thumb:
       ArchName = "arm";
+      IsArm = true;
       break;
+    case llvm::Triple::armeb:
     case llvm::Triple::thumbeb:
       ArchName = "armeb";
+      IsArm = true;
       break;
     default:
       ArchName = Triple.getArchName().str();
     }
-    if (Triple.getEnvironment() == llvm::Triple::MuslEABIHF)
+    if (IsArm &&
+        (Triple.getEnvironment() == llvm::Triple::MuslEABIHF ||
+         tools::arm::getARMFloatABI(*this, Args) == tools::arm::FloatABI::Hard))
       ArchName += "hf";
 
     return "/lib/ld-musl-" + ArchName + ".so.1";

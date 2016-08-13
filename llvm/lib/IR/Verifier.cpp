@@ -762,7 +762,7 @@ static bool isScope(const Metadata *MD) { return !MD || isa<DIScope>(MD); }
 static bool isDINode(const Metadata *MD) { return !MD || isa<DINode>(MD); }
 
 template <class Ty>
-bool isValidMetadataArrayImpl(const MDTuple &N, bool AllowNull) {
+static bool isValidMetadataArrayImpl(const MDTuple &N, bool AllowNull) {
   for (Metadata *MD : N.operands()) {
     if (MD) {
       if (!isa<Ty>(MD))
@@ -775,13 +775,11 @@ bool isValidMetadataArrayImpl(const MDTuple &N, bool AllowNull) {
   return true;
 }
 
-template <class Ty>
-bool isValidMetadataArray(const MDTuple &N) {
+template <class Ty> static bool isValidMetadataArray(const MDTuple &N) {
   return isValidMetadataArrayImpl<Ty>(N, /* AllowNull */ false);
 }
 
-template <class Ty>
-bool isValidMetadataNullArray(const MDTuple &N) {
+template <class Ty> static bool isValidMetadataNullArray(const MDTuple &N) {
   return isValidMetadataArrayImpl<Ty>(N, /* AllowNull */ true);
 }
 
@@ -1787,7 +1785,7 @@ void Verifier::verifyStatepoint(ImmutableCallSite CS) {
     Assert(Call, "illegal use of statepoint token", &CI, U);
     if (!Call) continue;
     Assert(isa<GCRelocateInst>(Call) || isa<GCResultInst>(Call),
-           "gc.result or gc.relocate are the only value uses"
+           "gc.result or gc.relocate are the only value uses "
            "of a gc.statepoint",
            &CI, U);
     if (isa<GCResultInst>(Call)) {
@@ -3837,6 +3835,20 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
   switch (ID) {
   default:
     break;
+  case Intrinsic::coro_id: {
+    auto *InfoArg = CS.getArgOperand(2)->stripPointerCasts();
+    if (isa<ConstantPointerNull>(InfoArg))
+      break;
+    auto *GV = dyn_cast<GlobalVariable>(InfoArg);
+    Assert(GV && GV->isConstant() && GV->hasDefinitiveInitializer(),
+      "info argument of llvm.coro.begin must refer to an initialized "
+      "constant");
+    Constant *Init = GV->getInitializer();
+    Assert(isa<ConstantStruct>(Init) || isa<ConstantArray>(Init),
+      "info argument of llvm.coro.begin must refer to either a struct or "
+      "an array");
+    break;
+  }
   case Intrinsic::ctlz:  // llvm.ctlz
   case Intrinsic::cttz:  // llvm.cttz
     Assert(isa<ConstantInt>(CS.getArgOperand(1)),
@@ -4292,8 +4304,8 @@ void Verifier::verifyCompileUnits() {
   if (CUs)
     Listed.insert(CUs->op_begin(), CUs->op_end());
   Assert(
-      std::all_of(CUVisited.begin(), CUVisited.end(),
-                  [&Listed](const Metadata *CU) { return Listed.count(CU); }),
+      all_of(CUVisited,
+             [&Listed](const Metadata *CU) { return Listed.count(CU); }),
       "All DICompileUnits must be listed in llvm.dbg.cu");
   CUVisited.clear();
 }

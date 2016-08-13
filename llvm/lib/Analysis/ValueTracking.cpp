@@ -398,7 +398,7 @@ void llvm::computeKnownBitsFromRangeMetadata(const MDNode &Ranges,
   }
 }
 
-static bool isEphemeralValueOf(Instruction *I, const Value *E) {
+static bool isEphemeralValueOf(const Instruction *I, const Value *E) {
   SmallVector<const Value *, 16> WorkSet(1, I);
   SmallPtrSet<const Value *, 32> Visited;
   SmallPtrSet<const Value *, 16> EphValues;
@@ -406,7 +406,7 @@ static bool isEphemeralValueOf(Instruction *I, const Value *E) {
   // The instruction defining an assumption's condition itself is always
   // considered ephemeral to that assumption (even if it has other
   // non-ephemeral users). See r246696's test case for an example.
-  if (std::find(I->op_begin(), I->op_end(), E) != I->op_end())
+  if (is_contained(I->operands(), E))
     return true;
 
   while (!WorkSet.empty()) {
@@ -415,8 +415,7 @@ static bool isEphemeralValueOf(Instruction *I, const Value *E) {
       continue;
 
     // If all uses of this value are ephemeral, then so is this value.
-    if (std::all_of(V->user_begin(), V->user_end(),
-                    [&](const User *U) { return EphValues.count(U); })) {
+    if (all_of(V->users(), [&](const User *U) { return EphValues.count(U); })) {
       if (V == E)
         return true;
 
@@ -456,9 +455,9 @@ static bool isAssumeLikeIntrinsic(const Instruction *I) {
   return false;
 }
 
-static bool isValidAssumeForContext(Value *V, const Instruction *CxtI,
-                                    const DominatorTree *DT) {
-  Instruction *Inv = cast<Instruction>(V);
+bool llvm::isValidAssumeForContext(const Instruction *Inv,
+                                   const Instruction *CxtI,
+                                   const DominatorTree *DT) {
 
   // There are two restrictions on the use of an assume:
   //  1. The assume must dominate the context (or the control flow must
@@ -469,51 +468,39 @@ static bool isValidAssumeForContext(Value *V, const Instruction *CxtI,
   //     the assume).
 
   if (DT) {
-    if (DT->dominates(Inv, CxtI)) {
+    if (DT->dominates(Inv, CxtI))
       return true;
-    } else if (Inv->getParent() == CxtI->getParent()) {
-      // The context comes first, but they're both in the same block. Make sure
-      // there is nothing in between that might interrupt the control flow.
-      for (BasicBlock::const_iterator I =
-             std::next(BasicBlock::const_iterator(CxtI)),
-                                      IE(Inv); I != IE; ++I)
-        if (!isSafeToSpeculativelyExecute(&*I) && !isAssumeLikeIntrinsic(&*I))
-          return false;
-
-      return !isEphemeralValueOf(Inv, CxtI);
-    }
-
-    return false;
+  } else if (Inv->getParent() == CxtI->getParent()->getSinglePredecessor()) {
+    // We don't have a DT, but this trivially dominates.
+    return true;
   }
 
-  // When we don't have a DT, we do a limited search...
-  if (Inv->getParent() == CxtI->getParent()->getSinglePredecessor()) {
-    return true;
-  } else if (Inv->getParent() == CxtI->getParent()) {
+  // With or without a DT, the only remaining case we will check is if the
+  // instructions are in the same BB.  Give up if that is not the case.
+  if (Inv->getParent() != CxtI->getParent())
+    return false;
+
+  // If we have a dom tree, then we now know that the assume doens't dominate
+  // the other instruction.  If we don't have a dom tree then we can check if
+  // the assume is first in the BB.
+  if (!DT) {
     // Search forward from the assume until we reach the context (or the end
     // of the block); the common case is that the assume will come first.
-    for (BasicBlock::iterator I = std::next(BasicBlock::iterator(Inv)),
+    for (auto I = std::next(BasicBlock::const_iterator(Inv)),
          IE = Inv->getParent()->end(); I != IE; ++I)
       if (&*I == CxtI)
         return true;
-
-    // The context must come first...
-    for (BasicBlock::const_iterator I =
-           std::next(BasicBlock::const_iterator(CxtI)),
-                                    IE(Inv); I != IE; ++I)
-      if (!isSafeToSpeculativelyExecute(&*I) && !isAssumeLikeIntrinsic(&*I))
-        return false;
-
-    return !isEphemeralValueOf(Inv, CxtI);
   }
 
-  return false;
-}
+  // The context comes first, but they're both in the same block. Make sure
+  // there is nothing in between that might interrupt the control flow.
+  for (BasicBlock::const_iterator I =
+         std::next(BasicBlock::const_iterator(CxtI)), IE(Inv);
+       I != IE; ++I)
+    if (!isSafeToSpeculativelyExecute(&*I) && !isAssumeLikeIntrinsic(&*I))
+      return false;
 
-bool llvm::isValidAssumeForContext(const Instruction *I,
-                                   const Instruction *CxtI,
-                                   const DominatorTree *DT) {
-  return ::isValidAssumeForContext(const_cast<Instruction *>(I), CxtI, DT);
+  return !isEphemeralValueOf(Inv, CxtI);
 }
 
 static void computeKnownBitsFromAssume(Value *V, APInt &KnownZero,
@@ -950,14 +937,63 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
     KnownZero = APInt::getHighBitsSet(BitWidth, LeadZ);
     break;
   }
-  case Instruction::Select:
+  case Instruction::Select: {
     computeKnownBits(I->getOperand(2), KnownZero, KnownOne, Depth + 1, Q);
     computeKnownBits(I->getOperand(1), KnownZero2, KnownOne2, Depth + 1, Q);
+
+    Value *LHS, *RHS;
+    SelectPatternFlavor SPF = matchSelectPattern(I, LHS, RHS).Flavor;
+    if (SelectPatternResult::isMinOrMax(SPF)) {
+      computeKnownBits(RHS, KnownZero, KnownOne, Depth + 1, Q);
+      computeKnownBits(LHS, KnownZero2, KnownOne2, Depth + 1, Q);
+    } else {
+      computeKnownBits(I->getOperand(2), KnownZero, KnownOne, Depth + 1, Q);
+      computeKnownBits(I->getOperand(1), KnownZero2, KnownOne2, Depth + 1, Q);
+    }
+
+    unsigned MaxHighOnes = 0;
+    unsigned MaxHighZeros = 0;
+    if (SPF == SPF_SMAX) {
+      // If both sides are negative, the result is negative.
+      if (KnownOne[BitWidth - 1] && KnownOne2[BitWidth - 1])
+        // We can derive a lower bound on the result by taking the max of the
+        // leading one bits.
+        MaxHighOnes =
+            std::max(KnownOne.countLeadingOnes(), KnownOne2.countLeadingOnes());
+      // If either side is non-negative, the result is non-negative.
+      else if (KnownZero[BitWidth - 1] || KnownZero2[BitWidth - 1])
+        MaxHighZeros = 1;
+    } else if (SPF == SPF_SMIN) {
+      // If both sides are non-negative, the result is non-negative.
+      if (KnownZero[BitWidth - 1] && KnownZero2[BitWidth - 1])
+        // We can derive an upper bound on the result by taking the max of the
+        // leading zero bits.
+        MaxHighZeros = std::max(KnownZero.countLeadingOnes(),
+                                KnownZero2.countLeadingOnes());
+      // If either side is negative, the result is negative.
+      else if (KnownOne[BitWidth - 1] || KnownOne2[BitWidth - 1])
+        MaxHighOnes = 1;
+    } else if (SPF == SPF_UMAX) {
+      // We can derive a lower bound on the result by taking the max of the
+      // leading one bits.
+      MaxHighOnes =
+          std::max(KnownOne.countLeadingOnes(), KnownOne2.countLeadingOnes());
+    } else if (SPF == SPF_UMIN) {
+      // We can derive an upper bound on the result by taking the max of the
+      // leading zero bits.
+      MaxHighZeros =
+          std::max(KnownZero.countLeadingOnes(), KnownZero2.countLeadingOnes());
+    }
 
     // Only known if known in both the LHS and RHS.
     KnownOne &= KnownOne2;
     KnownZero &= KnownZero2;
+    if (MaxHighOnes > 0)
+      KnownOne |= APInt::getHighBitsSet(BitWidth, MaxHighOnes);
+    if (MaxHighZeros > 0)
+      KnownZero |= APInt::getHighBitsSet(BitWidth, MaxHighZeros);
     break;
+  }
   case Instruction::FPTrunc:
   case Instruction::FPExt:
   case Instruction::FPToUI:
@@ -1020,13 +1056,22 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
   }
   case Instruction::Shl: {
     // (shl X, C1) & C2 == 0   iff   (X & C2 >>u C1) == 0
-    auto KZF = [BitWidth](const APInt &KnownZero, unsigned ShiftAmt) {
-      return (KnownZero << ShiftAmt) |
+    bool NSW = cast<OverflowingBinaryOperator>(I)->hasNoSignedWrap();
+    auto KZF = [BitWidth, NSW](const APInt &KnownZero, unsigned ShiftAmt) {
+      APInt KZResult = (KnownZero << ShiftAmt) |
              APInt::getLowBitsSet(BitWidth, ShiftAmt); // Low bits known 0.
+      // If this shift has "nsw" keyword, then the result is either a poison 
+      // value or has the same sign bit as the first operand.
+      if (NSW && KnownZero.isNegative())
+        KZResult.setBit(BitWidth - 1);
+      return KZResult;
     };
 
-    auto KOF = [BitWidth](const APInt &KnownOne, unsigned ShiftAmt) {
-      return KnownOne << ShiftAmt;
+    auto KOF = [BitWidth, NSW](const APInt &KnownOne, unsigned ShiftAmt) {
+      APInt KOResult = KnownOne << ShiftAmt;
+      if (NSW && KnownOne.isNegative())
+        KOResult.setBit(BitWidth - 1);
+      return KOResult;
     };
 
     computeKnownBitsFromShiftOperator(I, KnownZero, KnownOne,
@@ -1214,7 +1259,9 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
         unsigned Opcode = LU->getOpcode();
         // Check for operations that have the property that if
         // both their operands have low zero bits, the result
-        // will have low zero bits.
+        // will have low zero bits. Also check for operations 
+        // that are known to produce non-negative or negative
+        // recurrence values. 
         if (Opcode == Instruction::Add ||
             Opcode == Instruction::Sub ||
             Opcode == Instruction::And ||
@@ -1240,6 +1287,40 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
           KnownZero = APInt::getLowBitsSet(BitWidth,
                                            std::min(KnownZero2.countTrailingOnes(),
                                                     KnownZero3.countTrailingOnes()));
+
+          auto *OverflowOp = dyn_cast<OverflowingBinaryOperator>(LU);
+          if (OverflowOp && OverflowOp->hasNoSignedWrap()) {
+            // If initial value of recurrence is nonnegative, and we are adding 
+            // a nonnegative number with nsw, the result can only be nonnegative
+            // or poison value regardless of the number of times we execute the 
+            // add in phi recurrence. If initial value is negative and we are 
+            // adding a negative number with nsw, the result can only be 
+            // negative or poison value. Similar arguments apply to sub and mul.
+            //
+            // (add non-negative, non-negative) --> non-negative
+            // (add negative, negative) --> negative
+            if (Opcode == Instruction::Add) {
+              if (KnownZero2.isNegative() && KnownZero3.isNegative())
+                KnownZero.setBit(BitWidth - 1);
+              else if (KnownOne2.isNegative() && KnownOne3.isNegative())
+                KnownOne.setBit(BitWidth - 1);
+            }
+            
+            // (sub nsw non-negative, negative) --> non-negative
+            // (sub nsw negative, non-negative) --> negative
+            else if (Opcode == Instruction::Sub && LL == I) {
+              if (KnownZero2.isNegative() && KnownOne3.isNegative())
+                KnownZero.setBit(BitWidth - 1);
+              else if (KnownOne2.isNegative() && KnownZero3.isNegative())
+                KnownOne.setBit(BitWidth - 1);
+            }
+            
+            // (mul nsw non-negative, non-negative) --> non-negative
+            else if (Opcode == Instruction::Mul && KnownZero2.isNegative() && 
+                     KnownZero3.isNegative())
+              KnownZero.setBit(BitWidth - 1);
+          }
+
           break;
         }
       }

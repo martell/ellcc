@@ -171,23 +171,8 @@ private:
 };
 
 template <>
-struct ilist_traits<MemoryAccess> : public ilist_default_traits<MemoryAccess> {
-  /// See details of the instruction class for why this trick works
-  // FIXME: This downcast is UB. See llvm.org/PR26753.
-  LLVM_NO_SANITIZE("object-size")
-  MemoryAccess *createSentinel() const {
-    return static_cast<MemoryAccess *>(&Sentinel);
-  }
-
-  static void destroySentinel(MemoryAccess *) {}
-
-  MemoryAccess *provideInitialHead() const { return createSentinel(); }
-  MemoryAccess *ensureHead(MemoryAccess *) const { return createSentinel(); }
-  static void noteHead(MemoryAccess *, MemoryAccess *) {}
-
-private:
-  mutable ilist_half_node<MemoryAccess> Sentinel;
-};
+struct ilist_sentinel_traits<MemoryAccess>
+    : public ilist_half_embedded_sentinel_traits<MemoryAccess> {};
 
 inline raw_ostream &operator<<(raw_ostream &OS, const MemoryAccess &MA) {
   MA.print(OS);
@@ -494,7 +479,6 @@ class MemorySSAWalker;
 class MemorySSA {
 public:
   MemorySSA(Function &, AliasAnalysis *, DominatorTree *);
-  MemorySSA(MemorySSA &&);
   ~MemorySSA();
 
   MemorySSAWalker *getWalker();
@@ -589,6 +573,10 @@ public:
   /// determine whether MemoryAccess \p A dominates MemoryAccess \p B.
   bool dominates(const MemoryAccess *A, const MemoryAccess *B) const;
 
+  /// \brief Given a MemoryAccess and a Use, determine whether MemoryAccess \p A
+  /// dominates Use \p B.
+  bool dominates(const MemoryAccess *A, const Use &B) const;
+
   /// \brief Verify that MemorySSA is self consistent (IE definitions dominate
   /// all uses, uses appear in the right places).  This is used by unit tests.
   void verifyMemorySSA() const;
@@ -672,9 +660,21 @@ class MemorySSAAnalysis : public AnalysisInfoMixin<MemorySSAAnalysis> {
   static char PassID;
 
 public:
-  typedef MemorySSA Result;
+  // Wrap MemorySSA result to ensure address stability of internal MemorySSA
+  // pointers after construction.  Use a wrapper class instead of plain
+  // unique_ptr<MemorySSA> to avoid build breakage on MSVC.
+  struct Result {
+    Result(std::unique_ptr<MemorySSA> &&MSSA) : MSSA(std::move(MSSA)) {}
+    Result(Result &&R) : MSSA(std::move(R.MSSA)) {}
+    MemorySSA &getMSSA() { return *MSSA.get(); }
 
-  MemorySSA run(Function &F, AnalysisManager<Function> &AM);
+    Result(const Result &) = delete;
+    void operator=(const Result &) = delete;
+
+    std::unique_ptr<MemorySSA> MSSA;
+  };
+
+  Result run(Function &F, FunctionAnalysisManager &AM);
 };
 
 /// \brief Printer pass for \c MemorySSA.
@@ -683,12 +683,12 @@ class MemorySSAPrinterPass : public PassInfoMixin<MemorySSAPrinterPass> {
 
 public:
   explicit MemorySSAPrinterPass(raw_ostream &OS) : OS(OS) {}
-  PreservedAnalyses run(Function &F, AnalysisManager<Function> &AM);
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 
 /// \brief Verifier pass for \c MemorySSA.
 struct MemorySSAVerifierPass : PassInfoMixin<MemorySSAVerifierPass> {
-  PreservedAnalyses run(Function &F, AnalysisManager<Function> &AM);
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 
 /// \brief Legacy analysis pass which computes \c MemorySSA.
@@ -781,6 +781,8 @@ public:
   /// invalidation.  This will be called by MemorySSA at appropriate times for
   /// the walker it uses or returns.
   virtual void invalidateInfo(MemoryAccess *) {}
+
+  virtual void verify(const MemorySSA *MSSA) { assert(MSSA == this->MSSA); }
 
 protected:
   friend class MemorySSA; // For updating MSSA pointer in MemorySSA move

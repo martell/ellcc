@@ -26,10 +26,6 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/RWMutex.h"
-#include "llvm/Support/StringPool.h"
-#include "llvm/Support/Threading.h"
 using namespace llvm;
 
 // Explicit instantiations of SymbolTableListTraits since some of the methods
@@ -1262,7 +1258,10 @@ Optional<uint64_t> Function::getEntryCount() const {
     if (MDString *MDS = dyn_cast<MDString>(MD->getOperand(0)))
       if (MDS->getString().equals("function_entry_count")) {
         ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(1));
-        return CI->getValue().getZExtValue();
+        uint64_t Count = CI->getValue().getZExtValue();
+        if (Count == 0)
+          return None;
+        return Count;
       }
   return None;
 }

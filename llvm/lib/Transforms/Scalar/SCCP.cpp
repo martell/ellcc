@@ -1534,8 +1534,7 @@ static bool tryToReplaceWithConstant(SCCPSolver &Solver, Value *V) {
   Constant *Const = nullptr;
   if (V->getType()->isStructTy()) {
     std::vector<LatticeVal> IVs = Solver.getStructLatticeValueFor(V);
-    if (std::any_of(IVs.begin(), IVs.end(),
-                    [](LatticeVal &LV) { return LV.isOverdefined(); }))
+    if (any_of(IVs, [](const LatticeVal &LV) { return LV.isOverdefined(); }))
       return false;
     std::vector<Constant *> ConstVals;
     StructType *ST = dyn_cast<StructType>(V->getType());
@@ -1631,7 +1630,7 @@ static bool runSCCP(Function &F, const DataLayout &DL,
   return MadeChanges;
 }
 
-PreservedAnalyses SCCPPass::run(Function &F, AnalysisManager<Function> &AM) {
+PreservedAnalyses SCCPPass::run(Function &F, FunctionAnalysisManager &AM) {
   const DataLayout &DL = F.getParent()->getDataLayout();
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(F);
   if (!runSCCP(F, DL, &TLI))
@@ -1941,7 +1940,7 @@ static bool runIPSCCP(Module &M, const DataLayout &DL,
   return MadeChanges;
 }
 
-PreservedAnalyses IPSCCPPass::run(Module &M, AnalysisManager<Module> &AM) {
+PreservedAnalyses IPSCCPPass::run(Module &M, ModuleAnalysisManager &AM) {
   const DataLayout &DL = M.getDataLayout();
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(M);
   if (!runIPSCCP(M, DL, &TLI))

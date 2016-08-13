@@ -1025,6 +1025,8 @@ public:
 #endif
     return Result;
   }
+
+  void verify(const MemorySSA *MSSA) { assert(MSSA == &this->MSSA); }
 };
 
 struct RenamePassData {
@@ -1104,6 +1106,11 @@ public:
   /// earliest-MemoryAccess-we-can-optimize-to". This is necessary if we're
   /// going to have DT updates, if we remove MemoryAccesses, etc.
   void resetClobberWalker() { Walker.reset(); }
+
+  void verify(const MemorySSA *MSSA) override {
+    MemorySSAWalker::verify(MSSA);
+    Walker.verify(MSSA);
+  }
 };
 
 /// \brief Rename a single basic block into MemorySSA form.
@@ -1231,19 +1238,6 @@ MemorySSA::MemorySSA(Function &Func, AliasAnalysis *AA, DominatorTree *DT)
   buildMemorySSA();
 }
 
-MemorySSA::MemorySSA(MemorySSA &&MSSA)
-    : AA(MSSA.AA), DT(MSSA.DT), F(MSSA.F),
-      ValueToMemoryAccess(std::move(MSSA.ValueToMemoryAccess)),
-      PerBlockAccesses(std::move(MSSA.PerBlockAccesses)),
-      LiveOnEntryDef(std::move(MSSA.LiveOnEntryDef)),
-      BlockNumberingValid(std::move(MSSA.BlockNumberingValid)),
-      BlockNumbering(std::move(MSSA.BlockNumbering)),
-      Walker(std::move(MSSA.Walker)), NextID(MSSA.NextID) {
-  // Update the Walker MSSA pointer so it doesn't point to the moved-from MSSA
-  // object any more.
-  Walker->MSSA = this;
-}
-
 MemorySSA::~MemorySSA() {
   // Drop all our references
   for (const auto &Pair : PerBlockAccesses)
@@ -1288,6 +1282,7 @@ private:
     // Note: Correctness depends on this being initialized to 0, which densemap
     // does
     unsigned long LowerBound;
+    const BasicBlock *LowerBoundBlock;
     // This is where the last walk for this memory location ended.
     unsigned long LastKill;
     bool LastKillValid;
@@ -1333,7 +1328,6 @@ void MemorySSA::OptimizeUses::optimizeUsesInBlock(
       VersionStack.pop_back();
     ++PopEpoch;
   }
-
   for (MemoryAccess &MA : *Accesses) {
     auto *MU = dyn_cast<MemoryUse>(&MA);
     if (!MU) {
@@ -1355,13 +1349,24 @@ void MemorySSA::OptimizeUses::optimizeUsesInBlock(
     if (LocInfo.PopEpoch != PopEpoch) {
       LocInfo.PopEpoch = PopEpoch;
       LocInfo.StackEpoch = StackEpoch;
-      // If the lower bound was in the info we popped, we have to reset it.
-      if (LocInfo.LowerBound >= VersionStack.size()) {
+      // If the lower bound was in something that no longer dominates us, we
+      // have to reset it.
+      // We can't simply track stack size, because the stack may have had
+      // pushes/pops in the meantime.
+      // XXX: This is non-optimal, but only is slower cases with heavily
+      // branching dominator trees.  To get the optimal number of queries would
+      // be to make lowerbound and lastkill a per-loc stack, and pop it until
+      // the top of that stack dominates us.  This does not seem worth it ATM.
+      // A much cheaper optimization would be to always explore the deepest
+      // branch of the dominator tree first. This will guarantee this resets on
+      // the smallest set of blocks.
+      if (LocInfo.LowerBoundBlock && LocInfo.LowerBoundBlock != BB &&
+          !DT->dominates(LocInfo.LowerBoundBlock, BB)){
         // Reset the lower bound of things to check.
         // TODO: Some day we should be able to reset to last kill, rather than
         // 0.
-
         LocInfo.LowerBound = 0;
+        LocInfo.LowerBoundBlock = VersionStack[0]->getBlock();
         LocInfo.LastKillValid = false;
       }
     } else if (LocInfo.StackEpoch != StackEpoch) {
@@ -1437,6 +1442,7 @@ void MemorySSA::OptimizeUses::optimizeUsesInBlock(
       MU->setDefiningAccess(VersionStack[LocInfo.LastKill]);
     }
     LocInfo.LowerBound = VersionStack.size() - 1;
+    LocInfo.LowerBoundBlock = BB;
   }
 }
 
@@ -1452,29 +1458,13 @@ void MemorySSA::OptimizeUses::optimizeUses() {
   SmallVector<MemoryAccess *, 16> VersionStack;
   SmallVector<StackInfo, 16> DomTreeWorklist;
   DenseMap<MemoryLocOrCall, MemlocStackInfo> LocStackInfo;
-  DomTreeWorklist.push_back({DT->getRootNode(), DT->getRootNode()->begin()});
-  // Bottom of the version stack is always live on entry.
   VersionStack.push_back(MSSA->getLiveOnEntryDef());
 
   unsigned long StackEpoch = 1;
   unsigned long PopEpoch = 1;
-  while (!DomTreeWorklist.empty()) {
-    const auto *DomNode = DomTreeWorklist.back().Node;
-    const auto DomIter = DomTreeWorklist.back().Iter;
-    BasicBlock *BB = DomNode->getBlock();
-    optimizeUsesInBlock(BB, StackEpoch, PopEpoch, VersionStack, LocStackInfo);
-    if (DomIter == DomNode->end()) {
-      // Hit the end, pop the worklist
-      DomTreeWorklist.pop_back();
-      continue;
-    }
-    // Move the iterator to the next child for the next time we get to process
-    // children
-    ++DomTreeWorklist.back().Iter;
-
-    // Now visit the next child
-    DomTreeWorklist.push_back({*DomIter, (*DomIter)->begin()});
-  }
+  for (const auto *DomNode : depth_first(DT->getRootNode()))
+    optimizeUsesInBlock(DomNode->getBlock(), StackEpoch, PopEpoch, VersionStack,
+                        LocStackInfo);
 }
 
 void MemorySSA::buildMemorySSA() {
@@ -1624,9 +1614,8 @@ MemoryAccess *MemorySSA::createMemoryAccessInBB(Instruction *I,
   auto *Accesses = getOrCreateAccessList(BB);
   if (Point == Beginning) {
     // It goes after any phi nodes
-    auto AI = std::find_if(
-        Accesses->begin(), Accesses->end(),
-        [](const MemoryAccess &MA) { return !isa<MemoryPhi>(MA); });
+    auto AI = find_if(
+        *Accesses, [](const MemoryAccess &MA) { return !isa<MemoryPhi>(MA); });
 
     Accesses->insert(AI, NewAccess);
   } else {
@@ -1822,6 +1811,7 @@ void MemorySSA::verifyMemorySSA() const {
   verifyDefUses(F);
   verifyDomination(F);
   verifyOrdering(F);
+  Walker->verify(this);
 }
 
 /// \brief Verify that the order and existence of MemoryAccesses matches the
@@ -1865,70 +1855,38 @@ void MemorySSA::verifyOrdering(Function &F) const {
 /// \brief Verify the domination properties of MemorySSA by checking that each
 /// definition dominates all of its uses.
 void MemorySSA::verifyDomination(Function &F) const {
+#ifndef NDEBUG
   for (BasicBlock &B : F) {
     // Phi nodes are attached to basic blocks
-    if (MemoryPhi *MP = getMemoryAccess(&B)) {
-      for (User *U : MP->users()) {
-        BasicBlock *UseBlock;
-        // Phi operands are used on edges, we simulate the right domination by
-        // acting as if the use occurred at the end of the predecessor block.
-        if (MemoryPhi *P = dyn_cast<MemoryPhi>(U)) {
-          for (const auto &Arg : P->operands()) {
-            if (Arg == MP) {
-              UseBlock = P->getIncomingBlock(Arg);
-              break;
-            }
-          }
-        } else {
-          UseBlock = cast<MemoryAccess>(U)->getBlock();
-        }
-        (void)UseBlock;
-        assert(DT->dominates(MP->getBlock(), UseBlock) &&
-               "Memory PHI does not dominate it's uses");
-      }
-    }
+    if (MemoryPhi *MP = getMemoryAccess(&B))
+      for (const Use &U : MP->uses())
+        assert(dominates(MP, U) && "Memory PHI does not dominate it's uses");
 
     for (Instruction &I : B) {
       MemoryAccess *MD = dyn_cast_or_null<MemoryDef>(getMemoryAccess(&I));
       if (!MD)
         continue;
 
-      for (User *U : MD->users()) {
-        BasicBlock *UseBlock;
-        (void)UseBlock;
-        // Things are allowed to flow to phi nodes over their predecessor edge.
-        if (auto *P = dyn_cast<MemoryPhi>(U)) {
-          for (const auto &Arg : P->operands()) {
-            if (Arg == MD) {
-              UseBlock = P->getIncomingBlock(Arg);
-              break;
-            }
-          }
-        } else {
-          UseBlock = cast<MemoryAccess>(U)->getBlock();
-        }
-        assert(DT->dominates(MD->getBlock(), UseBlock) &&
-               "Memory Def does not dominate it's uses");
-      }
+      for (const Use &U : MD->uses())
+        assert(dominates(MD, U) && "Memory Def does not dominate it's uses");
     }
   }
+#endif
 }
 
 /// \brief Verify the def-use lists in MemorySSA, by verifying that \p Use
 /// appears in the use list of \p Def.
-///
-/// llvm_unreachable is used instead of asserts because this may be called in
-/// a build without asserts. In that case, we don't want this to turn into a
-/// nop.
+
 void MemorySSA::verifyUseInDefs(MemoryAccess *Def, MemoryAccess *Use) const {
+#ifndef NDEBUG
   // The live on entry use may cause us to get a NULL def here
-  if (!Def) {
-    if (!isLiveOnEntryDef(Use))
-      llvm_unreachable("Null def but use not point to live on entry def");
-  } else if (std::find(Def->user_begin(), Def->user_end(), Use) ==
-             Def->user_end()) {
-    llvm_unreachable("Did not find use in def's use list");
-  }
+  if (!Def)
+    assert(isLiveOnEntryDef(Use) &&
+           "Null def but use not point to live on entry def");
+  else
+    assert(is_contained(Def->users(), Use) &&
+           "Did not find use in def's use list");
+#endif
 }
 
 /// \brief Verify the immediate use information, by walking all the memory
@@ -2027,6 +1985,20 @@ bool MemorySSA::dominates(const MemoryAccess *Dominator,
   return locallyDominates(Dominator, Dominatee);
 }
 
+bool MemorySSA::dominates(const MemoryAccess *Dominator,
+                          const Use &Dominatee) const {
+  if (MemoryPhi *MP = dyn_cast<MemoryPhi>(Dominatee.getUser())) {
+    BasicBlock *UseBB = MP->getIncomingBlock(Dominatee);
+    // The def must dominate the incoming block of the phi.
+    if (UseBB != Dominator->getBlock())
+      return DT->dominates(Dominator->getBlock(), UseBB);
+    // If the UseBB and the DefBB are the same, compare locally.
+    return locallyDominates(Dominator, cast<MemoryAccess>(Dominatee));
+  }
+  // If it's not a PHI node use, the normal dominates can already handle it.
+  return dominates(Dominator, cast<MemoryAccess>(Dominatee.getUser()));
+}
+
 const static char LiveOnEntryStr[] = "liveOnEntry";
 
 void MemoryDef::print(raw_ostream &OS) const {
@@ -2105,23 +2077,24 @@ bool MemorySSAPrinterLegacyPass::runOnFunction(Function &F) {
 
 char MemorySSAAnalysis::PassID;
 
-MemorySSA MemorySSAAnalysis::run(Function &F, AnalysisManager<Function> &AM) {
+MemorySSAAnalysis::Result
+MemorySSAAnalysis::run(Function &F, FunctionAnalysisManager &AM) {
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
   auto &AA = AM.getResult<AAManager>(F);
-  return MemorySSA(F, &AA, &DT);
+  return MemorySSAAnalysis::Result(make_unique<MemorySSA>(F, &AA, &DT));
 }
 
 PreservedAnalyses MemorySSAPrinterPass::run(Function &F,
                                             FunctionAnalysisManager &AM) {
   OS << "MemorySSA for function: " << F.getName() << "\n";
-  AM.getResult<MemorySSAAnalysis>(F).print(OS);
+  AM.getResult<MemorySSAAnalysis>(F).getMSSA().print(OS);
 
   return PreservedAnalyses::all();
 }
 
 PreservedAnalyses MemorySSAVerifierPass::run(Function &F,
                                              FunctionAnalysisManager &AM) {
-  AM.getResult<MemorySSAAnalysis>(F).verifyMemorySSA();
+  AM.getResult<MemorySSAAnalysis>(F).getMSSA().verifyMemorySSA();
 
   return PreservedAnalyses::all();
 }

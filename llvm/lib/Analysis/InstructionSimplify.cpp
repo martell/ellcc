@@ -2104,8 +2104,8 @@ computePointerICmp(const DataLayout &DL, const TargetLibraryInfo *TLI,
     GetUnderlyingObjects(RHS, RHSUObjs, DL);
 
     // Is the set of underlying objects all noalias calls?
-    auto IsNAC = [](SmallVectorImpl<Value *> &Objects) {
-      return std::all_of(Objects.begin(), Objects.end(), isNoAliasCall);
+    auto IsNAC = [](ArrayRef<Value *> Objects) {
+      return all_of(Objects, isNoAliasCall);
     };
 
     // Is the set of underlying objects all things which must be disjoint from
@@ -2114,8 +2114,8 @@ computePointerICmp(const DataLayout &DL, const TargetLibraryInfo *TLI,
     // live with the compared-to allocation). For globals, we exclude symbols
     // that might be resolve lazily to symbols in another dynamically-loaded
     // library (and, thus, could be malloc'ed by the implementation).
-    auto IsAllocDisjoint = [](SmallVectorImpl<Value *> &Objects) {
-      return std::all_of(Objects.begin(), Objects.end(), [](Value *V) {
+    auto IsAllocDisjoint = [](ArrayRef<Value *> Objects) {
+      return all_of(Objects, [](Value *V) {
         if (const AllocaInst *AI = dyn_cast<AllocaInst>(V))
           return AI->getParent() && AI->getFunction() && AI->isStaticAlloca();
         if (const GlobalValue *GV = dyn_cast<GlobalValue>(V))
@@ -3094,6 +3094,16 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
   if (LHS->getType()->isPointerTy())
     if (auto *C = computePointerICmp(Q.DL, Q.TLI, Q.DT, Pred, Q.CxtI, LHS, RHS))
       return C;
+  if (auto *CLHS = dyn_cast<PtrToIntOperator>(LHS))
+    if (auto *CRHS = dyn_cast<PtrToIntOperator>(RHS))
+      if (Q.DL.getTypeSizeInBits(CLHS->getPointerOperandType()) ==
+              Q.DL.getTypeSizeInBits(CLHS->getType()) &&
+          Q.DL.getTypeSizeInBits(CRHS->getPointerOperandType()) ==
+              Q.DL.getTypeSizeInBits(CRHS->getType()))
+        if (auto *C = computePointerICmp(Q.DL, Q.TLI, Q.DT, Pred, Q.CxtI,
+                                         CLHS->getPointerOperand(),
+                                         CRHS->getPointerOperand()))
+          return C;
 
   if (GetElementPtrInst *GLHS = dyn_cast<GetElementPtrInst>(LHS)) {
     if (GEPOperator *GRHS = dyn_cast<GEPOperator>(RHS)) {
@@ -3631,6 +3641,26 @@ static Value *SimplifyGEPInst(Type *SrcTy, ArrayRef<Value *> Ops,
                          m_SpecificInt(TyAllocSize))))
           if (Value *R = PtrToIntOrZero(P))
             return R;
+      }
+    }
+  }
+
+  // gep (gep V, C), (sub 0, V) -> C
+  if (Q.DL.getTypeAllocSize(LastType) == 1 &&
+      all_of(Ops.slice(1).drop_back(1),
+             [](Value *Idx) { return match(Idx, m_Zero()); })) {
+    unsigned PtrWidth =
+        Q.DL.getPointerSizeInBits(Ops[0]->getType()->getPointerAddressSpace());
+    if (Q.DL.getTypeSizeInBits(Ops.back()->getType()) == PtrWidth) {
+      APInt BasePtrOffset(PtrWidth, 0);
+      Value *StrippedBasePtr =
+          Ops[0]->stripAndAccumulateInBoundsConstantOffsets(Q.DL,
+                                                            BasePtrOffset);
+
+      if (match(Ops.back(),
+                m_Sub(m_Zero(), m_PtrToInt(m_Specific(StrippedBasePtr))))) {
+        auto *CI = ConstantInt::get(GEPTy->getContext(), BasePtrOffset);
+        return ConstantExpr::getIntToPtr(CI, GEPTy);
       }
     }
   }
