@@ -16,8 +16,8 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/Path.h"
 
 using namespace llvm;
 
@@ -68,7 +68,7 @@ std::string a(const std::string &Link, const std::string &Str,
 }
 
 const char *BeginHeader =
-  "<head>"
+    "<head>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<meta charset='UTF-8'>";
 
@@ -224,13 +224,13 @@ void emitPrelude(raw_ostream &OS, const CoverageViewOptions &Opts,
 
   if (trAlternate) {
     OS << "<style>"
-      "tr:nth-child(even) {"
-      "  background: #CCC"
-      "}"
-      "tr:nth-child(odd) {"
-      "  background: #FFF"
-      "}"
-      "</style>";
+          "tr:nth-child(even) {"
+          "  background: #CCC"
+          "}"
+          "tr:nth-child(odd) {"
+          "  background: #FFF"
+          "}"
+          "</style>";
   }
   OS << EndHeader << "<body>" << BeginCenteredDiv;
 }
@@ -273,66 +273,50 @@ static const char *determineCoveragePercentageColor(const T &Info) {
   return Info.getPercentCovered() >= 80.0 ? "yellow" : "red";
 }
 
-template<typename T> void sendFormat(raw_ostream &OSRef, format_object<T> value,
-                                     const char *align,
-                                     const char *color = NULL)
-{
-  OSRef << "<td align=\"" << align << "\"";
-  if (color) {
-    OSRef << "style=\"color: " << color << ";\"";
+void emitFormattedCount(raw_ostream &OSRef, const format_object_base &Value,
+                        const char *Align, const char *Color = NULL) {
+  OSRef << "<td align=\"" << Align << "\"";
+  if (Color) {
+    OSRef << "style=\"color: " << Color << ";\"";
   }
   OSRef << ">";
-  OSRef << value;
+  OSRef << Value;
   OSRef << "</td>";
 }
 
-static void showSummary(raw_ostream &OSRef, std::string name,
-                        FileCoverageSummary& File)
-{
+static void showSummary(raw_ostream &OSRef, StringRef Name,
+                        FileCoverageSummary &File) {
   OSRef << "<tr>";
-  OSRef << tag("td", name);
+  OSRef << tag("td", Name);
 
-  sendFormat(OSRef, format("%u", (unsigned)File.RegionCoverage.NumRegions),
-             "right");
-  sendFormat(OSRef, format("%u", (unsigned)File.RegionCoverage.NotCovered),
-             "right", File.RegionCoverage.isFullyCovered() ? "green" : "red");
-  sendFormat(OSRef, format("%.2f%%", File.RegionCoverage.getPercentCovered()),
-             "right", determineCoveragePercentageColor(File.RegionCoverage));
-  sendFormat(OSRef, format("%u", (unsigned)File.FunctionCoverage.NumFunctions),
-             "right");
-  sendFormat(OSRef, format("%u", (unsigned)File.FunctionCoverage.NumFunctions -
-                                           File.FunctionCoverage.Executed),
-             "right");
-  sendFormat(OSRef, format("%.2f%%", File.FunctionCoverage.getPercentCovered()),
-             "right", determineCoveragePercentageColor(File.FunctionCoverage));
-  sendFormat(OSRef, format("%u", (unsigned)File.LineCoverage.NumLines),
-             "right");
-  sendFormat(OSRef, format("%u", (unsigned)File.LineCoverage.NotCovered),
-             "right", File.LineCoverage.isFullyCovered() ? "green" : "red");
-  sendFormat(OSRef, format("%.2f%%", File.LineCoverage.getPercentCovered()),
-             "right", determineCoveragePercentageColor(File.LineCoverage));
-#if RICH
-  Options.colored_ostream(
-      OS, determineCoveragePercentageColor(File.FunctionCoverage))
-      << format("%*.2f", FileReportColumns[6] - 1,
-                File.FunctionCoverage.getPercentCovered()) << '%';
-  OS << format("%*u", FileReportColumns[7],
-               (unsigned)File.LineCoverage.NumLines);
-  Options.colored_ostream(OS, File.LineCoverage.isFullyCovered()
-                                  ? raw_ostream::GREEN
-                                  : raw_ostream::RED)
-      << format("%*u", FileReportColumns[8],
-                (unsigned)File.LineCoverage.NotCovered);
-  Options.colored_ostream(OS,
-                          determineCoveragePercentageColor(File.LineCoverage))
-      << format("%*.2f", FileReportColumns[9] - 1,
-                File.LineCoverage.getPercentCovered()) << '%';
-#endif
+  emitFormattedCount(OSRef, format("%u", File.RegionCoverage.NumRegions),
+                     "right");
+  emitFormattedCount(OSRef, format("%u", File.RegionCoverage.NotCovered),
+                     "right",
+                     File.RegionCoverage.isFullyCovered() ? "green" : "red");
+  emitFormattedCount(
+      OSRef, format("%.2f%%", File.RegionCoverage.getPercentCovered()), "right",
+      determineCoveragePercentageColor(File.RegionCoverage));
+  emitFormattedCount(OSRef, format("%u", File.FunctionCoverage.NumFunctions),
+                     "right");
+  emitFormattedCount(OSRef, format("%u", File.FunctionCoverage.NumFunctions -
+                                             File.FunctionCoverage.Executed),
+                     "right");
+  emitFormattedCount(
+      OSRef, format("%.2f%%", File.FunctionCoverage.getPercentCovered()),
+      "right", determineCoveragePercentageColor(File.FunctionCoverage));
+  emitFormattedCount(OSRef, format("%u", File.LineCoverage.NumLines), "right");
+  emitFormattedCount(OSRef, format("%u", File.LineCoverage.NotCovered), "right",
+                     File.LineCoverage.isFullyCovered() ? "green" : "red");
+  emitFormattedCount(
+      OSRef, format("%.2f%%", File.LineCoverage.getPercentCovered()), "right",
+      determineCoveragePercentageColor(File.LineCoverage));
   OSRef << "</tr>";
 }
 
-Error CoveragePrinterHTML::createIndexFile(ArrayRef<StringRef> SourceFiles,
-                                   const coverage::CoverageMapping &Coverage) {
+Error CoveragePrinterHTML::createIndexFile(
+    ArrayRef<StringRef> SourceFiles,
+    const coverage::CoverageMapping &Coverage) {
   auto OSOrErr = createOutputStream("index", "html", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
     return E;
@@ -363,7 +347,7 @@ Error CoveragePrinterHTML::createIndexFile(ArrayRef<StringRef> SourceFiles,
 
     std::string LinkText = escape(sys::path::relative_path(SF), Opts);
     std::string LinkTarget =
-      escape(getOutputPath(SF, "html", /*InToplevel=*/false), Opts);
+        escape(getOutputPath(SF, "html", /*InToplevel=*/false), Opts);
     showSummary(OSRef, tag("pre", a(LinkTarget, LinkText), "code"), Summary);
   }
 

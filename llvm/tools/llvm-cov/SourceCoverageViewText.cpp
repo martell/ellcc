@@ -27,8 +27,9 @@ void CoveragePrinterText::closeViewFile(OwnedStream OS) {
   OS->operator<<('\n');
 }
 
-Error CoveragePrinterText::createIndexFile(ArrayRef<StringRef> SourceFiles,
-                                   const coverage::CoverageMapping &Coverage) {
+Error CoveragePrinterText::createIndexFile(
+    ArrayRef<StringRef> SourceFiles,
+    const coverage::CoverageMapping &) {
   auto OSOrErr = createOutputStream("index", "txt", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
     return E;
@@ -89,8 +90,7 @@ void SourceCoverageViewText::renderViewDivider(raw_ostream &OS,
 }
 
 void SourceCoverageViewText::renderLine(
-    raw_ostream &OS, LineRef L,
-    const coverage::CoverageSegment *WrappedSegment,
+    raw_ostream &OS, LineRef L, const coverage::CoverageSegment *WrappedSegment,
     CoverageSegmentArray Segments, unsigned ExpansionCol, unsigned ViewDepth) {
   StringRef Line = L.Line;
   unsigned LineNumber = L.LineNo;
@@ -161,8 +161,9 @@ void SourceCoverageViewText::renderLineNumberColumn(raw_ostream &OS,
   OS.indent(LineNumberColumnWidth - Str.size()) << Str << '|';
 }
 
-void SourceCoverageViewText::renderRegionMarkers(
-    raw_ostream &OS, CoverageSegmentArray Segments, unsigned ViewDepth) {
+void SourceCoverageViewText::renderRegionMarkers(raw_ostream &OS,
+                                                 CoverageSegmentArray Segments,
+                                                 unsigned ViewDepth) {
   renderLinePrefix(OS, ViewDepth);
   OS.indent(getCombinedColumnWidth(getOptions()));
 
