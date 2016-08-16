@@ -28,15 +28,14 @@ void CoveragePrinterText::closeViewFile(OwnedStream OS) {
 }
 
 Error CoveragePrinterText::createIndexFile(
-    ArrayRef<StringRef> SourceFiles,
-    const coverage::CoverageMapping &) {
+    const coverage::CoverageMapping &Coverage) {
   auto OSOrErr = createOutputStream("index", "txt", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
     return E;
   auto OS = std::move(OSOrErr.get());
   raw_ostream &OSRef = *OS.get();
 
-  for (StringRef SF : SourceFiles)
+  for (StringRef SF : Coverage.getUniqueSourceFiles())
     OSRef << getOutputPath(SF, "txt", /*InToplevel=*/false) << '\n';
 
   return Error::success();

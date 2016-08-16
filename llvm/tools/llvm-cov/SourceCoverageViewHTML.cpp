@@ -208,30 +208,41 @@ std::string getPathToStyle(StringRef ViewPath) {
   return PathToStyle + "style.css";
 }
 
-void emitPrelude(raw_ostream &OS, const CoverageViewOptions &Opts,
-                 const std::string &PathToStyle = "",
+static std::string getCSSForCoverage(const CoverageViewOptions &Opts,
+                                     const std::string &PathToStyle = "",
+                                     bool AlternateRowColor = false) {
+  std::string result;
+
+  // Link to a stylesheet if one is available. Otherwise, use the default style.
+  if (PathToStyle.empty()) {
+    result = "<style>";
+    result += CSSForCoverage;
+    result += "</style>";
+  } else {
+    result = "<link rel='stylesheet' type='text/css' href='" +
+             escape(PathToStyle, Opts) + "'>";
+  }
+  if (AlternateRowColor) {
+    result += "<style>"
+              "tr:nth-child(even) {"
+              "  background: #CCC"
+              "}"
+              "tr:nth-child(odd) {"
+              "  background: #FFF"
+              "}"
+              "</style>";
+  }
+
+  return result;
+}
+
+void emitPrelude(raw_ostream &OS, const std::string &CSS,
                  bool trAlternate = false) {
   OS << "<!doctype html>"
         "<html>"
      << BeginHeader;
 
-  // Link to a stylesheet if one is available. Otherwise, use the default style.
-  if (PathToStyle.empty())
-    OS << "<style>" << CSSForCoverage << "</style>";
-  else
-    OS << "<link rel='stylesheet' type='text/css' href='"
-       << escape(PathToStyle, Opts) << "'>";
-
-  if (trAlternate) {
-    OS << "<style>"
-          "tr:nth-child(even) {"
-          "  background: #CCC"
-          "}"
-          "tr:nth-child(odd) {"
-          "  background: #FFF"
-          "}"
-          "</style>";
-  }
+  OS << CSS;
   OS << EndHeader << "<body>" << BeginCenteredDiv;
 }
 
@@ -251,10 +262,10 @@ CoveragePrinterHTML::createViewFile(StringRef Path, bool InToplevel) {
   OwnedStream OS = std::move(OSOrErr.get());
 
   if (!Opts.hasOutputDirectory()) {
-    emitPrelude(*OS.get(), Opts);
+    emitPrelude(*OS.get(), getCSSForCoverage(Opts));
   } else {
     std::string ViewPath = getOutputPath(Path, "html", InToplevel);
-    emitPrelude(*OS.get(), Opts, getPathToStyle(ViewPath));
+    emitPrelude(*OS.get(), getCSSForCoverage(Opts, getPathToStyle(ViewPath)));
   }
 
   return std::move(OS);
@@ -315,7 +326,6 @@ static void showSummary(raw_ostream &OSRef, StringRef Name,
 }
 
 Error CoveragePrinterHTML::createIndexFile(
-    ArrayRef<StringRef> SourceFiles,
     const coverage::CoverageMapping &Coverage) {
   auto OSOrErr = createOutputStream("index", "html", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
@@ -325,7 +335,7 @@ Error CoveragePrinterHTML::createIndexFile(
 
   // Emit a table containing links to reports for each file in the covmapping.
   assert(Opts.hasOutputDirectory() && "No output directory for index file");
-  emitPrelude(OSRef, Opts, getPathToStyle(""), true);
+  emitPrelude(OSRef, getCSSForCoverage(Opts, getPathToStyle(""), true));
   OSRef << BeginSourceNameDiv << "Index" << EndSourceNameDiv;
   OSRef << BeginTable;
   OSRef << "<tr>";
@@ -337,7 +347,7 @@ Error CoveragePrinterHTML::createIndexFile(
   OSRef << "</tr>";
 
   FileCoverageSummary Totals("TOTAL");
-  for (StringRef SF : SourceFiles) {
+  for (StringRef SF : Coverage.getUniqueSourceFiles()) {
     FileCoverageSummary Summary(SF);
     for (const auto &F : Coverage.getCoveredFunctions(SF)) {
       FunctionCoverageSummary Function = FunctionCoverageSummary::get(F);
