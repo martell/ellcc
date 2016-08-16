@@ -21,30 +21,34 @@ else
 endif
 
 OBJ := $(PWD)/musl-build
-install: c++-headers clang-headers $(Configs) $(ElkConfigs)
+install: musl.build musl.install c++-headers clang-headers $(Configs) $(ElkConfigs)
 
 elk: $(ElkConfigs)
 
 all:
 
-$(Configs)::
-	@echo Making libecc for $@ in musl-build/$@
-	$(OUT)mkdir -p $(OBJ)/$@/musl
-	$(OUT)mkdir -p $(OBJ)/$@/install
-	$(OUT)cp -pr src/musl $(OBJ)/$@
-	$(OUT)if [ -e $(OBJ)/$@/musl/config.mak ] ; then \
+musl.build:
+	$(OUT)for target in $(Configs) ; do \
+	  $(MAKE) $(MFLAGS) $$target.musl.build ; \
+	done
+
+%.musl.build:
+	@echo Making libecc for $* in musl-build/$*
+	$(OUT)mkdir -p $(OBJ)/$*/musl
+	$(OUT)mkdir -p $(OBJ)/$*/install
+	$(OUT)cp -pr src/musl $(OBJ)/$*
+	$(OUT)if [ -e $(OBJ)/$*/musl/config.mak ] ; then \
           echo Configuring musl for $(TUPLE) aready done ; \
         else  \
-          echo Configuring musl for $(TUPLE) in $(OBJ)/$@/musl ; \
-	  ./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1 ; \
+          echo Configuring musl for $(TUPLE) in $(OBJ)/$*/musl ; \
+	  ./config.musl "-target $* $(CFLAGS)" $* $(ELLCC) $(OBJ)/$*/musl || exit 1 ; \
         fi
-	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl || exit 1
-	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl install || exit 1
-	$(OUT)$(MAKE) $(MFLAGS) $@.musl.install
+	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$*/musl || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$*/musl install || exit 1
 
-musl.install:
+musl.install: musl.build
 	$(OUT)cd musl-build ; \
-	for target in `echo *` ; do \
+	for target in $(Configs) ; do \
 	  $(MAKE) $(MFLAGS) -C .. $$target.musl.install ; \
 	done
 
@@ -61,15 +65,14 @@ musl.install:
 	mkdir -p ../lib/$* ; \
 	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	@echo Making libcompiler-rt for $@ in compiler-rt-build
 	$(OUT)mkdir -p compiler-rt-build/$@
 	$(OUT)cp -p Makefile.lib compiler-rt-build/$@/Makefile
 	$(OUT)$(MAKE) $(MFLAGS) -C compiler-rt-build/$@ install || exit 1
 	$(OUT)cd lib/$@; ln -sf libcompiler-rt.a libgcc.a
 
-
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.ncurses.configure && \
 	$(MAKE) $(MFLAGS) $@.ncurses.build && \
 	$(MAKE) $(MFLAGS) $@.ncurses.install
@@ -109,7 +112,7 @@ $(Configs)::
 	(cd ../include; ln -s curses.h ncurses.h ) ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.ncursesw.configure && \
 	$(MAKE) $(MFLAGS) $@.ncursesw.build && \
 	$(MAKE) $(MFLAGS) $@.ncursesw.install
@@ -147,7 +150,7 @@ $(Configs)::
 	rm -f ../include/config.h ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.zlib.configure && \
 	$(MAKE) $(MFLAGS) $@.zlib.build && \
 	$(MAKE) $(MFLAGS) $@.zlib.install
@@ -179,7 +182,7 @@ $(Configs)::
 	cp -p $*/zlib.h ../include ; \
 	cp -p $*/zconf.h ../include
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.expat.configure && \
 	$(MAKE) $(MFLAGS) $@.expat.build && \
 	$(MAKE) $(MFLAGS) $@.expat.install
@@ -211,7 +214,7 @@ $(Configs)::
 	cp -p ../src/expat/lib/expat.h ../include ; \
 	cp -p ../src/expat/lib/expat_external.h ../include
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.libedit.configure && \
 	$(MAKE) $(MFLAGS) $@.libedit.build && \
 	$(MAKE) $(MFLAGS) $@.libedit.install
@@ -247,7 +250,7 @@ $(Configs)::
 	cp -p $*/src/vis.h ../include ; \
 	cp -p $*/src/editline/readline.h ../include
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.mbedtls.configure && \
 	$(MAKE) $(MFLAGS) $@.mbedtls.build && \
 	$(MAKE) $(MFLAGS) $@.mbedtls.install
@@ -280,7 +283,7 @@ $(Configs)::
 	cp -RP library/libmbedx509.*   ../../lib/$* ; \
 	cp -RP library/libmbedcrypto.* ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.c-ares.configure && \
 	$(MAKE) $(MFLAGS) $@.c-ares.build && \
 	$(MAKE) $(MFLAGS) $@.c-ares.install
@@ -320,7 +323,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP .libs/libcares.a    ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.libssh2.configure && \
 	$(MAKE) $(MFLAGS) $@.libssh2.build && \
 	$(MAKE) $(MFLAGS) $@.libssh2.install
@@ -360,7 +363,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP ./src/.libs/libssh2.a ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.nghttp2.configure && \
 	$(MAKE) $(MFLAGS) $@.nghttp2.build && \
 	$(MAKE) $(MFLAGS) $@.nghttp2.install
@@ -404,7 +407,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP ./lib/.libs/libnghttp2.a ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.libmetalink.configure && \
 	$(MAKE) $(MFLAGS) $@.libmetalink.build && \
 	$(MAKE) $(MFLAGS) $@.libmetalink.install
@@ -448,7 +451,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP ./lib/.libs/libmetalink.a ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.openldap.configure && \
 	$(MAKE) $(MFLAGS) $@.openldap.build && \
 	$(MAKE) $(MFLAGS) $@.openldap.install
@@ -498,7 +501,7 @@ $(Configs)::
 	cp -RP ./libraries/libldap/.libs/libldap.a ../../lib/$* ; \
 	cp -RP ./libraries/liblber/.libs/liblber.a ../../lib/$* ; \
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
 	$(MAKE) $(MFLAGS) $@.curl.build && \
 	$(MAKE) $(MFLAGS) $@.curl.install
@@ -543,7 +546,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP ./lib/.libs/libcurl.a ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.nanomsg.configure && \
 	$(MAKE) $(MFLAGS) $@.nanomsg.build && \
 	$(MAKE) $(MFLAGS) $@.nanomsg.install
@@ -583,7 +586,7 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -RP .libs/libnanomsg.a ../../lib/$*
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)$(MAKE) $(MFLAGS) $@.libevent.configure && \
 	$(MAKE) $(MFLAGS) $@.libevent.build && \
 	$(MAKE) $(MFLAGS) $@.libevent.install
@@ -636,7 +639,7 @@ c++-headers:
 	cp -pr src/c++/libunwind/include/__libunwind_config.h include/
 	mv include/c++/__cxxabi_config.h include/
 
-$(Configs)::
+$(Configs):: musl.install
 	$(OUT)echo Making libc++ for $@ in c++-build/$@
 	$(OUT)mkdir -p c++-build/$@
 	$(OUT)cp Makefile.lib c++-build/$@/Makefile
@@ -661,7 +664,7 @@ clang-headers:
 	    cp -p clang/cpuid.h include ; \
 	  fi
 
-$(ElkConfigs)::
+$(ElkConfigs):: musl.install
 	$(OUT)echo Making libelk for $@ in elk-build/$@
 	$(OUT)mkdir -p elk-build/$@
 	$(OUT)mkdir -p elk-build/$@/bin
