@@ -326,6 +326,7 @@ static void showSummary(raw_ostream &OSRef, StringRef Name,
 }
 
 Error CoveragePrinterHTML::createIndexFile(
+    ArrayRef<StringRef> SourceFiles,
     const coverage::CoverageMapping &Coverage) {
   auto OSOrErr = createOutputStream("index", "html", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
@@ -347,7 +348,7 @@ Error CoveragePrinterHTML::createIndexFile(
   OSRef << "</tr>";
 
   FileCoverageSummary Totals("TOTAL");
-  for (StringRef SF : Coverage.getUniqueSourceFiles()) {
+  for (StringRef SF : SourceFiles) {
     FileCoverageSummary Summary(SF);
     for (const auto &F : Coverage.getCoveredFunctions(SF)) {
       FunctionCoverageSummary Function = FunctionCoverageSummary::get(F);
