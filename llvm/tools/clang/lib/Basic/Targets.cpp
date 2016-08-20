@@ -808,7 +808,7 @@ public:
     this->SizeType = TargetInfo::UnsignedInt;
     this->PtrDiffType = TargetInfo::SignedInt;
     this->IntPtrType = TargetInfo::SignedInt;
-    // RegParmMax is inherited from the underlying architecture
+    // RegParmMax is inherited from the underlying architecture.
     this->LongDoubleFormat = &llvm::APFloat::IEEEdouble;
     if (Triple.getArch() == llvm::Triple::arm) {
       // Handled in ARM's setABI().
@@ -2014,6 +2014,10 @@ public:
     }
   }
 
+  uint64_t getMaxPointerWidth() const override {
+    return getTriple().getArch() == llvm::Triple::amdgcn ? 64 : 32;
+  }
+
   const char * getClobbers() const override {
     return "";
   }
@@ -2162,7 +2166,10 @@ public:
       Opts.cl_khr_int64_base_atomics = 1;
       Opts.cl_khr_int64_extended_atomics = 1;
       Opts.cl_khr_mipmap_image = 1;
+      Opts.cl_khr_subgroups = 1;
       Opts.cl_khr_3d_image_writes = 1;
+      Opts.cl_amd_media_ops = 1;
+      Opts.cl_amd_media_ops2 = 1;
     }
   }
 
@@ -5043,7 +5050,7 @@ public:
       // the frontend matches that.
       if (Triple.getEnvironment() == llvm::Triple::EABI ||
           Triple.getOS() == llvm::Triple::UnknownOS ||
-          StringRef(CPU).startswith("cortex-m")) {
+          ArchProfile == llvm::ARM::PK_M) {
         setABI("aapcs");
       } else if (Triple.isWatchABI()) {
         setABI("aapcs16");
@@ -5374,7 +5381,7 @@ public:
       Builder.defineMacro("_SOFT_FLOAT", "1");
     }
 
-    if (CPU == "xscale")
+    if (ArchKind == llvm::ARM::AK_XSCALE)
       Builder.defineMacro("__XSCALE__");
 
     if (isThumb()) {

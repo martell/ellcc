@@ -761,55 +761,6 @@ public:
         AddCXXNewAllocator(false), AddCXXDefaultInitExprInCtors(false) {}
   };
 
-  /// \brief Provides a custom implementation of the iterator class to have the
-  /// same interface as Function::iterator - iterator returns CFGBlock
-  /// (not a pointer to CFGBlock).
-  class graph_iterator {
-  public:
-    typedef CFGBlock                        value_type;
-    typedef value_type&                     reference;
-    typedef value_type*                     pointer;
-    typedef BumpVector<CFGBlock*>::iterator ImplTy;
-
-    graph_iterator(const ImplTy &i) : I(i) {}
-
-    bool operator==(const graph_iterator &X) const { return I == X.I; }
-    bool operator!=(const graph_iterator &X) const { return I != X.I; }
-
-    reference operator*()    const { return **I; }
-    pointer operator->()     const { return  *I; }
-    operator CFGBlock* ()          { return  *I; }
-
-    graph_iterator &operator++() { ++I; return *this; }
-    graph_iterator &operator--() { --I; return *this; }
-
-  private:
-    ImplTy I;
-  };
-
-  class const_graph_iterator {
-  public:
-    typedef const CFGBlock                  value_type;
-    typedef value_type&                     reference;
-    typedef value_type*                     pointer;
-    typedef BumpVector<CFGBlock*>::const_iterator ImplTy;
-
-    const_graph_iterator(const ImplTy &i) : I(i) {}
-
-    bool operator==(const const_graph_iterator &X) const { return I == X.I; }
-    bool operator!=(const const_graph_iterator &X) const { return I != X.I; }
-
-    reference operator*() const { return **I; }
-    pointer operator->()  const { return  *I; }
-    operator CFGBlock* () const { return  *I; }
-
-    const_graph_iterator &operator++() { ++I; return *this; }
-    const_graph_iterator &operator--() { --I; return *this; }
-
-  private:
-    ImplTy I;
-  };
-
   /// buildCFG - Builds a CFG from an AST.
   static std::unique_ptr<CFG> buildCFG(const Decl *D, Stmt *AST, ASTContext *C,
                                        const BuildOptions &BO);
@@ -845,14 +796,10 @@ public:
   const_iterator            begin()       const    { return Blocks.begin(); }
   const_iterator            end()         const    { return Blocks.end(); }
 
-  graph_iterator nodes_begin() { return graph_iterator(Blocks.begin()); }
-  graph_iterator nodes_end() { return graph_iterator(Blocks.end()); }
-  const_graph_iterator nodes_begin() const {
-    return const_graph_iterator(Blocks.begin());
-  }
-  const_graph_iterator nodes_end() const {
-    return const_graph_iterator(Blocks.end());
-  }
+  iterator nodes_begin() { return iterator(Blocks.begin()); }
+  iterator nodes_end() { return iterator(Blocks.end()); }
+  const_iterator nodes_begin() const { return const_iterator(Blocks.begin()); }
+  const_iterator nodes_end() const { return const_iterator(Blocks.end()); }
 
   reverse_iterator          rbegin()               { return Blocks.rbegin(); }
   reverse_iterator          rend()                 { return Blocks.rend(); }
@@ -999,6 +946,7 @@ template <> struct simplify_type< ::clang::CFGTerminator> {
 
 template <> struct GraphTraits< ::clang::CFGBlock *> {
   typedef ::clang::CFGBlock NodeType;
+  typedef ::clang::CFGBlock *NodeRef;
   typedef ::clang::CFGBlock::succ_iterator ChildIteratorType;
 
   static NodeType* getEntryNode(::clang::CFGBlock *BB)
@@ -1013,6 +961,7 @@ template <> struct GraphTraits< ::clang::CFGBlock *> {
 
 template <> struct GraphTraits< const ::clang::CFGBlock *> {
   typedef const ::clang::CFGBlock NodeType;
+  typedef const ::clang::CFGBlock *NodeRef;
   typedef ::clang::CFGBlock::const_succ_iterator ChildIteratorType;
 
   static NodeType* getEntryNode(const clang::CFGBlock *BB)
@@ -1027,6 +976,7 @@ template <> struct GraphTraits< const ::clang::CFGBlock *> {
 
 template <> struct GraphTraits<Inverse< ::clang::CFGBlock*> > {
   typedef ::clang::CFGBlock NodeType;
+  typedef ::clang::CFGBlock *NodeRef;
   typedef ::clang::CFGBlock::const_pred_iterator ChildIteratorType;
 
   static NodeType *getEntryNode(Inverse< ::clang::CFGBlock*> G)
@@ -1041,6 +991,7 @@ template <> struct GraphTraits<Inverse< ::clang::CFGBlock*> > {
 
 template <> struct GraphTraits<Inverse<const ::clang::CFGBlock*> > {
   typedef const ::clang::CFGBlock NodeType;
+  typedef const ::clang::CFGBlock *NodeRef;
   typedef ::clang::CFGBlock::const_pred_iterator ChildIteratorType;
 
   static NodeType *getEntryNode(Inverse<const ::clang::CFGBlock*> G)
@@ -1058,7 +1009,7 @@ template <> struct GraphTraits<Inverse<const ::clang::CFGBlock*> > {
 template <> struct GraphTraits< ::clang::CFG* >
     : public GraphTraits< ::clang::CFGBlock *>  {
 
-  typedef ::clang::CFG::graph_iterator nodes_iterator;
+  typedef ::clang::CFG::iterator nodes_iterator;
 
   static NodeType     *getEntryNode(::clang::CFG* F) { return &F->getEntry(); }
   static nodes_iterator nodes_begin(::clang::CFG* F) { return F->nodes_begin();}
@@ -1069,7 +1020,7 @@ template <> struct GraphTraits< ::clang::CFG* >
 template <> struct GraphTraits<const ::clang::CFG* >
     : public GraphTraits<const ::clang::CFGBlock *>  {
 
-  typedef ::clang::CFG::const_graph_iterator nodes_iterator;
+  typedef ::clang::CFG::const_iterator nodes_iterator;
 
   static NodeType *getEntryNode( const ::clang::CFG* F) {
     return &F->getEntry();
@@ -1088,7 +1039,7 @@ template <> struct GraphTraits<const ::clang::CFG* >
 template <> struct GraphTraits<Inverse< ::clang::CFG*> >
   : public GraphTraits<Inverse< ::clang::CFGBlock*> > {
 
-  typedef ::clang::CFG::graph_iterator nodes_iterator;
+  typedef ::clang::CFG::iterator nodes_iterator;
 
   static NodeType *getEntryNode( ::clang::CFG* F) { return &F->getExit(); }
   static nodes_iterator nodes_begin( ::clang::CFG* F) {return F->nodes_begin();}
@@ -1098,7 +1049,7 @@ template <> struct GraphTraits<Inverse< ::clang::CFG*> >
 template <> struct GraphTraits<Inverse<const ::clang::CFG*> >
   : public GraphTraits<Inverse<const ::clang::CFGBlock*> > {
 
-  typedef ::clang::CFG::const_graph_iterator nodes_iterator;
+  typedef ::clang::CFG::const_iterator nodes_iterator;
 
   static NodeType *getEntryNode(const ::clang::CFG* F) { return &F->getExit(); }
   static nodes_iterator nodes_begin(const ::clang::CFG* F) {

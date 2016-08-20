@@ -51,8 +51,8 @@ static void addRegular(SymbolAssignment *Cmd) {
 }
 
 template <class ELFT> static void addSynthetic(SymbolAssignment *Cmd) {
-  Symbol *Sym = Symtab<ELFT>::X->addSynthetic(Cmd->Name, nullptr, 0);
-  Sym->Visibility = Cmd->Hidden ? STV_HIDDEN : STV_DEFAULT;
+  Symbol *Sym = Symtab<ELFT>::X->addSynthetic(
+      Cmd->Name, nullptr, 0, Cmd->Hidden ? STV_HIDDEN : STV_DEFAULT);
   Cmd->Sym = Sym->body();
 }
 
@@ -283,8 +283,14 @@ void LinkerScript<ELFT>::createSections(OutputSectionFactory<ELFT> &Factory) {
       std::tie(OutSec, IsNew) = Factory.create(Head, Cmd->Name);
       if (IsNew)
         OutputSections->push_back(OutSec);
-      for (InputSectionBase<ELFT> *Sec : V)
-        OutSec->addSection(Sec);
+
+      uint32_t Subalign = Cmd->SubalignExpr ? Cmd->SubalignExpr(0) : 0;
+      for (InputSectionBase<ELFT> *Sec : V) {
+        if (Subalign)
+          Sec->Alignment = Subalign;
+        if (!Sec->OutSec)
+          OutSec->addSection(Sec);
+      }
     }
   }
 
@@ -319,8 +325,10 @@ template <class ELFT> void assignOffsets(OutputSectionBase<ELFT> *Sec) {
       uintX_t Value = L->Cmd->Expression(Sec->getVA() + Off) - Sec->getVA();
       if (L->Cmd->Name == ".") {
         Off = Value;
-      } else {
-        auto *Sym = cast<DefinedSynthetic<ELFT>>(L->Cmd->Sym);
+      } else if (auto *Sym =
+                     cast_or_null<DefinedSynthetic<ELFT>>(L->Cmd->Sym)) {
+        // shouldDefine could have returned false, so we need to check Sym,
+        // for non-null value.
         Sym->Section = OutSec;
         Sym->Value = Value;
       }
@@ -484,12 +492,29 @@ std::vector<PhdrEntry<ELFT>> LinkerScript<ELFT>::createPhdrs() {
   return Ret;
 }
 
+template <class ELFT> bool LinkerScript<ELFT>::ignoreInterpSection() {
+  // Ignore .interp section in case we have PHDRS specification
+  // and PT_INTERP isn't listed.
+  return !Opt.PhdrsCommands.empty() &&
+         llvm::find_if(Opt.PhdrsCommands, [](const PhdrsCommand &Cmd) {
+           return Cmd.Type == PT_INTERP;
+         }) == Opt.PhdrsCommands.end();
+}
+
 template <class ELFT>
 ArrayRef<uint8_t> LinkerScript<ELFT>::getFiller(StringRef Name) {
   for (const std::unique_ptr<BaseCommand> &Base : Opt.Commands)
     if (auto *Cmd = dyn_cast<OutputSectionCommand>(Base.get()))
       if (Cmd->Name == Name)
         return Cmd->Filler;
+  return {};
+}
+
+template <class ELFT> Expr LinkerScript<ELFT>::getLma(StringRef Name) {
+  for (const std::unique_ptr<BaseCommand> &Base : Opt.Commands)
+    if (auto *Cmd = dyn_cast<OutputSectionCommand>(Base.get()))
+      if (Cmd->LmaExpr && Cmd->Name == Name)
+        return Cmd->LmaExpr;
   return {};
 }
 
@@ -600,9 +625,8 @@ private:
   InputSectionDescription *readInputSectionRules();
   unsigned readPhdrType();
   SortKind readSortKind();
-  SymbolAssignment *readProvide(bool Hidden);
+  SymbolAssignment *readProvideHidden(bool Provide, bool Hidden);
   SymbolAssignment *readProvideOrAssignment(StringRef Tok);
-  Expr readAlign();
   void readSort();
   Expr readAssert();
 
@@ -610,6 +634,7 @@ private:
   Expr readExpr1(Expr Lhs, int MinPrec);
   Expr readPrimary();
   Expr readTernary(Expr Cond);
+  Expr readParenExpr();
 
   const static StringMap<Handler> Cmd;
   ScriptConfiguration &Opt = *ScriptConfig;
@@ -636,6 +661,8 @@ void ScriptParser::run() {
     StringRef Tok = next();
     if (Handler Fn = Cmd.lookup(Tok))
       (this->*Fn)();
+    else if (SymbolAssignment *Cmd = readProvideOrAssignment(Tok))
+      Opt.Commands.emplace_back(Cmd);
     else
       setError("unknown directive: " + Tok);
   }
@@ -880,13 +907,6 @@ InputSectionDescription *ScriptParser::readInputSectionDescription() {
   return readInputSectionRules();
 }
 
-Expr ScriptParser::readAlign() {
-  expect("(");
-  Expr E = readExpr();
-  expect(")");
-  return E;
-}
-
 void ScriptParser::readSort() {
   expect("(");
   expect("CONSTRUCTORS");
@@ -918,8 +938,12 @@ ScriptParser::readOutputSectionDescription(StringRef OutSec) {
 
   expect(":");
 
+  if (skip("AT"))
+    Cmd->LmaExpr = readParenExpr();
   if (skip("ALIGN"))
-    Cmd->AlignExpr = readAlign();
+    Cmd->AlignExpr = readParenExpr();
+  if (skip("SUBALIGN"))
+    Cmd->SubalignExpr = readParenExpr();
 
   // Parse constraints.
   if (skip("ONLY_IF_RO"))
@@ -967,10 +991,10 @@ std::vector<uint8_t> ScriptParser::readOutputSectionFiller() {
   return { uint8_t(V >> 24), uint8_t(V >> 16), uint8_t(V >> 8), uint8_t(V) };
 }
 
-SymbolAssignment *ScriptParser::readProvide(bool Hidden) {
+SymbolAssignment *ScriptParser::readProvideHidden(bool Provide, bool Hidden) {
   expect("(");
   SymbolAssignment *Cmd = readAssignment(next());
-  Cmd->Provide = true;
+  Cmd->Provide = Provide;
   Cmd->Hidden = Hidden;
   expect(")");
   expect(";");
@@ -983,9 +1007,11 @@ SymbolAssignment *ScriptParser::readProvideOrAssignment(StringRef Tok) {
     Cmd = readAssignment(Tok);
     expect(";");
   } else if (Tok == "PROVIDE") {
-    Cmd = readProvide(false);
+    Cmd = readProvideHidden(true, false);
+  } else if (Tok == "HIDDEN") {
+    Cmd = readProvideHidden(false, true);
   } else if (Tok == "PROVIDE_HIDDEN") {
-    Cmd = readProvide(true);
+    Cmd = readProvideHidden(true, true);
   }
   return Cmd;
 }
@@ -1125,29 +1151,26 @@ Expr ScriptParser::readExpr1(Expr Lhs, int MinPrec) {
 }
 
 uint64_t static getConstant(StringRef S) {
-  if (S == "COMMONPAGESIZE" || S == "MAXPAGESIZE")
+  if (S == "COMMONPAGESIZE")
     return Target->PageSize;
+  if (S == "MAXPAGESIZE")
+    return Target->MaxPageSize;
   error("unknown constant: " + S);
   return 0;
 }
 
 Expr ScriptParser::readPrimary() {
-  StringRef Tok = next();
+  if (peek() == "(")
+    return readParenExpr();
 
-  if (Tok == "(") {
-    Expr E = readExpr();
-    expect(")");
-    return E;
-  }
+  StringRef Tok = next();
 
   // Built-in functions are parsed here.
   // https://sourceware.org/binutils/docs/ld/Builtin-Functions.html.
   if (Tok == "ASSERT")
     return readAssert();
   if (Tok == "ALIGN") {
-    expect("(");
-    Expr E = readExpr();
-    expect(")");
+    Expr E = readParenExpr();
     return [=](uint64_t Dot) { return alignTo(Dot, E(Dot)); };
   }
   if (Tok == "CONSTANT") {
@@ -1215,6 +1238,13 @@ Expr ScriptParser::readTernary(Expr Cond) {
   expect(":");
   Expr R = readExpr();
   return [=](uint64_t Dot) { return Cond(Dot) ? L(Dot) : R(Dot); };
+}
+
+Expr ScriptParser::readParenExpr() {
+  expect("(");
+  Expr E = readExpr();
+  expect(")");
+  return E;
 }
 
 std::vector<StringRef> ScriptParser::readOutputSectionPhdrs() {

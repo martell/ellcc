@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r279342.
 * Update to LLVM r278565.
 * Enhanced llvm-cov HTML output.
 * Enable code coverage with the -coverage option.
