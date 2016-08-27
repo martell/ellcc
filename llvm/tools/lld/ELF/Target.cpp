@@ -10,7 +10,7 @@
 // Machine-specific things, such as applying relocations, creation of
 // GOT or PLT entries, etc., are handled in this file.
 //
-// Refer the ELF spec for the single letter varaibles, S, A or P, used
+// Refer the ELF spec for the single letter variables, S, A or P, used
 // in this file.
 //
 // Some functions defined in this file has "relaxTls" as part of their names.
@@ -440,6 +440,7 @@ uint64_t X86TargetInfo::getImplicitAddend(const uint8_t *Buf,
   case R_386_GOTPC:
   case R_386_PC32:
   case R_386_PLT32:
+  case R_386_TLS_LE:
     return read32le(Buf);
   }
 }

@@ -1700,6 +1700,12 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
     { X86::VDIVSSZrr_Int,     X86::VDIVSSZrm_Int,       0 },
     { X86::VDIVSDZrr,         X86::VDIVSDZrm,           0 },
     { X86::VDIVSDZrr_Int,     X86::VDIVSDZrm_Int,       0 },
+    { X86::VCMPPDZrri,        X86::VCMPPDZrmi,          0 },
+    { X86::VCMPPSZrri,        X86::VCMPPSZrmi,          0 },
+    { X86::VCMPSDZrr,         X86::VCMPSDZrm,           0 },
+    { X86::VCMPSSZrr,         X86::VCMPSSZrm,           0 },
+    { X86::VCMPSDZrr_Int,     X86::VCMPSDZrm_Int,       0 },
+    { X86::VCMPSSZrr_Int,     X86::VCMPSSZrm_Int,       0 },
     { X86::VANDPDZrr,         X86::VANDPDZrm,           0 },
     { X86::VANDPSZrr,         X86::VANDPSZrm,           0 },
     { X86::VANDNPDZrr,        X86::VANDNPDZrm,          0 },
@@ -1826,6 +1832,10 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
     { X86::VMINPSZ256rr,      X86::VMINPSZ256rm,        0 },
     { X86::VMINCPSZ128rr,     X86::VMINCPSZ128rm,       0 },
     { X86::VMINCPSZ256rr,     X86::VMINCPSZ256rm,       0 },
+    { X86::VCMPPDZ128rri,     X86::VCMPPDZ128rmi,       0 },
+    { X86::VCMPPDZ256rri,     X86::VCMPPDZ256rmi,       0 },
+    { X86::VCMPPSZ128rri,     X86::VCMPPSZ128rmi,       0 },
+    { X86::VCMPPSZ256rri,     X86::VCMPPSZ256rmi,       0 },
 
     // AES foldable instructions
     { X86::AESDECLASTrr,      X86::AESDECLASTrm,        TB_ALIGN_16 },
@@ -2146,15 +2156,15 @@ void
 X86InstrInfo::AddTableEntry(RegOp2MemOpTableType &R2MTable,
                             MemOp2RegOpTableType &M2RTable,
                             uint16_t RegOp, uint16_t MemOp, uint16_t Flags) {
-    if ((Flags & TB_NO_FORWARD) == 0) {
-      assert(!R2MTable.count(RegOp) && "Duplicate entry!");
-      R2MTable[RegOp] = std::make_pair(MemOp, Flags);
-    }
-    if ((Flags & TB_NO_REVERSE) == 0) {
-      assert(!M2RTable.count(MemOp) &&
-           "Duplicated entries in unfolding maps?");
-      M2RTable[MemOp] = std::make_pair(RegOp, Flags);
-    }
+  if ((Flags & TB_NO_FORWARD) == 0) {
+    assert(!R2MTable.count(RegOp) && "Duplicate entry!");
+    R2MTable[RegOp] = std::make_pair(MemOp, Flags);
+  }
+  if ((Flags & TB_NO_REVERSE) == 0) {
+    assert(!M2RTable.count(MemOp) &&
+         "Duplicated entries in unfolding maps?");
+    M2RTable[MemOp] = std::make_pair(RegOp, Flags);
+  }
 }
 
 bool
@@ -3379,12 +3389,24 @@ MachineInstr *X86InstrInfo::commuteInstructionImpl(MachineInstr &MI, bool NewMI,
     return TargetInstrInfo::commuteInstructionImpl(WorkingMI, /*NewMI=*/false,
                                                    OpIdx1, OpIdx2);
   }
+  case X86::CMPSDrr:
+  case X86::CMPSSrr:
   case X86::CMPPDrri:
   case X86::CMPPSrri:
+  case X86::VCMPSDrr:
+  case X86::VCMPSSrr:
   case X86::VCMPPDrri:
   case X86::VCMPPSrri:
   case X86::VCMPPDYrri:
-  case X86::VCMPPSYrri: {
+  case X86::VCMPPSYrri:
+  case X86::VCMPSDZrr:
+  case X86::VCMPSSZrr:
+  case X86::VCMPPDZrri:
+  case X86::VCMPPSZrri:
+  case X86::VCMPPDZ128rri:
+  case X86::VCMPPSZ128rri:
+  case X86::VCMPPDZ256rri:
+  case X86::VCMPPSZ256rri: {
     // Float comparison can be safely commuted for
     // Ordered/Unordered/Equal/NotEqual tests
     unsigned Imm = MI.getOperand(3).getImm() & 0x7;
@@ -3627,12 +3649,24 @@ bool X86InstrInfo::findCommutedOpIndices(MachineInstr &MI, unsigned &SrcOpIdx1,
     return false;
 
   switch (MI.getOpcode()) {
+  case X86::CMPSDrr:
+  case X86::CMPSSrr:
   case X86::CMPPDrri:
   case X86::CMPPSrri:
+  case X86::VCMPSDrr:
+  case X86::VCMPSSrr:
   case X86::VCMPPDrri:
   case X86::VCMPPSrri:
   case X86::VCMPPDYrri:
-  case X86::VCMPPSYrri: {
+  case X86::VCMPPSYrri:
+  case X86::VCMPSDZrr:
+  case X86::VCMPSSZrr:
+  case X86::VCMPPDZrri:
+  case X86::VCMPPSZrri:
+  case X86::VCMPPDZ128rri:
+  case X86::VCMPPSZ128rri:
+  case X86::VCMPPDZ256rri:
+  case X86::VCMPPSZ256rri: {
     // Float comparison can be safely commuted for
     // Ordered/Unordered/Equal/NotEqual tests
     unsigned Imm = MI.getOperand(3).getImm() & 0x7;
@@ -6189,7 +6223,10 @@ static bool isNonFoldablePartialRegisterLoad(const MachineInstr &LoadMI,
     // instruction isn't scalar (SS).
     switch (UserOpc) {
     case X86::ADDSSrr_Int: case X86::VADDSSrr_Int: case X86::VADDSSZrr_Int:
+    case X86::Int_CMPSSrr: case X86::Int_VCMPSSrr: case X86::VCMPSSZrr_Int:
     case X86::DIVSSrr_Int: case X86::VDIVSSrr_Int: case X86::VDIVSSZrr_Int:
+    case X86::MAXSSrr_Int: case X86::VMAXSSrr_Int: case X86::VMAXSSZrr_Int:
+    case X86::MINSSrr_Int: case X86::VMINSSrr_Int: case X86::VMINSSZrr_Int:
     case X86::MULSSrr_Int: case X86::VMULSSrr_Int: case X86::VMULSSZrr_Int:
     case X86::SUBSSrr_Int: case X86::VSUBSSrr_Int: case X86::VSUBSSZrr_Int:
     case X86::VFMADD132SSr_Int: case X86::VFNMADD132SSr_Int:
@@ -6211,7 +6248,10 @@ static bool isNonFoldablePartialRegisterLoad(const MachineInstr &LoadMI,
     // instruction isn't scalar (SD).
     switch (UserOpc) {
     case X86::ADDSDrr_Int: case X86::VADDSDrr_Int: case X86::VADDSDZrr_Int:
+    case X86::Int_CMPSDrr: case X86::Int_VCMPSDrr: case X86::VCMPSDZrr_Int:
     case X86::DIVSDrr_Int: case X86::VDIVSDrr_Int: case X86::VDIVSDZrr_Int:
+    case X86::MAXSDrr_Int: case X86::VMAXSDrr_Int: case X86::VMAXSDZrr_Int:
+    case X86::MINSDrr_Int: case X86::VMINSDrr_Int: case X86::VMINSDZrr_Int:
     case X86::MULSDrr_Int: case X86::VMULSDrr_Int: case X86::VMULSDZrr_Int:
     case X86::SUBSDrr_Int: case X86::VSUBSDrr_Int: case X86::VSUBSDZrr_Int:
     case X86::VFMADD132SDr_Int: case X86::VFNMADD132SDr_Int:

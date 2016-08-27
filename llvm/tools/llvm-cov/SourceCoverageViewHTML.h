@@ -39,7 +39,7 @@ class SourceCoverageViewHTML : public SourceCoverageView {
 
   void renderViewFooter(raw_ostream &OS) override;
 
-  void renderSourceName(raw_ostream &OS) override;
+  void renderSourceName(raw_ostream &OS, bool WholeFile) override;
 
   void renderLinePrefix(raw_ostream &OS, unsigned ViewDepth) override;
 
@@ -71,12 +71,17 @@ class SourceCoverageViewHTML : public SourceCoverageView {
   void renderRegionMarkers(raw_ostream &OS, CoverageSegmentArray Segments,
                            unsigned ViewDepth) override;
 
+  void renderCellInTitle(raw_ostream &OS, StringRef CellText) override;
+
+  void renderTableHeader(raw_ostream &OS, unsigned IndentLevel) override;
+
 public:
   SourceCoverageViewHTML(StringRef SourceName, const MemoryBuffer &File,
                          const CoverageViewOptions &Options,
-                         coverage::CoverageData &&CoverageInfo)
-      : SourceCoverageView(SourceName, File, Options, std::move(CoverageInfo)) {
-  }
+                         coverage::CoverageData &&CoverageInfo,
+                         bool FunctionView)
+      : SourceCoverageView(SourceName, File, Options, std::move(CoverageInfo),
+                           FunctionView) {}
 };
 
 } // namespace llvm

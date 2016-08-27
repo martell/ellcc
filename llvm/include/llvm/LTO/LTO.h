@@ -174,8 +174,8 @@ public:
       } else {
         GO = cast<GlobalObject>(GV);
       }
-      if (GV)
-        return GV->getComdat();
+      if (GO)
+        return GO->getComdat();
       return nullptr;
     }
     uint64_t getCommonSize() const {
@@ -306,12 +306,17 @@ private:
 
   struct RegularLTOState {
     RegularLTOState(unsigned ParallelCodeGenParallelismLevel, Config &Conf);
+    struct CommonResolution {
+      uint64_t Size = 0;
+      unsigned Align = 0;
+    };
+    std::map<std::string, CommonResolution> Commons;
 
     unsigned ParallelCodeGenParallelismLevel;
     LTOLLVMContext Ctx;
     bool HasModule = false;
     std::unique_ptr<Module> CombinedModule;
-    IRMover Mover;
+    std::unique_ptr<IRMover> Mover;
   } RegularLTO;
 
   struct ThinLTOState {
@@ -362,8 +367,6 @@ private:
 
   // Global mapping from mangled symbol names to resolutions.
   StringMap<GlobalResolution> GlobalResolutions;
-
-  void writeToResolutionFile(InputFile *Input, ArrayRef<SymbolResolution> Res);
 
   void addSymbolToGlobalRes(object::IRObjectFile *Obj,
                             SmallPtrSet<GlobalValue *, 8> &Used,

@@ -235,7 +235,7 @@ static Error parseSegmentLoadCommand(
     if (S.nsects > std::numeric_limits<uint32_t>::max() / SectionSize ||
         S.nsects * SectionSize > Load.C.cmdsize - SegmentLoadSize)
       return malformedError("load command " + Twine(LoadCommandIndex) +
-                            " inconsistent cmdsize in " + CmdName + 
+                            " inconsistent cmdsize in " + CmdName +
                             " for the number of sections");
     for (unsigned J = 0; J < S.nsects; ++J) {
       const char *Sec = getSectionPtr(Obj, Load, J);
@@ -252,8 +252,8 @@ static Error parseSegmentLoadCommand(
       if (Obj->getHeader().filetype != MachO::MH_DYLIB_STUB &&
           Obj->getHeader().filetype != MachO::MH_DSYM &&
           s.flags != MachO::S_ZEROFILL &&
-          s.flags != MachO::S_THREAD_LOCAL_ZEROFILL &&
-	  S.fileoff == 0 && s.offset < SizeOfHeaders && s.size != 0)
+          s.flags != MachO::S_THREAD_LOCAL_ZEROFILL && S.fileoff == 0 &&
+          s.offset < SizeOfHeaders && s.size != 0)
         return malformedError("offset field of section " + Twine(J) + " in " +
                               CmdName + " command " + Twine(LoadCommandIndex) +
                               " not past the headers of the file");
@@ -278,25 +278,24 @@ static Error parseSegmentLoadCommand(
                               Twine(LoadCommandIndex) +
                               " greater than the segment");
       if (Obj->getHeader().filetype != MachO::MH_DYLIB_STUB &&
-          Obj->getHeader().filetype != MachO::MH_DSYM &&
-          s.size != 0 && s.addr < S.vmaddr)
-        return malformedError("addr field of section " +
-                              Twine(J) + " in " + CmdName + " command " +
-			      Twine(LoadCommandIndex) +
-			      " less than the segment's vmaddr");
+          Obj->getHeader().filetype != MachO::MH_DSYM && s.size != 0 &&
+          s.addr < S.vmaddr)
+        return malformedError("addr field of section " + Twine(J) + " in " +
+                              CmdName + " command " + Twine(LoadCommandIndex) +
+                              " less than the segment's vmaddr");
       BigSize = s.addr;
       BigSize += s.size;
       uint64_t BigEnd = S.vmaddr;
       BigEnd += S.vmsize;
       if (S.vmsize != 0 && s.size != 0 && BigSize > BigEnd)
-        return malformedError("addr field plus size of section " +
-                              Twine(J) + " in " + CmdName + " command " +
-			      Twine(LoadCommandIndex) + " greater than than "
+        return malformedError("addr field plus size of section " + Twine(J) +
+                              " in " + CmdName + " command " +
+                              Twine(LoadCommandIndex) +
+                              " greater than than "
                               "the segment's vmaddr plus vmsize");
       if (s.reloff > FileSize)
-        return malformedError("reloff field of section " +
-                              Twine(J) + " in " + CmdName + " command " +
-			      Twine(LoadCommandIndex) +
+        return malformedError("reloff field of section " + Twine(J) + " in " +
+                              CmdName + " command " + Twine(LoadCommandIndex) +
                               " extends past the end of the file");
       BigSize = s.nreloc;
       BigSize *= sizeof(struct MachO::relocation_info);
@@ -305,12 +304,12 @@ static Error parseSegmentLoadCommand(
         return malformedError("reloff field plus nreloc field times sizeof("
                               "struct relocation_info) of section " +
                               Twine(J) + " in " + CmdName + " command " +
-			      Twine(LoadCommandIndex) +
+                              Twine(LoadCommandIndex) +
                               " extends past the end of the file");
     }
     if (S.fileoff > FileSize)
       return malformedError("load command " + Twine(LoadCommandIndex) +
-                            " fileoff field in " + CmdName + 
+                            " fileoff field in " + CmdName +
                             " extends past the end of the file");
     uint64_t BigSize = S.fileoff;
     BigSize += S.filesize;
@@ -326,6 +325,55 @@ static Error parseSegmentLoadCommand(
   } else
     return SegOrErr.takeError();
 
+  return Error::success();
+}
+
+static Error checkSymtabCommand(const MachOObjectFile *Obj,
+                                const MachOObjectFile::LoadCommandInfo &Load,
+                                uint32_t LoadCommandIndex,
+                                const char **SymtabLoadCmd) {
+  if (Load.C.cmdsize < sizeof(MachO::symtab_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) +
+                          " LC_SYMTAB cmdsize too small");
+  if (*SymtabLoadCmd != nullptr)
+    return malformedError("more than one LC_SYMTAB command");
+  MachO::symtab_command Symtab =
+    getStruct<MachO::symtab_command>(Obj, Load.Ptr);
+  if (Symtab.cmdsize != sizeof(MachO::symtab_command))
+    return malformedError("LC_SYMTAB command " + Twine(LoadCommandIndex) +
+                          " has incorrect cmdsize");
+  uint64_t FileSize = Obj->getData().size();
+  if (Symtab.symoff > FileSize)
+    return malformedError("symoff field of LC_SYMTAB command " +
+                          Twine(LoadCommandIndex) + " extends past the end "
+                          "of the file");
+  uint64_t BigSize = Symtab.nsyms;
+  const char *struct_nlist_name;
+  if (Obj->is64Bit()) {
+    BigSize *= sizeof(MachO::nlist_64);
+    struct_nlist_name = "struct nlist_64";
+  } else {
+    BigSize *= sizeof(MachO::nlist);
+    struct_nlist_name = "struct nlist";
+  }
+  BigSize += Symtab.symoff;
+  if (BigSize > FileSize)
+    return malformedError("symoff field plus nsyms field times sizeof(" +
+                          Twine(struct_nlist_name) + ") of LC_SYMTAB command " +
+                          Twine(LoadCommandIndex) + " extends past the end "
+                          "of the file");
+  if (Symtab.stroff > FileSize)
+    return malformedError("stroff field of LC_SYMTAB command " +
+                          Twine(LoadCommandIndex) + " extends past the end "
+                          "of the file");
+  BigSize = Symtab.stroff;
+  BigSize += Symtab.strsize;
+  if (BigSize > FileSize)
+    return malformedError("stroff field plus strsize field of LC_SYMTAB "
+                          "command " + Twine(LoadCommandIndex) + " extends "
+                          "past the end of the file");
+
+  *SymtabLoadCmd = Load.Ptr;
   return Error::success();
 }
 
@@ -399,12 +447,8 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
     }
     LoadCommands.push_back(Load);
     if (Load.C.cmd == MachO::LC_SYMTAB) {
-      // Multiple symbol tables
-      if (SymtabLoadCmd) {
-        Err = malformedError("Multiple symbol tables");
+      if ((Err = checkSymtabCommand(this, Load, I, &SymtabLoadCmd)))
         return;
-      }
-      SymtabLoadCmd = Load.Ptr;
     } else if (Load.C.cmd == MachO::LC_DYSYMTAB) {
       // Multiple dynamic symbol tables
       if (DysymtabLoadCmd) {

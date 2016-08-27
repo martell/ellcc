@@ -426,6 +426,10 @@ static void SplitCriticalSideEffectEdges(Function &Fn) {
 }
 
 bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
+  // If we already selected that function, we do not need to run SDISel.
+  if (mf.getProperties().hasProperty(
+          MachineFunctionProperties::Property::Selected))
+    return false;
   // Do some sanity-checking on the command-line options.
   assert((!EnableFastISelVerbose || TM.Options.EnableFastISel) &&
          "-fast-isel-verbose requires -fast-isel");
@@ -3579,7 +3583,7 @@ void SelectionDAGISel::CannotYetSelect(SDNode *N) {
     unsigned iid =
       cast<ConstantSDNode>(N->getOperand(HasInputChain))->getZExtValue();
     if (iid < Intrinsic::num_intrinsics)
-      Msg << "intrinsic %" << Intrinsic::getName((Intrinsic::ID)iid);
+      Msg << "intrinsic %" << Intrinsic::getName((Intrinsic::ID)iid, None);
     else if (const TargetIntrinsicInfo *TII = TM.getIntrinsicInfo())
       Msg << "target intrinsic %" << TII->getName(iid);
     else

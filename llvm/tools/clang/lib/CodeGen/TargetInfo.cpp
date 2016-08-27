@@ -3651,7 +3651,17 @@ void WinX86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
 Address WinX86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                                     QualType Ty) const {
-  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, /*indirect*/ false,
+
+  bool IsIndirect = false;
+
+  // MS x64 ABI requirement: "Any argument that doesn't fit in 8 bytes, or is
+  // not 1, 2, 4, or 8 bytes, must be passed by reference."
+  if (isAggregateTypeForABI(Ty) || Ty->isMemberPointerType()) {
+    uint64_t Width = getContext().getTypeSize(Ty);
+    IsIndirect = Width > 64 || !llvm::isPowerOf2_64(Width);
+  }
+
+  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, IsIndirect,
                           CGF.getContext().getTypeInfoInChars(Ty),
                           CharUnits::fromQuantity(8),
                           /*allowHigherAlign*/ false);
@@ -7036,10 +7046,50 @@ public:
 
 namespace {
 
+class AMDGPUABIInfo final : public DefaultABIInfo {
+public:
+  explicit AMDGPUABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
+
+private:
+  ABIArgInfo classifyArgumentType(QualType Ty) const;
+
+  void computeInfo(CGFunctionInfo &FI) const override;
+};
+
+void AMDGPUABIInfo::computeInfo(CGFunctionInfo &FI) const {
+  if (!getCXXABI().classifyReturnType(FI))
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+
+  unsigned CC = FI.getCallingConvention();
+  for (auto &Arg : FI.arguments())
+    if (CC == llvm::CallingConv::AMDGPU_KERNEL)
+      Arg.info = classifyArgumentType(Arg.type);
+    else
+      Arg.info = DefaultABIInfo::classifyArgumentType(Arg.type);
+}
+
+/// \brief Classify argument of given type \p Ty.
+ABIArgInfo AMDGPUABIInfo::classifyArgumentType(QualType Ty) const {
+  llvm::StructType *StrTy = dyn_cast<llvm::StructType>(CGT.ConvertType(Ty));
+  if (!StrTy) {
+    return DefaultABIInfo::classifyArgumentType(Ty);
+  }
+
+  // Coerce single element structs to its element.
+  if (StrTy->getNumElements() == 1) {
+    return ABIArgInfo::getDirect();
+  }
+
+  // If we set CanBeFlattened to true, CodeGen will expand the struct to its
+  // individual elements, which confuses the Clover OpenCL backend; therefore we
+  // have to set it to false here. Other args of getDirect() are just defaults.
+  return ABIArgInfo::getDirect(nullptr, 0, nullptr, false);
+}
+
 class AMDGPUTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   AMDGPUTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+    : TargetCodeGenInfo(new AMDGPUABIInfo(CGT)) {}
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
   unsigned getOpenCLKernelCallingConv() const override;

@@ -93,8 +93,7 @@ set(TSAN_HEADERS
   rtl/tsan_vector.h)
 
 set(TSAN_RUNTIME_LIBRARIES)
-add_custom_target(tsan)
-set_target_properties(tsan PROPERTIES FOLDER "Compiler-RT Misc")
+add_compiler_rt_component(tsan)
 
 if(APPLE)
   set(TSAN_ASM_SOURCES rtl/tsan_rtl_amd64.S)
@@ -194,8 +193,6 @@ else()
                           clang_rt.tsan_cxx-${arch}-symbols)
   endforeach()
 endif()
-
-add_dependencies(compiler-rt tsan)
 
 # Make sure that non-platform-specific files don't include any system headers.
 # FreeBSD does not install a number of Clang-provided headers for the compiler

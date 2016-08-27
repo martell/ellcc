@@ -14,6 +14,7 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
+#include "llvm/MC/MCCodeView.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixupKindInfo.h"
@@ -180,6 +181,11 @@ public:
 
   void EmitSLEB128Value(const MCExpr *Value) override;
 
+  void EmitDTPRel32Value(const MCExpr *Value) override;
+  void EmitDTPRel64Value(const MCExpr *Value) override;
+  void EmitTPRel32Value(const MCExpr *Value) override;
+  void EmitTPRel64Value(const MCExpr *Value) override;
+
   void EmitGPRel64Value(const MCExpr *Value) override;
 
   void EmitGPRel32Value(const MCExpr *Value) override;
@@ -215,7 +221,7 @@ public:
                              StringRef FileName) override;
   MCSymbol *getDwarfLineTableSymbol(unsigned CUID) override;
 
-  unsigned EmitCVFileDirective(unsigned FileNo, StringRef Filename) override;
+  bool EmitCVFileDirective(unsigned FileNo, StringRef Filename) override;
   void EmitCVLocDirective(unsigned FunctionId, unsigned FileNo, unsigned Line,
                           unsigned Column, bool PrologueEnd, bool IsStmt,
                           StringRef FileName) override;
@@ -856,6 +862,34 @@ void MCAsmStreamer::EmitSLEB128Value(const MCExpr *Value) {
   EmitEOL();
 }
 
+void MCAsmStreamer::EmitDTPRel64Value(const MCExpr *Value) {
+  assert(MAI->getDTPRel64Directive() != nullptr);
+  OS << MAI->getDTPRel64Directive();
+  Value->print(OS, MAI);
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitDTPRel32Value(const MCExpr *Value) {
+  assert(MAI->getDTPRel32Directive() != nullptr);
+  OS << MAI->getDTPRel32Directive();
+  Value->print(OS, MAI);
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitTPRel64Value(const MCExpr *Value) {
+  assert(MAI->getTPRel64Directive() != nullptr);
+  OS << MAI->getTPRel64Directive();
+  Value->print(OS, MAI);
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitTPRel32Value(const MCExpr *Value) {
+  assert(MAI->getTPRel32Directive() != nullptr);
+  OS << MAI->getTPRel32Directive();
+  Value->print(OS, MAI);
+  EmitEOL();
+}
+
 void MCAsmStreamer::EmitGPRel64Value(const MCExpr *Value) {
   assert(MAI->getGPRel64Directive() != nullptr);
   OS << MAI->getGPRel64Directive();
@@ -1069,17 +1103,15 @@ MCSymbol *MCAsmStreamer::getDwarfLineTableSymbol(unsigned CUID) {
   return MCStreamer::getDwarfLineTableSymbol(0);
 }
 
-unsigned MCAsmStreamer::EmitCVFileDirective(unsigned FileNo,
-                                            StringRef Filename) {
-  if (!getContext().getCVFile(Filename, FileNo))
-    return 0;
+bool MCAsmStreamer::EmitCVFileDirective(unsigned FileNo, StringRef Filename) {
+  if (!getContext().getCVContext().addFile(FileNo, Filename))
+    return false;
 
   OS << "\t.cv_file\t" << FileNo << ' ';
 
   PrintQuotedString(Filename, OS);
   EmitEOL();
-
-  return FileNo;
+  return true;
 }
 
 void MCAsmStreamer::EmitCVLocDirective(unsigned FunctionId, unsigned FileNo,
@@ -1091,7 +1123,7 @@ void MCAsmStreamer::EmitCVLocDirective(unsigned FunctionId, unsigned FileNo,
   if (PrologueEnd)
     OS << " prologue_end";
 
-  unsigned OldIsStmt = getContext().getCurrentCVLoc().isStmt();
+  unsigned OldIsStmt = getContext().getCVContext().getCurrentCVLoc().isStmt();
   if (IsStmt != OldIsStmt) {
     OS << " is_stmt ";
 

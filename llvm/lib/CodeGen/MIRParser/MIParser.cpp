@@ -14,6 +14,7 @@
 #include "MIParser.h"
 #include "MILexer.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/AsmParser/SlotMapping.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -1522,7 +1523,7 @@ bool MIParser::parsePredicateOperand(MachineOperand &Dest) {
 
   lex();
   Dest = MachineOperand::CreatePredicate(Pred);
-  if (!expectAndConsume(MIToken::rparen))
+  if (expectAndConsume(MIToken::rparen))
     return error("predicate should be terminated by ')'.");
 
   return false;
