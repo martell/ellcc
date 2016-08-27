@@ -306,8 +306,11 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
     return 0;
   }
 
-  // For HTTP/2 proxy, we request :authority.
-  if (method_token != HTTP_CONNECT && get_config()->http2_proxy && !authority) {
+  auto faddr = handler_->get_upstream_addr();
+
+  // For HTTP/2 proxy, we require :authority.
+  if (method_token != HTTP_CONNECT && get_config()->http2_proxy &&
+      !faddr->alt_mode && !authority) {
     rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
     return 0;
   }
@@ -331,7 +334,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
     if (method_token == HTTP_OPTIONS &&
         path->value == StringRef::from_lit("*")) {
       // Server-wide OPTIONS request.  Path is empty.
-    } else if (get_config()->http2_proxy) {
+    } else if (get_config()->http2_proxy && !faddr->alt_mode) {
       req.path = path->value;
     } else {
       req.path = http2::rewrite_clean_path(downstream->get_block_allocator(),
@@ -1500,13 +1503,6 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
     return 0;
   }
 
-  if (downstream->get_assoc_stream_id() != -1) {
-    rv = adjust_pushed_stream_priority(downstream);
-    if (rv != 0) {
-      return -1;
-    }
-  }
-
   http2::copy_headers_to_nva_nocopy(nva, resp.fs.headers());
 
   if (!get_config()->http2_proxy) {
@@ -1597,68 +1593,6 @@ int Http2Upstream::on_downstream_body(Downstream *downstream,
     nghttp2_session_resume_data(session_, downstream->get_stream_id());
 
     downstream->ensure_upstream_wtimer();
-  }
-
-  return 0;
-}
-
-int Http2Upstream::adjust_pushed_stream_priority(Downstream *downstream) {
-  int rv;
-
-  // We only change pushed stream.  The pushed stream has
-  // assoc_stream_id which is not -1.
-  auto assoc_stream_id = downstream->get_assoc_stream_id();
-  auto stream_id = downstream->get_stream_id();
-
-  auto assoc_stream = nghttp2_session_find_stream(session_, assoc_stream_id);
-  auto stream = nghttp2_session_find_stream(session_, stream_id);
-
-  // By default, downstream depends on assoc_stream.  If its
-  // relationship is changed, then we don't change priority.
-  if (!assoc_stream || assoc_stream != nghttp2_stream_get_parent(stream)) {
-    return 0;
-  }
-
-  // We are going to make stream depend on dep_stream which is the
-  // parent stream of assoc_stream, if the content-type of stream
-  // indicates javascript or css.
-  auto dep_stream = nghttp2_stream_get_parent(assoc_stream);
-  if (!dep_stream) {
-    return 0;
-  }
-
-  const auto &resp = downstream->response();
-  auto ct = resp.fs.header(http2::HD_CONTENT_TYPE);
-  if (!ct) {
-    return 0;
-  }
-
-  if (!util::istarts_with_l(ct->value, "application/javascript") &&
-      !util::istarts_with_l(ct->value, "text/css") &&
-      // for polymer...
-      !util::istarts_with_l(ct->value, "text/html")) {
-    return 0;
-  }
-
-  auto dep_stream_id = nghttp2_stream_get_stream_id(dep_stream);
-  auto weight = nghttp2_stream_get_weight(assoc_stream);
-
-  nghttp2_priority_spec pri_spec;
-  nghttp2_priority_spec_init(&pri_spec, dep_stream_id, weight, 0);
-
-  rv = nghttp2_session_change_stream_priority(session_, stream_id, &pri_spec);
-  if (nghttp2_is_fatal(rv)) {
-    ULOG(FATAL, this) << "nghttp2_session_change_stream_priority() failed: "
-                      << nghttp2_strerror(rv);
-    return -1;
-  }
-
-  if (rv == 0) {
-    if (LOG_ENABLED(INFO)) {
-      ULOG(INFO, this) << "Changed pushed stream priority: pushed stream("
-                       << stream_id << ") now depends on stream("
-                       << dep_stream_id << ") with weight " << weight;
-    }
   }
 
   return 0;

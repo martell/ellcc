@@ -70,12 +70,12 @@ namespace {
 void connect_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
+  auto addr = dconn->get_addr();
 
-  if (LOG_ENABLED(INFO)) {
-    DCLOG(INFO, dconn) << "Connect time out";
-  }
+  DCLOG(WARN, dconn) << "Connect time out; addr="
+                     << util::to_numeric_addr(&addr->addr);
 
-  downstream_failure(dconn->get_addr());
+  downstream_failure(addr);
 
   auto downstream = dconn->get_downstream();
   auto upstream = downstream->get_upstream();
@@ -565,7 +565,7 @@ int HttpDownstreamConnection::end_upload_data() {
 
 namespace {
 void remove_from_pool(HttpDownstreamConnection *dconn) {
-  auto group = dconn->get_downstream_addr_group();
+  auto &group = dconn->get_downstream_addr_group();
   auto &shared_addr = group->shared_addr;
 
   if (shared_addr->affinity == AFFINITY_NONE) {
@@ -676,6 +676,11 @@ int htp_hdrs_completecb(http_parser *htp) {
     resp.http_major = 1;
     resp.http_minor = 1;
   }
+
+  auto dconn = downstream->get_downstream_connection();
+
+  downstream->set_downstream_addr_group(dconn->get_downstream_addr_group());
+  downstream->set_addr(dconn->get_addr());
 
   if (resp.fs.parse_content_length() != 0) {
     downstream->set_response_state(Downstream::MSG_BAD_HEADER);
@@ -989,6 +994,8 @@ int HttpDownstreamConnection::tls_handshake() {
 
   auto &connect_blocker = addr_->connect_blocker;
 
+  do_signal_write_ = &HttpDownstreamConnection::actual_signal_write;
+
   connect_blocker->on_success();
 
   ev_set_cb(&conn_.rt, timeoutcb);
@@ -1136,13 +1143,13 @@ int HttpDownstreamConnection::process_input(const uint8_t *data,
 int HttpDownstreamConnection::connected() {
   auto &connect_blocker = addr_->connect_blocker;
 
-  if (!util::check_socket_connected(conn_.fd)) {
+  auto sock_error = util::get_socket_error(conn_.fd);
+  if (sock_error != 0) {
     conn_.wlimit.stopw();
 
-    if (LOG_ENABLED(INFO)) {
-      DCLOG(INFO, this) << "Backend connect failed; addr="
-                        << util::to_numeric_addr(&addr_->addr);
-    }
+    DCLOG(WARN, this) << "Backend connect failed; addr="
+                      << util::to_numeric_addr(&addr_->addr)
+                      << ": errno=" << sock_error;
 
     downstream_failure(addr_);
 
@@ -1157,14 +1164,14 @@ int HttpDownstreamConnection::connected() {
 
   ev_set_cb(&conn_.wev, writecb);
 
-  do_signal_write_ = &HttpDownstreamConnection::actual_signal_write;
-
   if (conn_.tls.ssl) {
     do_read_ = &HttpDownstreamConnection::tls_handshake;
     do_write_ = &HttpDownstreamConnection::tls_handshake;
 
     return 0;
   }
+
+  do_signal_write_ = &HttpDownstreamConnection::actual_signal_write;
 
   connect_blocker->on_success();
 
@@ -1192,9 +1199,9 @@ int HttpDownstreamConnection::actual_signal_write() {
 
 int HttpDownstreamConnection::noop() { return 0; }
 
-DownstreamAddrGroup *
+const std::shared_ptr<DownstreamAddrGroup> &
 HttpDownstreamConnection::get_downstream_addr_group() const {
-  return group_.get();
+  return group_;
 }
 
 DownstreamAddr *HttpDownstreamConnection::get_addr() const { return addr_; }

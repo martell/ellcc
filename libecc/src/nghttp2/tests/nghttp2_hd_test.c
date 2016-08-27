@@ -1265,6 +1265,143 @@ void test_nghttp2_hd_public_api(void) {
   nghttp2_hd_deflate_del(deflater);
 }
 
+void test_nghttp2_hd_deflate_hd_vec(void) {
+  nghttp2_hd_deflater *deflater;
+  nghttp2_hd_inflater *inflater;
+  nghttp2_nv nva[] = {
+      MAKE_NV(":method", "PUT"), MAKE_NV(":scheme", "https"),
+      MAKE_NV(":authority", "localhost:3000"),
+      MAKE_NV(":path", "/usr/foo/alpha/bravo"),
+      MAKE_NV("content-type", "image/png"),
+      MAKE_NV("content-length", "1000000007"),
+  };
+  uint8_t buf[4096];
+  ssize_t blocklen;
+  nghttp2_mem *mem;
+  nghttp2_vec vec[256];
+  size_t buflen;
+  nghttp2_bufs bufs;
+  nva_out out;
+  size_t i;
+
+  mem = nghttp2_mem_default();
+
+  nva_out_init(&out);
+
+  nghttp2_hd_deflate_new(&deflater, 4096);
+  nghttp2_hd_inflate_new(&inflater);
+
+  buflen = nghttp2_hd_deflate_bound(deflater, nva, ARRLEN(nva));
+
+  vec[0].base = &buf[0];
+  vec[0].len = buflen / 2;
+  vec[1].base = &buf[buflen / 2];
+  vec[1].len = buflen / 2;
+
+  blocklen = nghttp2_hd_deflate_hd_vec(deflater, vec, 2, nva, ARRLEN(nva));
+
+  CU_ASSERT(blocklen > 0);
+
+  nghttp2_bufs_wrap_init(&bufs, buf, (size_t)blocklen, mem);
+  bufs.head->buf.last += blocklen;
+
+  CU_ASSERT(blocklen == inflate_hd(inflater, &out, &bufs, 0, mem));
+
+  CU_ASSERT(ARRLEN(nva) == out.nvlen);
+  assert_nv_equal(nva, out.nva, ARRLEN(nva), mem);
+
+  nghttp2_bufs_wrap_free(&bufs);
+
+  nghttp2_hd_inflate_del(inflater);
+  nghttp2_hd_deflate_del(deflater);
+  nva_out_reset(&out, mem);
+
+  /* check the case when veclen is 0 */
+  nghttp2_hd_deflate_new(&deflater, 4096);
+  nghttp2_hd_inflate_new(&inflater);
+
+  blocklen = nghttp2_hd_deflate_hd_vec(deflater, NULL, 0, nva, ARRLEN(nva));
+
+  CU_ASSERT(NGHTTP2_ERR_INSUFF_BUFSIZE == blocklen);
+
+  nghttp2_hd_inflate_del(inflater);
+  nghttp2_hd_deflate_del(deflater);
+
+  /* check the case when chunk length is 0 */
+  vec[0].base = NULL;
+  vec[0].len = 0;
+  vec[1].base = NULL;
+  vec[1].len = 0;
+
+  nghttp2_hd_deflate_new(&deflater, 4096);
+  nghttp2_hd_inflate_new(&inflater);
+
+  blocklen = nghttp2_hd_deflate_hd_vec(deflater, vec, 2, nva, ARRLEN(nva));
+
+  CU_ASSERT(NGHTTP2_ERR_INSUFF_BUFSIZE == blocklen);
+
+  nghttp2_hd_inflate_del(inflater);
+  nghttp2_hd_deflate_del(deflater);
+
+  /* check the case where chunk size differs in each chunk */
+  nghttp2_hd_deflate_new(&deflater, 4096);
+  nghttp2_hd_inflate_new(&inflater);
+
+  buflen = nghttp2_hd_deflate_bound(deflater, nva, ARRLEN(nva));
+
+  vec[0].base = &buf[0];
+  vec[0].len = buflen / 2;
+  vec[1].base = &buf[buflen / 2];
+  vec[1].len = (buflen / 2) + 1;
+
+  blocklen = nghttp2_hd_deflate_hd_vec(deflater, vec, 2, nva, ARRLEN(nva));
+
+  CU_ASSERT(blocklen > 0);
+
+  nghttp2_bufs_wrap_init(&bufs, buf, (size_t)blocklen, mem);
+  bufs.head->buf.last += blocklen;
+
+  CU_ASSERT(blocklen == inflate_hd(inflater, &out, &bufs, 0, mem));
+  CU_ASSERT(ARRLEN(nva) == out.nvlen);
+  assert_nv_equal(nva, out.nva, ARRLEN(nva), mem);
+
+  nghttp2_bufs_wrap_free(&bufs);
+
+  nghttp2_hd_inflate_del(inflater);
+  nghttp2_hd_deflate_del(deflater);
+  nva_out_reset(&out, mem);
+
+  /* check the case where chunk size is 1 */
+  nghttp2_hd_deflate_new(&deflater, 4096);
+  nghttp2_hd_inflate_new(&inflater);
+
+  buflen = nghttp2_hd_deflate_bound(deflater, nva, ARRLEN(nva));
+
+  assert(buflen <= ARRLEN(vec));
+
+  for (i = 0; i < buflen; ++i) {
+    vec[i].base = &buf[i];
+    vec[i].len = 1;
+  }
+
+  blocklen = nghttp2_hd_deflate_hd_vec(deflater, vec, buflen, nva, ARRLEN(nva));
+
+  CU_ASSERT(blocklen > 0);
+
+  nghttp2_bufs_wrap_init(&bufs, buf, (size_t)blocklen, mem);
+  bufs.head->buf.last += blocklen;
+
+  CU_ASSERT(blocklen == inflate_hd(inflater, &out, &bufs, 0, mem));
+  CU_ASSERT(ARRLEN(nva) == out.nvlen);
+  assert_nv_equal(nva, out.nva, ARRLEN(nva), mem);
+
+  nghttp2_bufs_wrap_free(&bufs);
+
+  nghttp2_hd_inflate_del(inflater);
+  nghttp2_hd_deflate_del(deflater);
+  nva_out_reset(&out, mem);
+}
+
 static size_t encode_length(uint8_t *buf, uint64_t n, size_t prefix) {
   size_t k = (size_t)((1 << prefix) - 1);
   size_t len = 0;

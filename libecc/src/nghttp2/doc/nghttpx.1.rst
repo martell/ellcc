@@ -847,6 +847,10 @@ Logging
     * $ssl_session_id: session ID for SSL/TLS connection.
     * $ssl_session_reused:  "r"   if  SSL/TLS   session  was
       reused.  Otherwise, "."
+    * $backend_host:  backend  host   used  to  fulfill  the
+      request.  "-" if backend host is not available.
+    * $backend_port:  backend  port   used  to  fulfill  the
+      request.  "-" if backend host is not available.
 
     The  variable  can  be  enclosed  by  "{"  and  "}"  for
     disambiguation (e.g., ${remote_addr}).
@@ -1163,6 +1167,9 @@ SIGQUIT
   accepting connection.  After all connections are handled, nghttpx
   exits.
 
+SIGHUP
+  Reload configuration file given in :option:`--conf`.
+
 SIGUSR1
   Reopen log files.
 
@@ -1170,7 +1177,11 @@ SIGUSR2
   Fork and execute nghttpx.  It will execute the binary in the same
   path with same command-line arguments and environment variables.
   After new process comes up, sending SIGQUIT to the original process
-  to perform hot swapping.
+  to perform hot swapping.  The difference between SIGUSR2 + SIGQUIT
+  and SIGHUP is that former is usually used to execute new binary, and
+  the master process is newly spawned.  On the other hand, the latter
+  just reloads configuration file, and the same master process
+  continues to exist.
 
 .. note::
 

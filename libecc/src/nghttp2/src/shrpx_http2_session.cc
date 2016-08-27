@@ -90,7 +90,10 @@ void connchk_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 namespace {
 void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto http2session = static_cast<Http2Session *>(w->data);
-  SSLOG(INFO, http2session) << "SETTINGS timeout";
+
+  if (LOG_ENABLED(INFO)) {
+    SSLOG(INFO, http2session) << "SETTINGS timeout";
+  }
 
   downstream_failure(http2session->get_addr());
 
@@ -976,6 +979,10 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
   resp.http_major = 2;
   resp.http_minor = 0;
 
+  downstream->set_downstream_addr_group(
+      http2session->get_downstream_addr_group());
+  downstream->set_addr(http2session->get_addr());
+
   if (LOG_ENABLED(INFO)) {
     std::stringstream ss;
     for (auto &nv : nva) {
@@ -1799,11 +1806,11 @@ int Http2Session::read_noop(const uint8_t *data, size_t datalen) { return 0; }
 int Http2Session::write_noop() { return 0; }
 
 int Http2Session::connected() {
-  if (!util::check_socket_connected(conn_.fd)) {
-    if (LOG_ENABLED(INFO)) {
-      SSLOG(INFO, this) << "Backend connect failed; addr="
-                        << util::to_numeric_addr(&addr_->addr);
-    }
+  auto sock_error = util::get_socket_error(conn_.fd);
+  if (sock_error != 0) {
+    SSLOG(WARN, this) << "Backend connect failed; addr="
+                      << util::to_numeric_addr(&addr_->addr)
+                      << ": errno=" << sock_error;
 
     downstream_failure(addr_);
 
@@ -2126,8 +2133,9 @@ bool Http2Session::max_concurrency_reached(size_t extra) const {
                  session_, NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS);
 }
 
-DownstreamAddrGroup *Http2Session::get_downstream_addr_group() const {
-  return group_.get();
+const std::shared_ptr<DownstreamAddrGroup> &
+Http2Session::get_downstream_addr_group() const {
+  return group_;
 }
 
 void Http2Session::add_to_avail_freelist() {
@@ -2204,6 +2212,9 @@ void Http2Session::on_timeout() {
     break;
   }
   case CONNECTING: {
+    SSLOG(WARN, this) << "Connect time out; addr="
+                      << util::to_numeric_addr(&addr_->addr);
+
     downstream_failure(addr_);
     break;
   }

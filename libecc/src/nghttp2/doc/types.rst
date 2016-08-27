@@ -829,6 +829,54 @@ Types (structs, unions and typedefs)
     the function to free memory is the one belongs to the mem
     parameter.  As long as this free function alives, *name* and
     *value* can live after *session* was destroyed.
+.. type:: typedef int (*nghttp2_on_invalid_header_callback)( nghttp2_session *session, const nghttp2_frame *frame, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen, uint8_t flags, void *user_data)
+
+    
+    Callback function invoked when a invalid header name/value pair is
+    received for the *frame*.
+    
+    The parameter and behaviour are similar to
+    :type:`nghttp2_on_header_callback`.  The difference is that this
+    callback is only invoked when a invalid header name/value pair is
+    received which is silently ignored if this callback is not set.
+    Only invalid regular header field are passed to this callback.  In
+    other words, invalid pseudo header field is not passed to this
+    callback.  Also header fields which includes upper cased latter are
+    also treated as error without passing them to this callback.
+    
+    This callback is only considered if HTTP messaging validation is
+    turned on (which is on by default, see
+    `nghttp2_option_set_no_http_messaging()`).
+    
+    With this callback, application inspects the incoming invalid
+    field, and it also can reset stream from this callback by returning
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, or using
+    `nghttp2_submit_rst_stream()` directly with the error code of
+    choice.
+.. type:: typedef int (*nghttp2_on_invalid_header_callback2)( nghttp2_session *session, const nghttp2_frame *frame, nghttp2_rcbuf *name, nghttp2_rcbuf *value, uint8_t flags, void *user_data)
+
+    
+    Callback function invoked when a invalid header name/value pair is
+    received for the *frame*.
+    
+    The parameter and behaviour are similar to
+    :type:`nghttp2_on_header_callback2`.  The difference is that this
+    callback is only invoked when a invalid header name/value pair is
+    received which is silently ignored if this callback is not set.
+    Only invalid regular header field are passed to this callback.  In
+    other words, invalid pseudo header field is not passed to this
+    callback.  Also header fields which includes upper cased latter are
+    also treated as error without passing them to this callback.
+    
+    This callback is only considered if HTTP messaging validation is
+    turned on (which is on by default, see
+    `nghttp2_option_set_no_http_messaging()`).
+    
+    With this callback, application inspects the incoming invalid
+    field, and it also can reset stream from this callback by returning
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, or using
+    `nghttp2_submit_rst_stream()` directly with the error code of
+    choice.
 .. type:: typedef ssize_t (*nghttp2_select_padding_callback)(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payloadlen, void *user_data)
 
     

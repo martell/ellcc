@@ -64,6 +64,7 @@ struct Config {
 
   Headers headers;
   Headers trailer;
+  std::vector<int32_t> weight;
   std::string certfile;
   std::string keyfile;
   std::string datafile;
@@ -74,7 +75,6 @@ struct Config {
   size_t padding;
   size_t max_concurrent_streams;
   ssize_t peer_max_concurrent_streams;
-  int32_t weight;
   int multiply;
   // milliseconds
   ev_tstamp timeout;

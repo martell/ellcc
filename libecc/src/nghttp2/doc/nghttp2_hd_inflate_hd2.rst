@@ -22,10 +22,14 @@ Synopsis
     
     The application should call this function repeatedly until the
     ``(*inflate_flags) & NGHTTP2_HD_INFLATE_FINAL`` is nonzero and
-    return value is non-negative.  This means the all input values are
-    processed successfully.  Then the application must call
-    `nghttp2_hd_inflate_end_headers()` to prepare for the next header
-    block input.
+    return value is non-negative.  If that happens, all given input
+    data (*inlen* bytes) are processed successfully.  Then the
+    application must call `nghttp2_hd_inflate_end_headers()` to prepare
+    for the next header block input.
+    
+    In other words, if *in_final* is nonzero, and this function returns
+    *inlen*, you can assert that :macro:`NGHTTP2_HD_INFLATE_FINAL` is
+    set in *\*inflate_flags*.
     
     The caller can feed complete compressed header block.  It also can
     feed it in several chunks.  The caller must set *in_final* to

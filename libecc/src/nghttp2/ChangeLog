@@ -1,205 +1,767 @@
-commit aa0023b3c1d7761fd6b2052793f75ad28961d0f5 (HEAD, tag: v1.13.0, origin/master, origin/HEAD, master)
+commit 8103f43b650667029e60866cc8e1bfd2a859fa7c (HEAD, tag: v1.14.0, origin/master, origin/HEAD, master)
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-21
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-21
+CommitDate: 2016-08-25
+
+    doc: Add missing APIDOCS entry
+
+commit 1c8a672a8d3086ab3ca0664895338e66fdbf3aec
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-25
 
     Update man pages
 
-commit 3bdc143474037c26c85e66abce1b66b3f6ca4a06
+commit 4749e66c67d66e409238fe6b86953a3d93650593
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-21
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-21
+CommitDate: 2016-08-25
 
-    Bump up version number to 1.13.0, LT revision to 23:0:9
+    nghttpx: Disallow copying Config
 
-commit 8b50cc0ecebd4cafa39f6cbbd7fa6ff5bd6844fa
+commit 25ea41972a0fa8d04e65115fa8e9f68adbe2da48
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-21
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-21
+CommitDate: 2016-08-25
 
-    Update doc
+    Bump up version number to 1.14.0, LT revision to 24:0:10
 
-commit a24c94e92ab303a382f65b976b27a072ca85eea6
+commit 7d661889108cbc1c1d9d96452c04ceb452b39e8a
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-18
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-18
+CommitDate: 2016-08-25
 
-    Update doc
-
-commit a00442bee64a720665b6271b174908fe0386c9ca
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-17
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-17
-
-    Work with Android NDK r12b
+    Add author.py
     
-    clang + libc++ does not work, it still requires libc++_shared.so
-    runtime even if -lstdc++ is used, which supposed to link with static
-    version of libc++.
+    This script prints out the commit author from `git log` output.  Used
+    to update AUTHORS file.
 
-commit f857b6398630f2588e68b0b7b520feaf8b784a31
+commit 979c99eaea90631e12045a87d07767cfd203aab2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-16
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-16
+CommitDate: 2016-08-25
 
-    Fix warning with Sphinx 1.4
+    Update AUTHORS
 
-commit cbd72da9a1ad030c5926a2dbb2eb55e198c507eb
+commit cf7f87c2adb9118ad3409b02b9590f2c58cb22d2
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-16
+AuthorDate: 2016-08-25
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-16
+CommitDate: 2016-08-25
+
+    nghttpx: Log error code from getsockopt(SO_ERROR) on first write event
+
+commit bd0c1edaa6ec1d8f51daa6b92ef102602e74a98f
+Merge: 8f47b68 c7ef021
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-24
+
+    Merge branch 'weliu-master'
+
+commit c7ef021b4be1e55840f2945e09bc4b01cbd3c825
+Merge: 8f47b68 00c80a1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-24
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit 00c80a15c09c168d44b4d4560f301f8cdd3f77ee
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-23
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-23
+
+    lib: Make emit_header() return void since it always succeed.
+
+commit 8f47b68a9526f4f2be2f31e73112f49b59359d97
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-23
+
+    nghttpx: Set do_signal_write_ when TLS handshake was completed
+
+commit d9139fc286a291ebc71b988a3c7a8124085a79c6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-22
+
+    asio: Fix reserved size
+
+commit 62e1d1c9527884647bd193257afba490ed320cfc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-21
+
+    Fix typo
+
+commit 6ae58cc22e63559514f164fe051dcee9112c8236
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-21
+
+    Document how to report vulnerability
+
+commit 874ef1ac546e112eecafb2ba52db7632252f2064
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-21
+
+    Add License section in README
+
+commit 5f654609447074902d19f15e7ffc1e0890677df5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-20
+
+    nghttpx: Don't change pushed stream's priority
+    
+    There is a discussion in httpbis mailing list which argues that
+    dependency tree is for client, and changing it in server side is not
+    what client expects.
+    https://lists.w3.org/Archives/Public/ietf-http-wg/2016JulSep/0416.html
+    
+    Currently, we make pushed stream depend on the parent stream of
+    associated stream (that is main HTML in most of the cases), so that
+    associated stream and pushed stream become siblings.  In this case, we
+    also observed that these resources complete each other to get its
+    parent weight.  This means that the delivery of associated stream is
+    delayed by pushed streams.
+    
+    So at this moment, it is not a good idea to change pushed stream
+    priority in a way we do currently.
+
+commit 41b2745dade2761e87b2056df21bfd121e1c5df5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-19
+
+    nghttpx: Log backend connection failure in WARN level
+
+commit 30f9f9ef8755ee1f109c51134a0d1c72e6f8bc8b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-19
+
+    nghttpx: Guard with LOG_ENABLED(INFO)
+
+commit 4807e71b7dc1ba5ce8846e2492d46096b6f0b580
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-18
+
+    nghttpx: Fix bug that api and healthmon params do not work with http2 proxy
+
+commit 09c647fd1b07064d341cd923ab48278e35f1075b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-18
+
+    Update doc
+
+commit d0fea96e6959131e3bbcbaa499521a0e1cee2a21
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-18
+
+    Allow nonuniform buffer size in nghttp2_hd_deflate_hd_vec()
+
+commit b8883101d32be9990e001d2a117005d706e3602d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-18
+
+    deflatehd: Call nghttp2_hd_deflate_change_table_size only if table size is changed from default
+
+commit 508c88f6599f80fb29cb029ef3698025c697e774
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Add test for nghttp2_hd_deflate_hd_vec with 1 byte chunk
+
+commit 40d217beb170cd80faddbcc9059a9501e28737d6
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Remove bufs_avail
+
+commit e36caef0063508aa207391907b62c4ab98a54919
+Merge: afdd51f 9b86438
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Merge branch 'hpack-vec'
+
+commit 9b864380a5d51bdce19a9e2850899ef60dc51847
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Use nghttp2_vec in nghttp2_hd_deflate_hd_vec
+    
+    This change is for the future enhancement where we loose the
+    requirement about the chunk size for each buffer.
+
+commit 0e1d0400d86a710a698a4ddcf4d5c95bafcbb426
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Use whole chunk when performing huffman encoding
+
+commit afdd51ff159bdaa6a54d5220421b3ddc981bc101
+Merge: 4f02b19 488c358
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    Merge branch 'weliu-master'
+
+commit 488c3588d95c120d281f253db5ac4ae5d859f13f
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-17
+
+    lib: Malloc nghttp2_buf_chain array once in nghttp2_bufs_wrap_init2()
+    to simplify logic
+
+commit 4f02b191d1b56dbc4a5242704d2e56aa011a6656
+Merge: 8579b8a 8acef27
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-16
+
+    Merge branch 'weliu-master'
+
+commit 8acef2711ba2f8e98dfdb395538ebd607fabfe37
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-16
+
+    Use pointer-to-pointer idiom to construct linked list
+
+commit c6111b3792d3beb76bd7266965dc40c476276839
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-16
+
+    Add test for nghttp2_hd_deflate_hd_vec
+
+commit c4d36aeff7d88b4bfff087e61b120bdb0c64a46b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-16
+
+    Make parameters const pointer
+
+commit f50596e355ce9321e01a36e380e798209d6e31ec
+Merge: 8579b8a abf81b5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-16
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit abf81b5bb75ebc2ae8fef7a2b3637bfe4dc66f1b
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-15
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-15
+
+    lib: Add nghttp2_hd_deflate_hd_vec() deflate API to support multiple bufs input
+
+commit 8579b8a968226e7aa23def52effe0e968c9aedb5
+Merge: 8df2c35 271f7fb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-15
+Commit:     GitHub <noreply@github.com>
+CommitDate: 2016-08-15
+
+    Merge pull request #646 from nghttp2/invalid-header-cb
+    
+    Add nghttp2_on_invalid_header_callback
+
+commit 8df2c357d911431fd53e4b03f8aaf150cde815b2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-11
+
+    nghttp: Adjust weight according to Firefox stable
+
+commit 4c381611a117719278a75ca5aaa081f1b094c40a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-11
+
+    More doc about HPACK decoding API
+
+commit 7dfd6ab1ad93481e3dc7bc70712d20b9944fb683
+Merge: 4eb7f98 0c7d48d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-11
+
+    Merge branch 'weliu-master'
+
+commit 0c7d48dedeee9f44786abb028b84a22e9d4c1b2e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-11
+
+    Make result type of hd_inflate_commit_indexed void
+
+commit 4639a66e5352ef9744d9a9b54edefa9bf5e785ce
+Merge: 4eb7f98 65cc2f0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-11
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-11
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit 65cc2f051581b5bf5727a47fc394a0a8e6e78a5d
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-11
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-11
+
+    lib: since hd_inflate_commit_indexed() always return 0, remove the
+    return value check in nghttp2_hd_inflate_hd_nv().
+
+commit 4eb7f98449df449d06080dd34d2ddbedb2c3ecea
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-10
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-10
+
+    Remove old doc about differential encoding in HPACK
+
+commit 2d8059a9a5988cd2eca47803eb2edea7f56aa6dd
+Merge: e011945 a3d22b6
+Author:     Wenfeng Liu <266lwf@163.com>
+AuthorDate: 2016-08-10
+Commit:     GitHub <noreply@github.com>
+CommitDate: 2016-08-10
+
+    Merge pull request #1 from nghttp2/master
+    
+    Merge from nghttp2/nghttp2
+
+commit a3d22b6db9614465ed846e78eff1908c3d82612f
+Merge: 60cae32 3f31424
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-09
+
+    Merge branch 'weliu-master'
+
+commit 3f31424ee25b6c0953224c5aa089608ed6b988b2
+Merge: 60cae32 e011945
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-09
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit e0119452a3ee3f7f71144a3367c07f37a5e8d997
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-09
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-09
+
+    Use memeq() instead of lstreq() in lookup_token().
+
+commit 60cae325bc2c0fead49a2582635b18561452423f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-08
+
+    Search dynamic table first for optimization
+
+commit 16c46114dc724278beaa6d59462f8396f35fa4a9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-07
+
+    More strict stream state handling
+    
+    Previously, in server side, we used closed streams to detect the error
+    that the misbehaving client sends a frame on the incoming stream it
+    explicitly closed.  With this commit, we make a further step, and
+    detect one more error case.  Since we retain closed streams as long as
+    the sum of its size and the number of opened streams are equal or less
+    than max concurrent streams, we can safely say that if we get a frame
+    which is sent on the stream that is not found in either closed or
+    opened stream, it is already closed or has not existed.  Then we can
+    send GOAWAY.
+    
+    The previous code shrinks closed streams when we closed another
+    stream, but now it is removed.  It is enough to adjust closed streams
+    when new incoming stream is created.
+    
+    While creating this commit, we noticed that
+    NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS is defined as INT32_MAX.  But
+    since SETTINGS can contain value up to UINT32_MAX, it is not enough.
+    However, since the stream ID space is limited to INT32_MAX, it is high
+    enough.  We could keep this value, but this time we deprecate
+    NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS macro.  While it is in public
+    header, the effect of deprecating it is negligible because of the
+    reason we wrote above, and usually application sets much smaller value
+    (say, 100) as SETTINGS_MAX_CONCURRENT_STREAMS.
+
+commit 862175b21cac0bf2bbe2fe789360222427b55e93
+Merge: ad3d43b e7e3d77
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-06
+
+    Merge branch 'weliu-master'
+
+commit e7e3d77c5323db022abdeec76e6b466aabfd6154
+Merge: ad3d43b af9aeee
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-06
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit af9aeee7525dc30121e29176671751d506520af8
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-05
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-05
+
+    1. Modify genlibtokenlookup.py to remove redundant header comparisons.
+    2. Remove inline qualifier of lookup_token() in genlibtokenlookup.py.
+
+commit ad3d43b8be9a14965afb1fe9b7c2f637e995972d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-05
+
+    nghttpx: Add access log variable for backend host and port
+    
+    Use $backend_host and $backend_port.  $backend_host is backend host
+    name given in --backend option.  It could be a path to UNIX domain
+    socket.
+
+commit 210a5c4f017e1d2c9f81fdbf909e1097f7e8eb31
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-04
+
+    nghttpx: Use copy instead of const reference of backend group
+
+commit d8822f2a8e0b576b7a77ebe07b5ad857050e2d70
+Merge: 2f106dc b7a72b1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-04
+
+    Merge branch 'weliu-master'
+
+commit b7a72b1e5a569c3687033563369c26449979d430
+Merge: 2f106dc f619286
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-04
+
+    Merge branch 'master' of https://github.com/weliu/nghttp2 into weliu-master
+
+commit 2f106dc96b6d93c2a14db1ada932f96a7b6b6818
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-04
+
+    Fix wrong tree operation to avoid cycle
+    
+    https://tools.ietf.org/html/rfc7540#section-5.3.3 explains how to
+    transform dependency tree to avoid circular dependency.  Previously,
+    we wrongly always moved the dependent stream under the root stream.
+    The correct destination is the parent stream of the stream to
+    reprioritize.  This commit fixes this bug.
+
+commit f619286ca322760ff86ddcc64108862580c143b2
+Author:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+AuthorDate: 2016-08-04
+Commit:     Wenfeng Liu <liuwf@arraynetworks.com.cn>
+CommitDate: 2016-08-04
+
+    Make get_max_index() return the max index in frame, so we don't need
+    to do extra calculation
+
+commit 271f7fbbb6e12ce6b6fedc32f2501b889a5f7d3b (origin/invalid-header-cb)
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-04
+
+    Add nghttp2_on_invalid_header_callback
+    
+    nghttp2_on_invalid_header_callback is similar to
+    nghttp2_on_header_callback, but the former is only called when the
+    invalid header field is received which is silently ignored when the
+    callback is not set.  With this callback, application inspects the
+    incoming invalid field, and it also can reset stream from this
+    callback by returning NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE, or using
+    nghttp2_submit_rst_stream() directly with the error code of choice.
+    
+    We also added nghttp2_on_invalid_header_callback2, which uses
+    reference counted header fields.
+
+commit 318235db3383af05fb0efefcad8e1b688628e32b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-03
+
+    Log frame's stream ID for header debug logging
+    
+    Previously, for PUSH_PROMISE frame, we logged its promised stream ID.
+    But it is saner to use just frame's ID in this context.
+
+commit 8ab079ccc293f484d7fa3a247f8201bb8975366e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-03
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-03
+
+    Call error callback when invalid header field is received and ignored
+    
+    We have a code to call error callback when invalid header is received
+    and it is treated as stream error.  But we didn't if the incoming
+    header is invalid, but just ignored.  This generosity is required to
+    handle public Internet connections especially when nghttp2 is used as
+    forward proxy.
+
+commit a4d2104c3c23debb9cf8cb374db91535ae8da589
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-08-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-08-02
+
+    Revert "Output availability of ALPN in configure summary"
+    
+    This reverts commit f4a4abd180485c9c62a7301b1330ab4db087709c.
+
+commit 44672e437a2f0afb0e9e5695e9f894dbac7b1efc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-31
 
     Update man pages
 
-commit 7506a9317924c3bf3d30d7e2317cd75c1c151c71
+commit fb3d6f68a801866a0d049a53c0db4d086a8a4bf6
+Merge: f4a4abd d7c9015
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-16
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-16
+CommitDate: 2016-07-31
 
-    doc: Fix Sphinx build warnings
+    Merge branch 'nghttpx-reload'
 
-commit 53e1623ab3121ed4723024297bc669594fe87a75
+commit d7c9015d8b72dd0803fbdfdd5b1f24130c2e1eef
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-16
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-16
-
-    Update doc
-    
-    It was markdown, we should use reST.
-
-commit 0cb0bdabecf0c5aa82f5264327618bab716de4fd
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-13
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-13
+CommitDate: 2016-07-31
 
     Update doc
 
-commit ed8d5f04bb0fface95cf527ef2da3dbf8a69d967
+commit 54f640f3e120dcf53c8194bc84898e14c4922a83
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-10
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-10
+CommitDate: 2016-07-31
 
-    Update doc
+    nghttpx: Update doc
 
-commit 33153010c5080ef731a7b1f4c069c351e43308cb
+commit e2906025c86aeaed9ef02c3c54a56f2bb209711f
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-08
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-08
+CommitDate: 2016-07-31
 
-    nghttpx: Retry memcached connection
+    nghttpx: Don't exit from save_pid and set_alpn_prefs
+
+commit 9a8e9815c9fae4fd30588750dd1f8ef23fb8aae5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-31
+
+    nghttpx: Cleanup
+
+commit 8c3e864989ae6773e960206332f5d6326a7456d7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-31
+
+    nghttpx: Define ~Config for automatic clean up with std::unique_ptr
     
-    Previously, we didn't retry request on connection failure.  Sometimes
-    we hit the edge case where connection is about to lost just when we
-    write request.  To avoid this situation, we now retry request to
-    failed attempt.  We also add ConnectBlocker to MemcachedConnection not
-    to attempt to connect to memcached if connection could not be made
-    previously.
+    Now config global is backed with std::unique_ptr.  configuration
+    swapping dance is now a bit cleaner, but YMMV.
 
-commit 2c500b62fd8634613b14f85357a173c89fd90bad
+commit 22570b7260fafc9f7da8f057336d219cc5adb495
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-07
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-07
+CommitDate: 2016-07-31
 
-    Update doc
-
-commit 30f26a2b9d69c0629b339cc215891268b801f089
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-06
-
-    nghttpx: Explicitly cast to uint32_t for hash calculation
-
-commit ca39c71ac363addbfe349ddf5f95cdee30c54909
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-06
-
-    examples: Fix compile error with OpenSSL v1.1.0-beta2
-
-commit 2bbe4422d2c694b6cd50976352b5f1347bebe3d1
-Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-06
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-06
-
-    nghttpx: Use consistent hashing for client IP based session affinity
+    nghttpx: Close fd when error occurred in reload operation
     
-    We use technique described in https://github.com/RJ/ketama
+    This commit also fixes the bug that old configuration is still used
+    for worker process.  The another bug fix is that inherited, but not
+    used fd is not closed in worker process.  That makes reloading next
+    configuration fail if it contains the address which are leaked into
+    worker process.
 
-commit 5d3535126ed9ed21c935f8006cd49c6052a6110e
-Author:     Tomasz Buchert <tomasz@debian.org>
-AuthorDate: 2016-07-03
-Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-05
-
-    Fix FTBFS on armel by explicitly including the <mutex> header.
-
-commit d2addbc1ed5433408d720c7c769b961b7c2041be
+commit fb49182c29ac708275a3584b1309e6898e9e3b76
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-02
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-02
+CommitDate: 2016-07-31
 
-    Add test for canceling PUSH_PROMISE
+    nghttpx: Move original_argv, argv, argc, and cmdcfgs to StartupConfig
 
-commit 110ca3131a8cab979bfff0a4febee8a3bb370939
+commit b9b648e0ed9a2a68478bda366f6b3fde520b4c67
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-07-02
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-07-02
+CommitDate: 2016-07-31
 
-    Cancel frame transmission from before_frame_send_callback
+    nghttpx: Remove last_worker_pid from Config
     
-    We define the behaviour when NGHTTP2_ERR_CANCEL is returned from
-    before_frame_send_callback.  That is to cancel the frame passed to the
-    callback.
+    The last_worker_pid is known by inspecting the last entry of
+    worker_processes.
 
-commit fd7d3c57d7ecd75567c3c71d7deabc2c2e3b9b7f
+commit 494775a25df46d2a037e4c12dea565133a703463
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-06-27
+AuthorDate: 2016-07-31
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-06-27
+CommitDate: 2016-07-31
 
-    nghttpx: Use faster version of power
+    nghttpx: Rename SignalServer with WorkerProcess
+
+commit 1214f9e23b41079e573939e850472c99de51c153
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-31
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-31
+
+    nghttpx: Reload configuration with SIGHUP
     
-    In our use case, x and y is quite small, and there is no chance for
-    overflow, and y is always integer.
+    This commit implements configuration reloading with SIGHUP.
+    There are rough edges left:
+    
+    * Rename SignalServer with more meaningful name, say, WorkerProcess.
+    * We should introduce global configuration object which is not
+      affected by configuration reloading.  It should hold cmdcfgs, argc,
+      argv, and last worker PID.
+    * We should close the listener file descriptor when some operation was
+      failed after that.
 
-commit 179561e4be3850abf870047c51e4d6eadb0a12ab
+commit a54cda22abc4e235cc4e67f1588b74e5c33912e5
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-06-27
+AuthorDate: 2016-07-30
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-06-27
+CommitDate: 2016-07-31
 
-    nghttpx: Cast to double to fix build with gcc 4.8 on Solaris 11
+    nghttpx: Do creation of InheritedAddr in a dedicated function for reuse
 
-commit 903e0077aa453f2d14ef8bcba4851901cb15feb9
+commit f4a4abd180485c9c62a7301b1330ab4db087709c
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-06-27
+AuthorDate: 2016-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-06-27
+CommitDate: 2016-07-29
 
-    nghttpx: Fix build error with libressl
+    Output availability of ALPN in configure summary
 
-commit 3fadad1bf336fc3b6dc2f240fb24dfe282d9986b
+commit c9559b5c0d18d2039e75a06f8c009544cfcc05a9
 Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-AuthorDate: 2016-06-26
+AuthorDate: 2016-07-29
 Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-CommitDate: 2016-06-26
+CommitDate: 2016-07-29
 
-    Bump up version number to 1.13.0-DEV
+    Document about ALPN in nghttpx howto
+
+commit af5b354685e96f05b5ee88558dd0d899c75c1150
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-29
+
+    nghttp: next_weight_idx is enough to be an local variable
+
+commit 3c1c2c4aadb3b91a271dbfcbdaca556dd9e41bdb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-27
+
+    nghttp: Allow multiple -p option
+    
+    The N-th -p options sets N-th URI's weight.  If the number of -p is
+    less than the number of URIs, the last -p value is repeated.  If no -p
+    is set, use default weight, 16.
+
+commit 767ed255ca6ddac3bf8b5730d200a2aff1b9a470
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2016-07-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2016-07-21
+
+    Bump up version number to 1.14.0-DEV

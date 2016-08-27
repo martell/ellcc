@@ -45,12 +45,13 @@ Synopsis
           taken.  If the frame is either HEADERS or PUSH_PROMISE,
           :type:`nghttp2_on_begin_headers_callback` is invoked.  Then
           :type:`nghttp2_on_header_callback` is invoked for each header
-          name/value pair.  After all name/value pairs are emitted
-          successfully, :type:`nghttp2_on_frame_recv_callback` is
-          invoked.  For other frames,
-          :type:`nghttp2_on_frame_recv_callback` is invoked.  If the
-          reception of the frame triggers the closure of the stream,
-          :type:`nghttp2_on_stream_close_callback` is invoked.
+          name/value pair.  For invalid header field,
+          :type:`nghttp2_on_invalid_header_callback` is called.  After
+          all name/value pairs are emitted successfully,
+          :type:`nghttp2_on_frame_recv_callback` is invoked.  For other
+          frames, :type:`nghttp2_on_frame_recv_callback` is invoked.
+          If the reception of the frame triggers the closure of the
+          stream, :type:`nghttp2_on_stream_close_callback` is invoked.
     
        3. If the received frame is unpacked but is interpreted as
           invalid, :type:`nghttp2_on_invalid_frame_recv_callback` is

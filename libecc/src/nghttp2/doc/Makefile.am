@@ -37,6 +37,7 @@ APIDOCS= \
 	nghttp2_hd_deflate_get_num_table_entries.rst \
 	nghttp2_hd_deflate_get_table_entry.rst \
 	nghttp2_hd_deflate_hd.rst \
+	nghttp2_hd_deflate_hd_vec.rst \
 	nghttp2_hd_deflate_new.rst \
 	nghttp2_hd_deflate_new2.rst \
 	nghttp2_hd_inflate_change_table_size.rst \
@@ -87,6 +88,8 @@ APIDOCS= \
 	nghttp2_session_callbacks_set_on_header_callback.rst \
 	nghttp2_session_callbacks_set_on_header_callback2.rst \
 	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback.rst \
+	nghttp2_session_callbacks_set_on_invalid_header_callback.rst \
+	nghttp2_session_callbacks_set_on_invalid_header_callback2.rst \
 	nghttp2_session_callbacks_set_on_stream_close_callback.rst \
 	nghttp2_session_callbacks_set_pack_extension_callback.rst \
 	nghttp2_session_callbacks_set_recv_callback.rst \
