@@ -1,6 +1,6 @@
 current SVN:
 
-* Update the nghttp2 library to version 1.13.0.
+* Update the nghttp2 library to version 1.14.0.
 * Update to LLVM r279916.
 * Update to LLVM r279342.
 * Update to LLVM r278565.
