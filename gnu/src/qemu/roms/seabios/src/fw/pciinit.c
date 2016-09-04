@@ -149,6 +149,22 @@ static void piix_isa_bridge_setup(struct pci_device *pci, void *arg)
     dprintf(1, "PIIX3/PIIX4 init: elcr=%02x %02x\n", elcr[0], elcr[1]);
 }
 
+static void mch_isa_lpc_setup(u16 bdf)
+{
+    /* pm io base */
+    pci_config_writel(bdf, ICH9_LPC_PMBASE,
+                      acpi_pm_base | ICH9_LPC_PMBASE_RTE);
+
+    /* acpi enable, SCI: IRQ9 000b = irq9*/
+    pci_config_writeb(bdf, ICH9_LPC_ACPI_CTRL, ICH9_LPC_ACPI_CTRL_ACPI_EN);
+
+    /* set root complex register block BAR */
+    pci_config_writel(bdf, ICH9_LPC_RCBA,
+                      ICH9_LPC_RCBA_ADDR | ICH9_LPC_RCBA_EN);
+}
+
+static int ICH9LpcBDF = -1;
+
 /* ICH9 LPC PCI to ISA bridge */
 /* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_LPC */
 static void mch_isa_bridge_setup(struct pci_device *dev, void *arg)
@@ -176,16 +192,10 @@ static void mch_isa_bridge_setup(struct pci_device *dev, void *arg)
     outb(elcr[1], ICH9_LPC_PORT_ELCR2);
     dprintf(1, "Q35 LPC init: elcr=%02x %02x\n", elcr[0], elcr[1]);
 
-    /* pm io base */
-    pci_config_writel(bdf, ICH9_LPC_PMBASE,
-                      acpi_pm_base | ICH9_LPC_PMBASE_RTE);
+    ICH9LpcBDF = bdf;
 
-    /* acpi enable, SCI: IRQ9 000b = irq9*/
-    pci_config_writeb(bdf, ICH9_LPC_ACPI_CTRL, ICH9_LPC_ACPI_CTRL_ACPI_EN);
+    mch_isa_lpc_setup(bdf);
 
-    /* set root complex register block BAR */
-    pci_config_writel(bdf, ICH9_LPC_RCBA,
-                      ICH9_LPC_RCBA_ADDR | ICH9_LPC_RCBA_EN);
     e820_add(ICH9_LPC_RCBA_ADDR, 16*1024, E820_RESERVED);
 
     acpi_pm1a_cnt = acpi_pm_base + 0x04;
@@ -244,17 +254,69 @@ static void piix4_pm_setup(struct pci_device *pci, void *arg)
     pmtimer_setup(acpi_pm_base + 0x08);
 }
 
-/* ICH9 SMBUS */
-/* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_SMBUS */
-static void ich9_smbus_setup(struct pci_device *dev, void *arg)
+static void ich9_smbus_enable(u16 bdf)
 {
-    u16 bdf = dev->bdf;
     /* map smbus into io space */
     pci_config_writel(bdf, ICH9_SMB_SMB_BASE,
                       (acpi_pm_base + 0x100) | PCI_BASE_ADDRESS_SPACE_IO);
 
     /* enable SMBus */
     pci_config_writeb(bdf, ICH9_SMB_HOSTC, ICH9_SMB_HOSTC_HST_EN);
+}
+
+static int ICH9SmbusBDF = -1;
+
+/* ICH9 SMBUS */
+/* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_SMBUS */
+static void ich9_smbus_setup(struct pci_device *dev, void *arg)
+{
+    ICH9SmbusBDF = dev->bdf;
+
+    ich9_smbus_enable(dev->bdf);
+}
+
+static void intel_igd_setup(struct pci_device *dev, void *arg)
+{
+    struct romfile_s *opregion = romfile_find("etc/igd-opregion");
+    u64 bdsm_size = le64_to_cpu(romfile_loadint("etc/igd-bdsm-size", 0));
+    void *addr;
+    u16 bdf = dev->bdf;
+
+    /* Apply OpRegion to any Intel VGA device, more than one is undefined */
+    if (opregion && opregion->size) {
+        addr = memalign_high(PAGE_SIZE, opregion->size);
+        if (!addr) {
+            warn_noalloc();
+            return;
+        }
+
+        if (opregion->copy(opregion, addr, opregion->size) < 0) {
+            free(addr);
+            return;
+        }
+
+        pci_config_writel(bdf, 0xFC, cpu_to_le32((u32)addr));
+
+        dprintf(1, "Intel IGD OpRegion enabled at 0x%08x, size %dKB, dev "
+                "%02x:%02x.%x\n", (u32)addr, opregion->size >> 10,
+                pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf), pci_bdf_to_fn(bdf));
+    }
+
+    /* Apply BDSM only to Intel VGA at 00:02.0 */
+    if (bdsm_size && (bdf == pci_to_bdf(0, 2, 0))) {
+        addr = memalign_tmphigh(1024 * 1024, bdsm_size);
+        if (!addr) {
+            warn_noalloc();
+            return;
+        }
+
+        e820_add((u32)addr, bdsm_size, E820_RESERVED);
+
+        pci_config_writel(bdf, 0x5C, cpu_to_le32((u32)addr));
+
+        dprintf(1, "Intel IGD BDSM enabled at 0x%08x, size %lldMB, dev "
+                "00:02.0\n", (u32)addr, bdsm_size >> 20);
+    }
 }
 
 static const struct pci_device_id pci_device_tbl[] = {
@@ -290,8 +352,15 @@ static const struct pci_device_id pci_device_tbl[] = {
     PCI_DEVICE_CLASS(PCI_VENDOR_ID_APPLE, 0x0017, 0xff00, apple_macio_setup),
     PCI_DEVICE_CLASS(PCI_VENDOR_ID_APPLE, 0x0022, 0xff00, apple_macio_setup),
 
+    /* Intel IGD OpRegion setup */
+    PCI_DEVICE_CLASS(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA,
+                     intel_igd_setup),
+
     PCI_DEVICE_END,
 };
+
+static int MCHMmcfgBDF = -1;
+static void mch_mmconfig_setup(u16 bdf);
 
 void pci_resume(void)
 {
@@ -301,6 +370,18 @@ void pci_resume(void)
 
     if (PiixPmBDF >= 0) {
         piix4_pm_config_setup(PiixPmBDF);
+    }
+
+    if (ICH9LpcBDF >= 0) {
+        mch_isa_lpc_setup(ICH9LpcBDF);
+    }
+
+    if (ICH9SmbusBDF >= 0) {
+        ich9_smbus_enable(ICH9SmbusBDF);
+    }
+
+    if(MCHMmcfgBDF >= 0) {
+        mch_mmconfig_setup(MCHMmcfgBDF);
     }
 }
 
@@ -388,18 +469,24 @@ static void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
     pci_slot_get_irq = piix_pci_slot_get_irq;
 }
 
+static void mch_mmconfig_setup(u16 bdf)
+{
+    u64 addr = Q35_HOST_BRIDGE_PCIEXBAR_ADDR;
+    u32 upper = addr >> 32;
+    u32 lower = (addr & 0xffffffff) | Q35_HOST_BRIDGE_PCIEXBAREN;
+    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, 0);
+    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR + 4, upper);
+    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, lower);
+}
+
 static void mch_mem_addr_setup(struct pci_device *dev, void *arg)
 {
     u64 addr = Q35_HOST_BRIDGE_PCIEXBAR_ADDR;
     u32 size = Q35_HOST_BRIDGE_PCIEXBAR_SIZE;
 
     /* setup mmconfig */
-    u16 bdf = dev->bdf;
-    u32 upper = addr >> 32;
-    u32 lower = (addr & 0xffffffff) | Q35_HOST_BRIDGE_PCIEXBAREN;
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, 0);
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR + 4, upper);
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, lower);
+    MCHMmcfgBDF = dev->bdf;
+    mch_mmconfig_setup(dev->bdf);
     e820_add(addr, size, E820_RESERVED);
 
     /* setup pci i/o window (above mmconfig) */
