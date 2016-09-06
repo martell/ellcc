@@ -413,6 +413,12 @@ cplusplus
 cplusplus11
   C++11 support is available.
 
+freestanding
+  A freestanding environment is available.
+
+gnuinlineasm
+  GNU inline ASM is available.
+
 objc
   Objective-C support is available.
 

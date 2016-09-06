@@ -198,11 +198,9 @@ static void InterceptHooks();
 // Don't use the INTERFACE_FUNCTION machinery for this function as we actually
 // want to call it in the __asan_init interceptor.
 WRAP_W_V(__asan_should_detect_stack_use_after_return)
-WRAP_W_V(__asan_should_detect_stack_use_after_scope)
 
 extern "C" {
   int __asan_option_detect_stack_use_after_return;
-  int __asan_option_detect_stack_use_after_scope;
 
   // Manually wrap __asan_init as we need to initialize
   // __asan_option_detect_stack_use_after_return afterwards.
@@ -216,8 +214,6 @@ extern "C" {
     fn();
     __asan_option_detect_stack_use_after_return =
         (__asan_should_detect_stack_use_after_return() != 0);
-    __asan_option_detect_stack_use_after_scope =
-        (__asan_should_detect_stack_use_after_scope() != 0);
 
     InterceptHooks();
   }
@@ -327,6 +323,9 @@ INTERFACE_FUNCTION(__sanitizer_cov_trace_cmp1)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_cmp2)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_cmp4)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_cmp8)
+INTERFACE_FUNCTION(__sanitizer_cov_trace_div4)
+INTERFACE_FUNCTION(__sanitizer_cov_trace_div8)
+INTERFACE_FUNCTION(__sanitizer_cov_trace_gep)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_switch)
 INTERFACE_FUNCTION(__sanitizer_cov_with_check)
 INTERFACE_FUNCTION(__sanitizer_get_allocated_size)

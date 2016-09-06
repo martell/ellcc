@@ -337,9 +337,7 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   }
 }
 
-// PrintEscapedString - Print each character of the specified string, escaping
-// it if it is not printable or if it is an escape char.
-static void PrintEscapedString(StringRef Name, raw_ostream &Out) {
+void llvm::PrintEscapedString(StringRef Name, raw_ostream &Out) {
   for (unsigned i = 0, e = Name.size(); i != e; ++i) {
     unsigned char C = Name[i];
     if (isprint(C) && C != '\\' && C != '"')
@@ -1410,7 +1408,7 @@ struct MDFieldPrinter {
   template <class IntTy>
   void printInt(StringRef Name, IntTy Int, bool ShouldSkipZero = true);
   void printBool(StringRef Name, bool Value, Optional<bool> Default = None);
-  void printDIFlags(StringRef Name, unsigned Flags);
+  void printDIFlags(StringRef Name, DINode::DIFlags Flags);
   template <class IntTy, class Stringifier>
   void printDwarfEnum(StringRef Name, IntTy Value, Stringifier toString,
                       bool ShouldSkipZero = true);
@@ -1479,17 +1477,17 @@ void MDFieldPrinter::printBool(StringRef Name, bool Value,
   Out << FS << Name << ": " << (Value ? "true" : "false");
 }
 
-void MDFieldPrinter::printDIFlags(StringRef Name, unsigned Flags) {
+void MDFieldPrinter::printDIFlags(StringRef Name, DINode::DIFlags Flags) {
   if (!Flags)
     return;
 
   Out << FS << Name << ": ";
 
-  SmallVector<unsigned, 8> SplitFlags;
-  unsigned Extra = DINode::splitFlags(Flags, SplitFlags);
+  SmallVector<DINode::DIFlags, 8> SplitFlags;
+  auto Extra = DINode::splitFlags(Flags, SplitFlags);
 
   FieldSeparator FlagsFS(" | ");
-  for (unsigned F : SplitFlags) {
+  for (auto F : SplitFlags) {
     const char *StringF = DINode::getFlagString(F);
     assert(StringF && "Expected valid flag");
     Out << FlagsFS << StringF;

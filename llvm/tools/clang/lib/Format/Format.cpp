@@ -685,7 +685,6 @@ FormatStyle getWebKitStyle() {
   Style.ObjCBlockIndentWidth = 4;
   Style.ObjCSpaceAfterProperty = true;
   Style.PointerAlignment = FormatStyle::PAS_Left;
-  Style.Standard = FormatStyle::LS_Cpp03;
   return Style;
 }
 
@@ -802,14 +801,15 @@ public:
   tooling::Replacements
   analyze(TokenAnnotator &Annotator,
           SmallVectorImpl<AnnotatedLine *> &AnnotatedLines,
-          FormatTokenLexer &Tokens, tooling::Replacements &Result) override {
+          FormatTokenLexer &Tokens) override {
+    tooling::Replacements RequoteReplaces;
     deriveLocalStyle(AnnotatedLines);
     AffectedRangeMgr.computeAffectedLines(AnnotatedLines.begin(),
                                           AnnotatedLines.end());
 
     if (Style.Language == FormatStyle::LK_JavaScript &&
         Style.JavaScriptQuotes != FormatStyle::JSQS_Leave)
-      requoteJSStringLiteral(AnnotatedLines, Result);
+      requoteJSStringLiteral(AnnotatedLines, RequoteReplaces);
 
     for (unsigned i = 0, e = AnnotatedLines.size(); i != e; ++i) {
       Annotator.calculateFormattingInformation(*AnnotatedLines[i]);
@@ -826,7 +826,7 @@ public:
     UnwrappedLineFormatter(&Indenter, &Whitespaces, Style, Tokens.getKeywords(),
                            IncompleteFormat)
         .format(AnnotatedLines);
-    return Whitespaces.generateReplacements();
+    return RequoteReplaces.merge(Whitespaces.generateReplacements());
   }
 
 private:
@@ -998,7 +998,7 @@ public:
   tooling::Replacements
   analyze(TokenAnnotator &Annotator,
           SmallVectorImpl<AnnotatedLine *> &AnnotatedLines,
-          FormatTokenLexer &Tokens, tooling::Replacements &Result) override {
+          FormatTokenLexer &Tokens) override {
     // FIXME: in the current implementation the granularity of affected range
     // is an annotated line. However, this is not sufficient. Furthermore,
     // redundant code introduced by replacements does not necessarily
@@ -1263,10 +1263,10 @@ static void sortCppIncludes(const FormatStyle &Style,
                             ArrayRef<tooling::Range> Ranges, StringRef FileName,
                             tooling::Replacements &Replaces, unsigned *Cursor) {
   unsigned IncludesBeginOffset = Includes.front().Offset;
-  unsigned IncludesBlockSize = Includes.back().Offset +
-                               Includes.back().Text.size() -
-                               IncludesBeginOffset;
-  if (!affectsRange(Ranges, IncludesBeginOffset, IncludesBlockSize))
+  unsigned IncludesEndOffset =
+      Includes.back().Offset + Includes.back().Text.size();
+  unsigned IncludesBlockSize = IncludesEndOffset - IncludesBeginOffset;
+  if (!affectsRange(Ranges, IncludesBeginOffset, IncludesEndOffset))
     return;
   SmallVector<unsigned, 16> Indices;
   for (unsigned i = 0, e = Includes.size(); i != e; ++i)

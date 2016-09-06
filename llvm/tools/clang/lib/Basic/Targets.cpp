@@ -1963,9 +1963,9 @@ class AMDGPUTargetInfo final : public TargetInfo {
     GK_EVERGREEN_DOUBLE_OPS,
     GK_NORTHERN_ISLANDS,
     GK_CAYMAN,
-    GK_SOUTHERN_ISLANDS,
-    GK_SEA_ISLANDS,
-    GK_VOLCANIC_ISLANDS
+    GK_GFX6,
+    GK_GFX7,
+    GK_GFX8
   } GPU;
 
   bool hasFP64:1;
@@ -1980,7 +1980,7 @@ class AMDGPUTargetInfo final : public TargetInfo {
 public:
   AMDGPUTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
     : TargetInfo(Triple) ,
-      GPU(isAMDGCN(Triple) ? GK_SOUTHERN_ISLANDS : GK_R600),
+      GPU(isAMDGCN(Triple) ? GK_GFX6 : GK_R600),
       hasFP64(false),
       hasFMAF(false),
       hasLDEXPF(false),
@@ -2120,21 +2120,23 @@ public:
 
   static GPUKind parseAMDGCNName(StringRef Name) {
     return llvm::StringSwitch<GPUKind>(Name)
-      .Case("tahiti",   GK_SOUTHERN_ISLANDS)
-      .Case("pitcairn", GK_SOUTHERN_ISLANDS)
-      .Case("verde",    GK_SOUTHERN_ISLANDS)
-      .Case("oland",    GK_SOUTHERN_ISLANDS)
-      .Case("hainan",   GK_SOUTHERN_ISLANDS)
-      .Case("bonaire",  GK_SEA_ISLANDS)
-      .Case("kabini",   GK_SEA_ISLANDS)
-      .Case("kaveri",   GK_SEA_ISLANDS)
-      .Case("hawaii",   GK_SEA_ISLANDS)
-      .Case("mullins",  GK_SEA_ISLANDS)
-      .Case("tonga",    GK_VOLCANIC_ISLANDS)
-      .Case("iceland",  GK_VOLCANIC_ISLANDS)
-      .Case("carrizo",  GK_VOLCANIC_ISLANDS)
-      .Case("fiji",     GK_VOLCANIC_ISLANDS)
-      .Case("stoney",   GK_VOLCANIC_ISLANDS)
+      .Case("tahiti",    GK_GFX6)
+      .Case("pitcairn",  GK_GFX6)
+      .Case("verde",     GK_GFX6)
+      .Case("oland",     GK_GFX6)
+      .Case("hainan",    GK_GFX6)
+      .Case("bonaire",   GK_GFX7)
+      .Case("kabini",    GK_GFX7)
+      .Case("kaveri",    GK_GFX7)
+      .Case("hawaii",    GK_GFX7)
+      .Case("mullins",   GK_GFX7)
+      .Case("tonga",     GK_GFX8)
+      .Case("iceland",   GK_GFX8)
+      .Case("carrizo",   GK_GFX8)
+      .Case("fiji",      GK_GFX8)
+      .Case("stoney",    GK_GFX8)
+      .Case("polaris10", GK_GFX8)
+      .Case("polaris11", GK_GFX8)
       .Default(GK_NONE);
   }
 
@@ -2161,7 +2163,7 @@ public:
       Opts.cl_khr_local_int32_base_atomics = 1;
       Opts.cl_khr_local_int32_extended_atomics = 1;
     }
-    if (GPU >= GK_SOUTHERN_ISLANDS) {
+    if (GPU >= GK_GFX6) {
       Opts.cl_khr_fp16 = 1;
       Opts.cl_khr_int64_base_atomics = 1;
       Opts.cl_khr_int64_extended_atomics = 1;
@@ -2392,11 +2394,11 @@ bool AMDGPUTargetInfo::initFeatureMap(
       CPU = "tahiti";
 
     switch (parseAMDGCNName(CPU)) {
-    case GK_SOUTHERN_ISLANDS:
-    case GK_SEA_ISLANDS:
+    case GK_GFX6:
+    case GK_GFX7:
       break;
 
-    case GK_VOLCANIC_ISLANDS:
+    case GK_GFX8:
       Features["s-memrealtime"] = true;
       Features["16-bit-insts"] = true;
       break;
@@ -6255,6 +6257,7 @@ class HexagonTargetInfo : public TargetInfo {
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   std::string CPU;
   bool HasHVX, HasHVXDouble;
+  bool UseLongCalls;
 
 public:
   HexagonTargetInfo(const llvm::Triple &Triple, const TargetOptions &)
@@ -6279,6 +6282,7 @@ public:
     UseBitFieldTypeAlignment = true;
     ZeroLengthBitfieldBoundary = 32;
     HasHVX = HasHVXDouble = false;
+    UseLongCalls = false;
   }
 
   ArrayRef<Builtin::Info> getTargetBuiltins() const override {
@@ -6313,6 +6317,7 @@ public:
       .Case("hexagon", true)
       .Case("hvx", HasHVX)
       .Case("hvx-double", HasHVXDouble)
+      .Case("long-calls", UseLongCalls)
       .Default(false);
   }
 
@@ -6322,6 +6327,9 @@ public:
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override;
+
+  void setFeatureEnabled(llvm::StringMap<bool> &Features, StringRef Name,
+                         bool Enabled) const override;
 
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
@@ -6391,6 +6399,17 @@ void HexagonTargetInfo::getTargetDefines(const LangOptions &Opts,
   }
 }
 
+bool HexagonTargetInfo::initFeatureMap(llvm::StringMap<bool> &Features,
+      DiagnosticsEngine &Diags, StringRef CPU,
+      const std::vector<std::string> &FeaturesVec) const {
+  // Default for v60: -hvx, -hvx-double.
+  Features["hvx"] = false;
+  Features["hvx-double"] = false;
+  Features["long-calls"] = false;
+
+  return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
+}
+
 bool HexagonTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                              DiagnosticsEngine &Diags) {
   for (auto &F : Features) {
@@ -6402,20 +6421,26 @@ bool HexagonTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       HasHVX = HasHVXDouble = true;
     else if (F == "-hvx-double")
       HasHVXDouble = false;
+
+    if (F == "+long-calls")
+      UseLongCalls = true;
+    else if (F == "-long-calls")
+      UseLongCalls = false;
   }
   return true;
 }
 
-bool HexagonTargetInfo::initFeatureMap(llvm::StringMap<bool> &Features,
-      DiagnosticsEngine &Diags, StringRef CPU,
-      const std::vector<std::string> &FeaturesVec) const {
-  // Default for v60: -hvx, -hvx-double.
-  Features["hvx"] = false;
-  Features["hvx-double"] = false;
-
-  return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
+void HexagonTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
+      StringRef Name, bool Enabled) const {
+  if (Enabled) {
+    if (Name == "hvx-double")
+      Features["hvx"] = true;
+  } else {
+    if (Name == "hvx")
+      Features["hvx-double"] = false;
+  }
+  Features[Name] = Enabled;
 }
-
 
 const char *const HexagonTargetInfo::GCCRegNames[] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
@@ -7964,6 +7989,9 @@ public:
     SigAtomicType = SignedLong;
     LongDoubleWidth = LongDoubleAlign = 128;
     LongDoubleFormat = &llvm::APFloat::IEEEquad;
+    SizeType = UnsignedInt;
+    PtrDiffType = SignedInt;
+    IntPtrType = SignedInt;
   }
 
 protected:
@@ -8082,6 +8110,9 @@ public:
     LongAlign = LongWidth = 64;
     PointerAlign = PointerWidth = 64;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
+    SizeType = UnsignedLong;
+    PtrDiffType = SignedLong;
+    IntPtrType = SignedLong;
     resetDataLayout("e-m:e-p:64:64-i64:64-n32:64-S128");
   }
 
@@ -8377,6 +8408,8 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple,
       return new DarwinARMTargetInfo(Triple, Opts);
 
     switch (os) {
+    case llvm::Triple::CloudABI:
+      return new CloudABITargetInfo<ARMleTargetInfo>(Triple, Opts);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<ARMleTargetInfo>(Triple, Opts);
     case llvm::Triple::FreeBSD:

@@ -673,6 +673,13 @@ void PPCAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     const MCExpr *Exp =
       MCSymbolRefExpr::create(MOSymbol, MCSymbolRefExpr::VK_PPC_TOC_HA,
                               OutContext);
+
+    if (!MO.isJTI() && MO.getOffset())
+      Exp = MCBinaryExpr::createAdd(Exp,
+                                    MCConstantExpr::create(MO.getOffset(),
+                                                           OutContext),
+                                    OutContext);
+
     TmpInst.getOperand(2) = MCOperand::createExpr(Exp);
     EmitToStreamer(*OutStreamer, TmpInst);
     return;
@@ -1146,10 +1153,12 @@ bool PPCLinuxAsmPrinter::doFinalization(Module &M) {
          E = TOC.end(); I != E; ++I) {
       OutStreamer->EmitLabel(I->second);
       MCSymbol *S = I->first;
-      if (isPPC64)
+      if (isPPC64) {
         TS.emitTCEntry(*S);
-      else
+      } else {
+        OutStreamer->EmitValueToAlignment(4);
         OutStreamer->EmitSymbolValue(S, 4);
+      }
     }
   }
 

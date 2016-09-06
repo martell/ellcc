@@ -66,9 +66,8 @@ void LiveRangeCalc::calculate(LiveInterval &LI, bool TrackSubRegs) {
 
     unsigned SubReg = MO.getSubReg();
     if (LI.hasSubRanges() || (SubReg != 0 && TrackSubRegs)) {
-      LaneBitmask WholeMask = MRI->getMaxLaneMaskForVReg(Reg);
       LaneBitmask SubMask = SubReg != 0 ? TRI.getSubRegIndexLaneMask(SubReg)
-                                        : WholeMask;
+                                        : MRI->getMaxLaneMaskForVReg(Reg);
       // If this is the first time we see a subregister def, initialize
       // subranges by creating a copy of the main range.
       if (!LI.hasSubRanges() && !LI.empty()) {
@@ -164,21 +163,26 @@ void LiveRangeCalc::extendToUses(LiveRange &LR, unsigned Reg, LaneBitmask Mask,
     LI->computeSubRangeUndefs(Undefs, Mask, *MRI, *Indexes);
 
   // Visit all operands that read Reg. This may include partial defs.
+  bool IsSubRange = (Mask != ~0U);
   const TargetRegisterInfo &TRI = *MRI->getTargetRegisterInfo();
   for (MachineOperand &MO : MRI->reg_nodbg_operands(Reg)) {
     // Clear all kill flags. They will be reinserted after register allocation
     // by LiveIntervalAnalysis::addKillFlags().
     if (MO.isUse())
       MO.setIsKill(false);
-    if (!MO.readsReg())
+    // MO::readsReg returns "true" for subregister defs. This is for keeping
+    // liveness of the entire register (i.e. for the main range of the live
+    // interval). For subranges, definitions of non-overlapping subregisters
+    // do not count as uses.
+    if (!MO.readsReg() || (IsSubRange && MO.isDef()))
       continue;
 
     unsigned SubReg = MO.getSubReg();
     if (SubReg != 0) {
       LaneBitmask SLM = TRI.getSubRegIndexLaneMask(SubReg);
       if (MO.isDef())
-        SLM = MRI->getMaxLaneMaskForVReg(Reg) & ~SLM;
-      // Ignore uses not covering the current subrange.
+        SLM = ~SLM;
+      // Ignore uses not reading the current (sub)range.
       if ((SLM & Mask) == 0)
         continue;
     }
@@ -370,7 +374,8 @@ bool LiveRangeCalc::findReachingDefs(LiveRange &LR, MachineBasicBlock &UseMBB,
     if (TargetRegisterInfo::isPhysicalRegister(PhysReg) &&
         !MBB->isLiveIn(PhysReg)) {
       MBB->getParent()->verify();
-      errs() << "The register " << PrintReg(PhysReg)
+      const TargetRegisterInfo *TRI = MRI->getTargetRegisterInfo();
+      errs() << "The register " << PrintReg(PhysReg, TRI)
              << " needs to be live in to BB#" << MBB->getNumber()
              << ", but is missing from the live-in list.\n";
       llvm_unreachable("Invalid global physical register");

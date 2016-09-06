@@ -137,10 +137,6 @@ struct VerifierSupport {
       : OS(OS), M(M), MST(&M), DL(M.getDataLayout()), Context(M.getContext()) {}
 
 private:
-  template <class NodeTy> void Write(const ilist_iterator<NodeTy> &I) {
-    Write(&*I);
-  }
-
   void Write(const Module *M) {
     *OS << "; ModuleID = '" << M->getModuleIdentifier() << "'\n";
   }
@@ -3873,7 +3869,7 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
   default:
     break;
   case Intrinsic::coro_id: {
-    auto *InfoArg = CS.getArgOperand(2)->stripPointerCasts();
+    auto *InfoArg = CS.getArgOperand(3)->stripPointerCasts();
     if (isa<ConstantPointerNull>(InfoArg))
       break;
     auto *GV = dyn_cast<GlobalVariable>(InfoArg);

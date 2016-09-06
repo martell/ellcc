@@ -347,9 +347,9 @@ bool IRTranslator::translateCall(const User &U) {
     for (auto &Arg: CI.arg_operands())
       Args.push_back(getOrCreateVReg(*Arg));
 
-    return CLI->lowerCall(MIRBuilder, CI,
-                          F ? 0 : getOrCreateVReg(*CI.getCalledValue()), Res,
-                          Args);
+    return CLI->lowerCall(MIRBuilder, CI, Res, Args, [&]() {
+      return getOrCreateVReg(*CI.getCalledValue());
+    });
   }
 
   Intrinsic::ID ID = F->getIntrinsicID();
@@ -405,7 +405,7 @@ bool IRTranslator::translateStaticAlloca(const AllocaInst &AI) {
 
 bool IRTranslator::translatePHI(const User &U) {
   const PHINode &PI = cast<PHINode>(U);
-  MachineInstrBuilder MIB = MIRBuilder.buildInstr(TargetOpcode::PHI);
+  auto MIB = MIRBuilder.buildInstr(TargetOpcode::G_PHI, LLT{*U.getType()});
   MIB.addDef(getOrCreateVReg(PI));
 
   PendingPHIs.emplace_back(&PI, MIB.getInstr());

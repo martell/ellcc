@@ -35,11 +35,6 @@ using namespace PatternMatch;
 // How many times is a select replaced by one of its operands?
 STATISTIC(NumSel, "Number of select opts");
 
-// Initialization Routines
-
-static ConstantInt *getOne(Constant *C) {
-  return ConstantInt::get(cast<IntegerType>(C->getType()), 1);
-}
 
 static ConstantInt *ExtractElement(Constant *V, Constant *Idx) {
   return cast<ConstantInt>(ConstantExpr::getExtractElement(V, Idx));
@@ -1503,54 +1498,47 @@ Instruction *InstCombiner::foldICmpAndShift(ICmpInst &Cmp, BinaryOperator *And,
 Instruction *InstCombiner::foldICmpAndConstConst(ICmpInst &Cmp,
                                                  BinaryOperator *And,
                                                  const APInt *C1) {
-  // FIXME: This check restricts all folds under here to scalar types.
-  ConstantInt *RHS = dyn_cast<ConstantInt>(Cmp.getOperand(1));
-  if (!RHS)
-    return nullptr;
-
-  // FIXME: Use m_APInt.
-  auto *C2 = dyn_cast<ConstantInt>(And->getOperand(1));
-  if (!C2)
+  const APInt *C2;
+  if (!match(And->getOperand(1), m_APInt(C2)))
     return nullptr;
 
   if (!And->hasOneUse() || !And->getOperand(0)->hasOneUse())
     return nullptr;
 
-  // If the LHS is an AND of a truncating cast, we can widen the and/compare to
-  // be the input width without changing the value produced, eliminating a cast.
-  if (TruncInst *Cast = dyn_cast<TruncInst>(And->getOperand(0))) {
-    // We can do this transformation if either the AND constant does not have
-    // its sign bit set or if it is an equality comparison. Extending a
-    // relational comparison when we're checking the sign bit would not work.
-    if (Cmp.isEquality() || (!C2->isNegative() && C1->isNonNegative())) {
-      Value *NewAnd = Builder->CreateAnd(
-          Cast->getOperand(0), ConstantExpr::getZExt(C2, Cast->getSrcTy()));
-      NewAnd->takeName(And);
-      return new ICmpInst(Cmp.getPredicate(), NewAnd,
-                          ConstantExpr::getZExt(RHS, Cast->getSrcTy()));
-    }
-  }
-
-  // If the LHS is an AND of a zext, and we have an equality compare, we can
-  // shrink the and/compare to the smaller type, eliminating the cast.
-  if (ZExtInst *Cast = dyn_cast<ZExtInst>(And->getOperand(0))) {
-    IntegerType *Ty = cast<IntegerType>(Cast->getSrcTy());
-    // Make sure we don't compare the upper bits, SimplifyDemandedBits
-    // should fold the icmp to true/false in that case.
-    if (Cmp.isEquality() && C1->getActiveBits() <= Ty->getBitWidth()) {
-      Value *NewAnd = Builder->CreateAnd(Cast->getOperand(0),
-                                         ConstantExpr::getTrunc(C2, Ty));
-      NewAnd->takeName(And);
-      return new ICmpInst(Cmp.getPredicate(), NewAnd,
-                          ConstantExpr::getTrunc(RHS, Ty));
+  // If the LHS is an 'and' of a truncate and we can widen the and/compare to
+  // the input width without changing the value produced, eliminate the cast:
+  //
+  // icmp (and (trunc W), C2), C1 -> icmp (and W, C2'), C1'
+  //
+  // We can do this transformation if the constants do not have their sign bits
+  // set or if it is an equality comparison. Extending a relational comparison
+  // when we're checking the sign bit would not work.
+  Value *W;
+  if (match(And->getOperand(0), m_Trunc(m_Value(W))) &&
+      (Cmp.isEquality() || (!C1->isNegative() && !C2->isNegative()))) {
+    // TODO: Is this a good transform for vectors? Wider types may reduce
+    // throughput. Should this transform be limited (even for scalars) by using
+    // ShouldChangeType()?
+    if (!Cmp.getType()->isVectorTy()) {
+      Type *WideType = W->getType();
+      unsigned WideScalarBits = WideType->getScalarSizeInBits();
+      Constant *ZextC1 = ConstantInt::get(WideType, C1->zext(WideScalarBits));
+      Constant *ZextC2 = ConstantInt::get(WideType, C2->zext(WideScalarBits));
+      Value *NewAnd = Builder->CreateAnd(W, ZextC2, And->getName());
+      return new ICmpInst(Cmp.getPredicate(), NewAnd, ZextC1);
     }
   }
 
   if (Instruction *I = foldICmpAndShift(Cmp, And, C1))
     return I;
 
+  // FIXME: This check restricts all folds under here to scalar types.
+  ConstantInt *RHS = dyn_cast<ConstantInt>(Cmp.getOperand(1));
+  if (!RHS)
+    return nullptr;
+
   // (icmp pred (and (or (lshr A, B), A), 1), 0) -->
-  //    (icmp pred (and A, (or (shl 1, B), 1), 0))
+  // (icmp pred (and A, (or (shl 1, B), 1), 0))
   //
   // iff pred isn't signed
   {
@@ -1593,7 +1581,7 @@ Instruction *InstCombiner::foldICmpAndConstConst(ICmpInst &Cmp,
   // Replace ((X & C2) > C1) with ((X & C2) != 0), if any bit set in (X & C2)
   // will produce a result greater than C1.
   if (Cmp.getPredicate() == ICmpInst::ICMP_UGT) {
-    unsigned NTZ = C2->getValue().countTrailingZeros();
+    unsigned NTZ = C2->countTrailingZeros();
     if ((NTZ < C2->getBitWidth()) &&
         APInt::getOneBitSet(C2->getBitWidth(), NTZ).ugt(*C1))
       return new ICmpInst(ICmpInst::ICMP_NE, And,
@@ -1610,48 +1598,50 @@ Instruction *InstCombiner::foldICmpAndConstant(ICmpInst &Cmp,
   if (Instruction *I = foldICmpAndConstConst(Cmp, And, C))
     return I;
 
-  // FIXME: This check restricts all folds under here to scalar types.
-  ConstantInt *RHS = dyn_cast<ConstantInt>(Cmp.getOperand(1));
-  if (!RHS)
-    return nullptr;
+  // TODO: These all require that Y is constant too, so refactor with the above.
 
-  // Try to optimize things like "A[i]&42 == 0" to index computations.
-  if (LoadInst *LI = dyn_cast<LoadInst>(And->getOperand(0))) {
-    if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(LI->getOperand(0)))
-      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GEP->getOperand(0)))
+  // Try to optimize things like "A[i] & 42 == 0" to index computations.
+  Value *X = And->getOperand(0);
+  Value *Y = And->getOperand(1);
+  if (auto *LI = dyn_cast<LoadInst>(X))
+    if (auto *GEP = dyn_cast<GetElementPtrInst>(LI->getOperand(0)))
+      if (auto *GV = dyn_cast<GlobalVariable>(GEP->getOperand(0)))
         if (GV->isConstant() && GV->hasDefinitiveInitializer() &&
-            !LI->isVolatile() && isa<ConstantInt>(And->getOperand(1))) {
-          ConstantInt *C = cast<ConstantInt>(And->getOperand(1));
-          if (Instruction *Res = foldCmpLoadFromIndexedGlobal(GEP, GV, Cmp, C))
+            !LI->isVolatile() && isa<ConstantInt>(Y)) {
+          ConstantInt *C2 = cast<ConstantInt>(Y);
+          if (Instruction *Res = foldCmpLoadFromIndexedGlobal(GEP, GV, Cmp, C2))
             return Res;
         }
-  }
+
+  if (!Cmp.isEquality())
+    return nullptr;
 
   // X & -C == -C -> X >  u ~C
   // X & -C != -C -> X <= u ~C
   //   iff C is a power of 2
-  if (Cmp.isEquality() && RHS == And->getOperand(1) && (-(*C)).isPowerOf2())
-    return new ICmpInst(Cmp.getPredicate() == ICmpInst::ICMP_EQ
-                            ? ICmpInst::ICMP_UGT
-                            : ICmpInst::ICMP_ULE,
-                        And->getOperand(0), SubOne(RHS));
+  if (Cmp.getOperand(1) == Y && (-(*C)).isPowerOf2()) {
+    auto NewPred = Cmp.getPredicate() == CmpInst::ICMP_EQ ? CmpInst::ICMP_UGT
+                                                          : CmpInst::ICMP_ULE;
+    return new ICmpInst(NewPred, X, SubOne(cast<Constant>(Cmp.getOperand(1))));
+  }
 
-  // (icmp eq (and %A, C), 0) -> (icmp sgt (trunc %A), -1)
-  //   iff C is a power of 2
-  if (Cmp.isEquality() && And->hasOneUse() && match(RHS, m_Zero())) {
-    if (auto *CI = dyn_cast<ConstantInt>(And->getOperand(1))) {
-      const APInt &AI = CI->getValue();
-      int32_t ExactLogBase2 = AI.exactLogBase2();
-      if (ExactLogBase2 != -1 && DL.isLegalInteger(ExactLogBase2 + 1)) {
-        Type *NTy = IntegerType::get(Cmp.getContext(), ExactLogBase2 + 1);
-        Value *Trunc = Builder->CreateTrunc(And->getOperand(0), NTy);
-        return new ICmpInst(Cmp.getPredicate() == ICmpInst::ICMP_EQ
-                                ? ICmpInst::ICMP_SGE
-                                : ICmpInst::ICMP_SLT,
-                            Trunc, Constant::getNullValue(NTy));
-      }
+  // (X & C2) == 0 -> (trunc X) >= 0
+  // (X & C2) != 0 -> (trunc X) <  0
+  //   iff C2 is a power of 2 and it masks the sign bit of a legal integer type.
+  const APInt *C2;
+  if (And->hasOneUse() && *C == 0 && match(Y, m_APInt(C2))) {
+    int32_t ExactLogBase2 = C2->exactLogBase2();
+    if (ExactLogBase2 != -1 && DL.isLegalInteger(ExactLogBase2 + 1)) {
+      Type *NTy = IntegerType::get(Cmp.getContext(), ExactLogBase2 + 1);
+      if (And->getType()->isVectorTy())
+        NTy = VectorType::get(NTy, And->getType()->getVectorNumElements());
+      Value *Trunc = Builder->CreateTrunc(X, NTy);
+      auto NewPred = Cmp.getPredicate() == CmpInst::ICMP_EQ ? CmpInst::ICMP_SGE
+                                                            : CmpInst::ICMP_SLT;
+      return new ICmpInst(NewPred, Trunc, Constant::getNullValue(NTy));
     }
   }
+
   return nullptr;
 }
 
@@ -1879,11 +1869,6 @@ Instruction *InstCombiner::foldICmpShrConstant(ICmpInst &Cmp,
     if (IsAShr && (!Shr->isExact() || ShAmtVal == TypeBits - 1))
       return nullptr;
 
-    // FIXME: This check restricts this fold to scalar types.
-    ConstantInt *ShAmt = dyn_cast<ConstantInt>(Shr->getOperand(1));
-    if (!ShAmt)
-      return nullptr;
-
     // Revisit the shift (to delete it).
     Worklist.Add(Shr);
 
@@ -1969,62 +1954,57 @@ Instruction *InstCombiner::foldICmpUDivConstant(ICmpInst &Cmp,
 Instruction *InstCombiner::foldICmpDivConstant(ICmpInst &Cmp,
                                                BinaryOperator *Div,
                                                const APInt *C) {
-  // FIXME: This check restricts all folds under here to scalar types.
-  ConstantInt *RHS = dyn_cast<ConstantInt>(Cmp.getOperand(1));
-  if (!RHS)
-    return nullptr;
-
-  // Fold: icmp pred ([us]div X, C1), C2 -> range test
+  // Fold: icmp pred ([us]div X, C2), C -> range test
   // Fold this div into the comparison, producing a range check.
   // Determine, based on the divide type, what the range is being
   // checked.  If there is an overflow on the low or high side, remember
   // it, otherwise compute the range [low, hi) bounding the new value.
   // See: InsertRangeTest above for the kinds of replacements possible.
-  ConstantInt *DivRHS = dyn_cast<ConstantInt>(Div->getOperand(1));
-  if (!DivRHS)
+  const APInt *C2;
+  if (!match(Div->getOperand(1), m_APInt(C2)))
     return nullptr;
-
-  ConstantInt *CmpRHS = cast<ConstantInt>(Cmp.getOperand(1));
 
   // FIXME: If the operand types don't match the type of the divide
   // then don't attempt this transform. The code below doesn't have the
   // logic to deal with a signed divide and an unsigned compare (and
-  // vice versa). This is because (x /s C1) <s C2  produces different
-  // results than (x /s C1) <u C2 or (x /u C1) <s C2 or even
-  // (x /u C1) <u C2.  Simply casting the operands and result won't
+  // vice versa). This is because (x /s C2) <s C  produces different
+  // results than (x /s C2) <u C or (x /u C2) <s C or even
+  // (x /u C2) <u C.  Simply casting the operands and result won't
   // work. :(  The if statement below tests that condition and bails
   // if it finds it.
   bool DivIsSigned = Div->getOpcode() == Instruction::SDiv;
   if (!Cmp.isEquality() && DivIsSigned != Cmp.isSigned())
     return nullptr;
-  if (DivRHS->isZero())
-    return nullptr; // The ProdOV computation fails on divide by zero.
-  if (DivIsSigned && DivRHS->isAllOnesValue())
-    return nullptr; // The overflow computation also screws up here
-  if (DivRHS->isOne()) {
-    // This eliminates some funny cases with INT_MIN.
-    Cmp.setOperand(0, Div->getOperand(0));   // X/1 == X.
-    return &Cmp;
-  }
 
-  // Compute Prod = CI * DivRHS. We are essentially solving an equation
-  // of form X/C1=C2. We solve for X by multiplying C1 (DivRHS) and
-  // C2 (CI). By solving for X we can turn this into a range check
-  // instead of computing a divide.
+  // The ProdOV computation fails on divide by 0 and divide by -1. Cases with
+  // INT_MIN will also fail if the divisor is 1. Although folds of all these
+  // division-by-constant cases should be present, we can not assert that they
+  // have happened before we reach this icmp instruction.
+  if (*C2 == 0 || *C2 == 1 || (DivIsSigned && C2->isAllOnesValue()))
+    return nullptr;
+
+  // TODO: We could do all of the computations below using APInt.
+  Constant *CmpRHS = cast<Constant>(Cmp.getOperand(1));
+  Constant *DivRHS = cast<Constant>(Div->getOperand(1));
+
+  // Compute Prod = CmpRHS * DivRHS. We are essentially solving an equation of
+  // form X / C2 = C. We solve for X by multiplying C2 (DivRHS) and C (CmpRHS).
+  // By solving for X, we can turn this into a range check instead of computing
+  // a divide.
   Constant *Prod = ConstantExpr::getMul(CmpRHS, DivRHS);
 
-  // Determine if the product overflows by seeing if the product is
-  // not equal to the divide. Make sure we do the same kind of divide
-  // as in the LHS instruction that we're folding.
-  bool ProdOV = (DivIsSigned ? ConstantExpr::getSDiv(Prod, DivRHS) :
-                 ConstantExpr::getUDiv(Prod, DivRHS)) != CmpRHS;
+  // Determine if the product overflows by seeing if the product is not equal to
+  // the divide. Make sure we do the same kind of divide as in the LHS
+  // instruction that we're folding.
+  bool ProdOV = (DivIsSigned ? ConstantExpr::getSDiv(Prod, DivRHS)
+                             : ConstantExpr::getUDiv(Prod, DivRHS)) != CmpRHS;
 
-  // Get the ICmp opcode
   ICmpInst::Predicate Pred = Cmp.getPredicate();
 
   // If the division is known to be exact, then there is no remainder from the
   // divide, so the covered range size is unit, otherwise it is the divisor.
-  ConstantInt *RangeSize = Div->isExact() ? getOne(Prod) : DivRHS;
+  Constant *RangeSize =
+      Div->isExact() ? ConstantInt::get(Div->getType(), 1) : DivRHS;
 
   // Figure out the interval that is being checked.  For example, a comparison
   // like "X /u 5 == 0" is really checking that X is in the interval [0, 5).
@@ -2045,7 +2025,7 @@ Instruction *InstCombiner::foldICmpDivConstant(ICmpInst &Cmp,
       // to the same result value.
       HiOverflow = AddWithOverflow(HiBound, LoBound, RangeSize, false);
     }
-  } else if (DivRHS->getValue().isStrictlyPositive()) { // Divisor is > 0.
+  } else if (C2->isStrictlyPositive()) { // Divisor is > 0.
     if (*C == 0) {       // (X / pos) op 0
       // Can't overflow.  e.g.  X/2 op 0 --> [-1, 2)
       LoBound = ConstantExpr::getNeg(SubOne(RangeSize));
@@ -2060,17 +2040,17 @@ Instruction *InstCombiner::foldICmpDivConstant(ICmpInst &Cmp,
       HiBound = AddOne(Prod);
       LoOverflow = HiOverflow = ProdOV ? -1 : 0;
       if (!LoOverflow) {
-        ConstantInt *DivNeg =cast<ConstantInt>(ConstantExpr::getNeg(RangeSize));
+        Constant *DivNeg = ConstantExpr::getNeg(RangeSize);
         LoOverflow = AddWithOverflow(LoBound, HiBound, DivNeg, true) ? -1 : 0;
       }
     }
-  } else if (DivRHS->isNegative()) { // Divisor is < 0.
+  } else if (C2->isNegative()) { // Divisor is < 0.
     if (Div->isExact())
-      RangeSize = cast<ConstantInt>(ConstantExpr::getNeg(RangeSize));
+      RangeSize = ConstantExpr::getNeg(RangeSize);
     if (*C == 0) {       // (X / neg) op 0
       // e.g. X/-5 op 0  --> [-4, 5)
       LoBound = AddOne(RangeSize);
-      HiBound = cast<ConstantInt>(ConstantExpr::getNeg(RangeSize));
+      HiBound = ConstantExpr::getNeg(RangeSize);
       if (HiBound == DivRHS) {     // -INTMIN = INTMIN
         HiOverflow = 1;            // [INTMIN+1, overflow)
         HiBound = nullptr;         // e.g. X/INTMIN = 0 --> X > INTMIN
@@ -2104,8 +2084,9 @@ Instruction *InstCombiner::foldICmpDivConstant(ICmpInst &Cmp,
       if (LoOverflow)
         return new ICmpInst(DivIsSigned ? ICmpInst::ICMP_SLT :
                             ICmpInst::ICMP_ULT, X, HiBound);
-      return replaceInstUsesWith(Cmp, InsertRangeTest(X, LoBound, HiBound,
-                                                      DivIsSigned, true));
+      return replaceInstUsesWith(
+          Cmp, insertRangeTest(X, LoBound->getUniqueInteger(),
+                               HiBound->getUniqueInteger(), DivIsSigned, true));
     case ICmpInst::ICMP_NE:
       if (LoOverflow && HiOverflow)
         return replaceInstUsesWith(Cmp, Builder->getTrue());
@@ -2115,8 +2096,10 @@ Instruction *InstCombiner::foldICmpDivConstant(ICmpInst &Cmp,
       if (LoOverflow)
         return new ICmpInst(DivIsSigned ? ICmpInst::ICMP_SGE :
                             ICmpInst::ICMP_UGE, X, HiBound);
-      return replaceInstUsesWith(Cmp, InsertRangeTest(X, LoBound, HiBound,
-                                                      DivIsSigned, false));
+      return replaceInstUsesWith(Cmp,
+                                 insertRangeTest(X, LoBound->getUniqueInteger(),
+                                                 HiBound->getUniqueInteger(),
+                                                 DivIsSigned, false));
     case ICmpInst::ICMP_ULT:
     case ICmpInst::ICMP_SLT:
       if (LoOverflow == +1)   // Low bound is greater than input range.
