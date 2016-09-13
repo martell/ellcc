@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r281321.
 * Update to LLVM r280704.
 * Update to libedit-20160903-3.1.
 * Update to QEMU 2.7.0.

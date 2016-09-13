@@ -11,6 +11,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "CoverageReport.h"
 #include "SourceCoverageViewText.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallString.h"
@@ -36,8 +37,11 @@ Error CoveragePrinterText::createIndexFile(
   auto OS = std::move(OSOrErr.get());
   raw_ostream &OSRef = *OS.get();
 
-  for (StringRef SF : SourceFiles)
-    OSRef << getOutputPath(SF, "txt", /*InToplevel=*/false) << '\n';
+  CoverageReport Report(Opts, Coverage);
+  Report.renderFileReports(OSRef);
+
+  Opts.colored_ostream(OSRef, raw_ostream::CYAN) << "\n"
+                                                 << Opts.getLLVMVersionString();
 
   return Error::success();
 }
@@ -63,15 +67,14 @@ unsigned getDividerWidth(const CoverageViewOptions &Opts) {
 
 void SourceCoverageViewText::renderViewHeader(raw_ostream &) {}
 
-void SourceCoverageViewText::renderViewFooter(raw_ostream &) {}
+void SourceCoverageViewText::renderViewFooter(raw_ostream &OS) {
+  getOptions().colored_ostream(OS, raw_ostream::CYAN)
+      << "\n" << getOptions().getLLVMVersionString();
+}
 
 void SourceCoverageViewText::renderSourceName(raw_ostream &OS, bool WholeFile) {
-  getOptions().colored_ostream(OS, raw_ostream::CYAN) << getSourceName()
-                                                      << ":\n";
-  if (WholeFile) {
-    getOptions().colored_ostream(OS, raw_ostream::CYAN)
-        << getOptions().ObjectFilename << ":\n";
-  }
+  std::string ViewInfo = WholeFile ? getVerboseSourceName() : getSourceName();
+  getOptions().colored_ostream(OS, raw_ostream::CYAN) << ViewInfo << ":\n";
 }
 
 void SourceCoverageViewText::renderLinePrefix(raw_ostream &OS,
@@ -231,4 +234,5 @@ void SourceCoverageViewText::renderCellInTitle(raw_ostream &OS,
         << getOptions().CreatedTimeStr << "\n";
 }
 
-void SourceCoverageViewText::renderTableHeader(raw_ostream &, unsigned) {}
+void SourceCoverageViewText::renderTableHeader(raw_ostream &, unsigned,
+                                               unsigned) {}

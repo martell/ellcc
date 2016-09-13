@@ -145,10 +145,10 @@ namespace llvm {
     /// \param SizeInBits  Size.
     /// \param AlignInBits Alignment. (optional)
     /// \param Class Type for which this pointer points to members of.
-    DIDerivedType *createMemberPointerType(DIType *PointeeTy, DIType *Class,
-                                           uint64_t SizeInBits,
-                                           uint64_t AlignInBits = 0,
-                                           DINode::DIFlags Flags = DINode::FlagZero);
+    DIDerivedType *
+    createMemberPointerType(DIType *PointeeTy, DIType *Class,
+                            uint64_t SizeInBits, uint64_t AlignInBits = 0,
+                            DINode::DIFlags Flags = DINode::FlagZero);
 
     /// Create debugging information entry for a c++
     /// style reference or rvalue reference type.
@@ -193,8 +193,7 @@ namespace llvm {
                                     DIFile *File, unsigned LineNo,
                                     uint64_t SizeInBits, uint64_t AlignInBits,
                                     uint64_t OffsetInBits,
-                                    DINode::DIFlags Flags,
-                                    DIType *Ty);
+                                    DINode::DIFlags Flags, DIType *Ty);
 
     /// Create debugging information entry for a bit field member.
     /// \param Scope               Member scope.
@@ -273,15 +272,12 @@ namespace llvm {
     ///                     for more info.
     /// \param TemplateParms Template type parameters.
     /// \param UniqueIdentifier A unique identifier for the class.
-    DICompositeType *createClassType(DIScope *Scope, StringRef Name,
-                                     DIFile *File, unsigned LineNumber,
-                                     uint64_t SizeInBits, uint64_t AlignInBits,
-                                     uint64_t OffsetInBits,
-                                     DINode::DIFlags Flags,
-                                     DIType *DerivedFrom, DINodeArray Elements,
-                                     DIType *VTableHolder = nullptr,
-                                     MDNode *TemplateParms = nullptr,
-                                     StringRef UniqueIdentifier = "");
+    DICompositeType *createClassType(
+        DIScope *Scope, StringRef Name, DIFile *File, unsigned LineNumber,
+        uint64_t SizeInBits, uint64_t AlignInBits, uint64_t OffsetInBits,
+        DINode::DIFlags Flags, DIType *DerivedFrom, DINodeArray Elements,
+        DIType *VTableHolder = nullptr, MDNode *TemplateParms = nullptr,
+        StringRef UniqueIdentifier = "");
 
     /// Create debugging information entry for a struct.
     /// \param Scope        Scope in which this struct is defined.
@@ -396,9 +392,10 @@ namespace llvm {
     /// \param Flags           E.g.: LValueReference.
     ///                        These flags are used to emit dwarf attributes.
     /// \param CC              Calling convention, e.g. dwarf::DW_CC_normal
-    DISubroutineType *createSubroutineType(DITypeRefArray ParameterTypes,
-                                           DINode::DIFlags Flags = DINode::FlagZero,
-                                           unsigned CC = 0);
+    DISubroutineType *
+    createSubroutineType(DITypeRefArray ParameterTypes,
+                         DINode::DIFlags Flags = DINode::FlagZero,
+                         unsigned CC = 0);
 
     /// Create an external type reference.
     /// \param Tag              Dwarf TAG.
@@ -457,20 +454,21 @@ namespace llvm {
     /// \param Ty          Variable Type.
     /// \param isLocalToUnit Boolean flag indicate whether this variable is
     ///                      externally visible or not.
-    /// \param Val         llvm::Value of the variable.
+    /// \param Expr        The location of the global relative to the attached
+    ///                    GlobalVariable.
     /// \param Decl        Reference to the corresponding declaration.
     DIGlobalVariable *createGlobalVariable(DIScope *Context, StringRef Name,
                                            StringRef LinkageName, DIFile *File,
                                            unsigned LineNo, DIType *Ty,
                                            bool isLocalToUnit,
-                                           llvm::Constant *Val,
+                                           DIExpression *Expr = nullptr,
                                            MDNode *Decl = nullptr);
 
     /// Identical to createGlobalVariable
     /// except that the resulting DbgNode is temporary and meant to be RAUWed.
     DIGlobalVariable *createTempGlobalVariableFwdDecl(
         DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
-        unsigned LineNo, DIType *Ty, bool isLocalToUnit, llvm::Constant *Val,
+        unsigned LineNo, DIType *Ty, bool isLocalToUnit, DIExpression *Expr,
         MDNode *Decl = nullptr);
 
     /// Create a new descriptor for an auto variable.  This is a local variable
@@ -481,11 +479,10 @@ namespace llvm {
     ///
     /// If \c AlwaysPreserve, this variable will be referenced from its
     /// containing subprogram, and will survive some optimizations.
-    DILocalVariable *createAutoVariable(DIScope *Scope, StringRef Name,
-                                         DIFile *File, unsigned LineNo,
-                                         DIType *Ty,
-                                         bool AlwaysPreserve = false,
-                                         DINode::DIFlags Flags = DINode::FlagZero);
+    DILocalVariable *
+    createAutoVariable(DIScope *Scope, StringRef Name, DIFile *File,
+                       unsigned LineNo, DIType *Ty, bool AlwaysPreserve = false,
+                       DINode::DIFlags Flags = DINode::FlagZero);
 
     /// Create a new descriptor for a parameter variable.
     ///
@@ -498,11 +495,11 @@ namespace llvm {
     ///
     /// If \c AlwaysPreserve, this variable will be referenced from its
     /// containing subprogram, and will survive some optimizations.
-    DILocalVariable *createParameterVariable(DIScope *Scope, StringRef Name,
-                                             unsigned ArgNo, DIFile *File,
-                                             unsigned LineNo, DIType *Ty,
-                                             bool AlwaysPreserve = false,
-                                             DINode::DIFlags Flags = DINode::FlagZero);
+    DILocalVariable *
+    createParameterVariable(DIScope *Scope, StringRef Name, unsigned ArgNo,
+                            DIFile *File, unsigned LineNo, DIType *Ty,
+                            bool AlwaysPreserve = false,
+                            DINode::DIFlags Flags = DINode::FlagZero);
 
     /// Create a new descriptor for the specified
     /// variable which has a complex address expression for its address.
@@ -517,6 +514,13 @@ namespace llvm {
     /// \param SizeInBits   Size of the piece in bits.
     DIExpression *createBitPieceExpression(unsigned OffsetInBits,
                                            unsigned SizeInBits);
+
+    /// Create an expression for a variable that does not have an address, but
+    /// does have a constant value.
+    DIExpression *createConstantValueExpression(uint64_t Val) {
+      return DIExpression::get(
+          VMContext, {dwarf::DW_OP_constu, Val, dwarf::DW_OP_stack_value});
+    }
 
     /// Create a new descriptor for the specified subprogram.
     /// See comments in DISubprogram* for descriptions of these fields.
@@ -549,8 +553,8 @@ namespace llvm {
         DIScope *Scope, StringRef Name, StringRef LinkageName, DIFile *File,
         unsigned LineNo, DISubroutineType *Ty, bool isLocalToUnit,
         bool isDefinition, unsigned ScopeLine,
-        DINode::DIFlags Flags = DINode::FlagZero,
-        bool isOptimized = false, DITemplateParameterArray TParams = nullptr,
+        DINode::DIFlags Flags = DINode::FlagZero, bool isOptimized = false,
+        DITemplateParameterArray TParams = nullptr,
         DISubprogram *Decl = nullptr);
 
     /// Create a new descriptor for the specified C++ method.
@@ -575,15 +579,13 @@ namespace llvm {
     ///                      This flags are used to emit dwarf attributes.
     /// \param isOptimized   True if optimization is ON.
     /// \param TParams       Function template parameters.
-    DISubprogram *
-    createMethod(DIScope *Scope, StringRef Name, StringRef LinkageName,
-                 DIFile *File, unsigned LineNo, DISubroutineType *Ty,
-                 bool isLocalToUnit, bool isDefinition, unsigned Virtuality = 0,
-                 unsigned VTableIndex = 0, int ThisAdjustment = 0,
-                 DIType *VTableHolder = nullptr,
-                 DINode::DIFlags Flags = DINode::FlagZero,
-                 bool isOptimized = false,
-                 DITemplateParameterArray TParams = nullptr);
+    DISubprogram *createMethod(
+        DIScope *Scope, StringRef Name, StringRef LinkageName, DIFile *File,
+        unsigned LineNo, DISubroutineType *Ty, bool isLocalToUnit,
+        bool isDefinition, unsigned Virtuality = 0, unsigned VTableIndex = 0,
+        int ThisAdjustment = 0, DIType *VTableHolder = nullptr,
+        DINode::DIFlags Flags = DINode::FlagZero, bool isOptimized = false,
+        DITemplateParameterArray TParams = nullptr);
 
     /// This creates new descriptor for a namespace with the specified
     /// parent scope.

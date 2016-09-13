@@ -13,36 +13,46 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Config/config.h"
+#include "llvm/Demangle/Demangle.h"
 #include <algorithm>
-
-#ifdef HAVE_CXXABI_H
-#include <cxxabi.h>
-#endif
 
 using namespace llvm;
 using namespace lld;
 using namespace lld::elf;
 
 bool elf::hasWildcard(StringRef S) {
-  return S.find_first_of("?*") != StringRef::npos;
+  return S.find_first_of("?*[") != StringRef::npos;
+}
+
+StringRef elf::unquote(StringRef S) {
+  if (!S.startswith("\""))
+    return S;
+  return S.substr(1, S.size() - 2);
 }
 
 // Converts a glob pattern to a regular expression.
 static std::string toRegex(StringRef S) {
-  if (S.find_first_of("[]") != StringRef::npos)
-    warning("unsupported wildcard: " + S);
-
   std::string T;
+  bool InBracket = false;
   while (!S.empty()) {
     char C = S.front();
+    if (InBracket) {
+      InBracket = C != ']';
+      T += C;
+      S = S.drop_front();
+      continue;
+    }
+
     if (C == '*')
       T += ".*";
     else if (C == '?')
       T += '.';
-    else if (StringRef(".+^${}()|/\\[]").find_first_of(C) != StringRef::npos)
+    else if (StringRef(".+^${}()|/\\").find_first_of(C) != StringRef::npos)
       T += std::string("\\") + C;
     else
       T += C;
+
+    InBracket = C == '[';
     S = S.substr(1);
   }
   return T;
@@ -86,9 +96,6 @@ bool elf::isValidCIdentifier(StringRef S) {
 
 // Returns the demangled C++ symbol name for Name.
 std::string elf::demangle(StringRef Name) {
-#if !defined(HAVE_CXXABI_H)
-  return Name;
-#else
   // __cxa_demangle can be used to demangle strings other than symbol
   // names which do not necessarily start with "_Z". Name can be
   // either a C or C++ symbol. Don't call __cxa_demangle if the name
@@ -97,12 +104,10 @@ std::string elf::demangle(StringRef Name) {
   if (!Name.startswith("_Z"))
     return Name;
 
-  char *Buf =
-      abi::__cxa_demangle(Name.str().c_str(), nullptr, nullptr, nullptr);
+  char *Buf = itaniumDemangle(Name.str().c_str(), nullptr, nullptr, nullptr);
   if (!Buf)
     return Name;
   std::string S(Buf);
   free(Buf);
   return S;
-#endif
 }

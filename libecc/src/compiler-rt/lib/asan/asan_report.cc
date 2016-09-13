@@ -69,8 +69,8 @@ void AppendToErrorMessageBuffer(const char *buffer) {
 
 // ---------------------- Helper functions ----------------------- {{{1
 
-static void PrintMemoryByte(InternalScopedString *str, const char *before,
-    u8 byte, bool in_shadow, const char *after = "\n") {
+void PrintMemoryByte(InternalScopedString *str, const char *before, u8 byte,
+                     bool in_shadow, const char *after) {
   Decorator d;
   str->append("%s%s%x%x%s%s", before,
               in_shadow ? d.ShadowByte(byte) : d.MemoryByte(),
@@ -133,22 +133,6 @@ static void PrintLegend(InternalScopedString *str) {
   PrintShadowByte(str, "  ASan internal:           ", kAsanInternalHeapMagic);
   PrintShadowByte(str, "  Left alloca redzone:     ", kAsanAllocaLeftMagic);
   PrintShadowByte(str, "  Right alloca redzone:    ", kAsanAllocaRightMagic);
-}
-
-void MaybeDumpInstructionBytes(uptr pc) {
-  if (!flags()->dump_instruction_bytes || (pc < GetPageSizeCached()))
-    return;
-  InternalScopedString str(1024);
-  str.append("First 16 instruction bytes at pc: ");
-  if (IsAccessibleMemoryRange(pc, 16)) {
-    for (int i = 0; i < 16; ++i) {
-      PrintMemoryByte(&str, "", ((u8 *)pc)[i], /*in_shadow*/false, " ");
-    }
-    str.append("\n");
-  } else {
-    str.append("unaccessible\n");
-  }
-  Report("%s", str.data());
 }
 
 static void PrintShadowMemoryForAddress(uptr addr) {
@@ -335,81 +319,28 @@ ErrorDescription ScopedInErrorReport::current_error_;
 
 void ReportStackOverflow(const SignalContext &sig) {
   ScopedInErrorReport in_report(/*report*/ nullptr, /*fatal*/ true);
-  ErrorStackOverflow error{sig, GetCurrentTidOrInvalid()};  // NOLINT
+  ErrorStackOverflow error(GetCurrentTidOrInvalid(), sig);
   in_report.ReportError(error);
 }
 
-void ReportDeadlySignal(const char *description, const SignalContext &sig) {
+void ReportDeadlySignal(int signo, const SignalContext &sig) {
   ScopedInErrorReport in_report(/*report*/ nullptr, /*fatal*/ true);
-  Decorator d;
-  Printf("%s", d.Warning());
-  Report(
-      "ERROR: AddressSanitizer: %s on unknown address %p"
-      " (pc %p bp %p sp %p T%d)\n",
-      description, (void *)sig.addr, (void *)sig.pc, (void *)sig.bp,
-      (void *)sig.sp, GetCurrentTidOrInvalid());
-  Printf("%s", d.EndWarning());
-  ScarinessScore SS;
-  if (sig.pc < GetPageSizeCached())
-    Report("Hint: pc points to the zero page.\n");
-  if (sig.is_memory_access) {
-    const char *access_type =
-        sig.write_flag == SignalContext::WRITE
-            ? "WRITE"
-            : (sig.write_flag == SignalContext::READ ? "READ" : "UNKNOWN");
-    Report("The signal is caused by a %s memory access.\n", access_type);
-    if (sig.addr < GetPageSizeCached()) {
-      Report("Hint: address points to the zero page.\n");
-      SS.Scare(10, "null-deref");
-    } else if (sig.addr == sig.pc) {
-      SS.Scare(60, "wild-jump");
-    } else if (sig.write_flag == SignalContext::WRITE) {
-      SS.Scare(30, "wild-addr-write");
-    } else if (sig.write_flag == SignalContext::READ) {
-      SS.Scare(20, "wild-addr-read");
-    } else {
-      SS.Scare(25, "wild-addr");
-    }
-  } else {
-    SS.Scare(10, "signal");
-  }
-  SS.Print();
-  GET_STACK_TRACE_SIGNAL(sig);
-  stack.Print();
-  MaybeDumpInstructionBytes(sig.pc);
-  Printf("AddressSanitizer can not provide additional info.\n");
-  ReportErrorSummary(description, &stack);
+  ErrorDeadlySignal error(GetCurrentTidOrInvalid(), sig, signo);
+  in_report.ReportError(error);
 }
 
 void ReportDoubleFree(uptr addr, BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
-  ErrorDoubleFree error{addr, GetCurrentTidOrInvalid(), free_stack};  // NOLINT
+  ErrorDoubleFree error(GetCurrentTidOrInvalid(), free_stack, addr);
   in_report.ReportError(error);
 }
 
-void ReportNewDeleteSizeMismatch(uptr addr, uptr alloc_size, uptr delete_size,
+void ReportNewDeleteSizeMismatch(uptr addr, uptr delete_size,
                                  BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
-  Decorator d;
-  Printf("%s", d.Warning());
-  char tname[128];
-  u32 curr_tid = GetCurrentTidOrInvalid();
-  Report("ERROR: AddressSanitizer: new-delete-type-mismatch on %p in "
-         "thread T%d%s:\n",
-         addr, curr_tid,
-         ThreadNameWithParenthesis(curr_tid, tname, sizeof(tname)));
-  Printf("%s  object passed to delete has wrong type:\n", d.EndWarning());
-  Printf("  size of the allocated type:   %zd bytes;\n"
-         "  size of the deallocated type: %zd bytes.\n",
-         alloc_size, delete_size);
-  CHECK_GT(free_stack->size, 0);
-  ScarinessScore::PrintSimple(10, "new-delete-type-mismatch");
-  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
-  stack.Print();
-  DescribeAddressIfHeap(addr);
-  ReportErrorSummary("new-delete-type-mismatch", &stack);
-  Report("HINT: if you don't care about these errors you may set "
-         "ASAN_OPTIONS=new_delete_type_mismatch=0\n");
+  ErrorNewDeleteSizeMismatch error(GetCurrentTidOrInvalid(), free_stack, addr,
+                                   delete_size);
+  in_report.ReportError(error);
 }
 
 void ReportFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack) {

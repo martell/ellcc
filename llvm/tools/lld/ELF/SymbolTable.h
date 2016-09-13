@@ -101,7 +101,7 @@ private:
   std::string conflictMsg(SymbolBody *Existing, InputFile *NewFile);
   void reportDuplicate(SymbolBody *Existing, InputFile *NewFile);
 
-  std::map<std::string, SymbolBody *> getDemangledSyms();
+  std::map<std::string, std::vector<SymbolBody *>> getDemangledSyms();
 
   struct SymIndex {
     SymIndex(int Idx, bool Traced) : Idx(Idx), Traced(Traced) {}
@@ -127,6 +127,7 @@ private:
 
   // The symbol table owns all file objects.
   std::vector<std::unique_ptr<ArchiveFile>> ArchiveFiles;
+  std::vector<std::unique_ptr<BinaryFile>> BinaryFiles;
   std::vector<std::unique_ptr<ObjectFile<ELFT>>> ObjectFiles;
   std::vector<std::unique_ptr<LazyObjectFile>> LazyObjectFiles;
   std::vector<std::unique_ptr<SharedFile<ELFT>>> SharedFiles;

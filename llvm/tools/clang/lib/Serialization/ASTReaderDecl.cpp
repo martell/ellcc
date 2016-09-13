@@ -133,6 +133,10 @@ namespace clang {
                                const RecordData &R, unsigned &I);
     void MergeDefinitionData(CXXRecordDecl *D,
                              struct CXXRecordDecl::DefinitionData &&NewDD);
+    void ReadObjCDefinitionData(struct ObjCInterfaceDecl::DefinitionData &Data,
+                                const RecordData &R, unsigned &I);
+    void MergeDefinitionData(ObjCInterfaceDecl *D,
+                             struct ObjCInterfaceDecl::DefinitionData &&NewDD);
 
     static NamedDecl *getAnonymousDeclForMerging(ASTReader &Reader,
                                                  DeclContext *DC,
@@ -327,6 +331,7 @@ namespace clang {
     void VisitUsingShadowDecl(UsingShadowDecl *D);
     void VisitConstructorUsingShadowDecl(ConstructorUsingShadowDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
+    void VisitExportDecl(ExportDecl *D);
     void VisitFileScopeAsmDecl(FileScopeAsmDecl *AD);
     void VisitImportDecl(ImportDecl *D);
     void VisitAccessSpecDecl(AccessSpecDecl *D);
@@ -378,27 +383,6 @@ namespace clang {
     void VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D);
     void VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D);
     void VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D);
-
-    /// We've merged the definition \p MergedDef into the existing definition
-    /// \p Def. Ensure that \p Def is made visible whenever \p MergedDef is made
-    /// visible.
-    void mergeDefinitionVisibility(NamedDecl *Def, NamedDecl *MergedDef) {
-      if (Def->isHidden()) {
-        // If MergedDef is visible or becomes visible, make the definition visible.
-        if (!MergedDef->isHidden())
-          Def->Hidden = false;
-        else if (Reader.getContext().getLangOpts().ModulesLocalVisibility) {
-          Reader.getContext().mergeDefinitionIntoModule(
-              Def, MergedDef->getImportedOwningModule(),
-              /*NotifyListeners*/ false);
-          Reader.PendingMergedDefinitionsToDeduplicate.insert(Def);
-        } else {
-          auto SubmoduleID = MergedDef->getOwningModuleID();
-          assert(SubmoduleID && "hidden definition in no module");
-          Reader.HiddenNamesMap[Reader.getSubmodule(SubmoduleID)].push_back(Def);
-        }
-      }
-    }
   };
 } // end namespace clang
 
@@ -705,7 +689,7 @@ void ASTDeclReader::VisitEnumDecl(EnumDecl *ED) {
     if (OldDef) {
       Reader.MergedDeclContexts.insert(std::make_pair(ED, OldDef));
       ED->IsCompleteDefinition = false;
-      mergeDefinitionVisibility(OldDef, ED);
+      Reader.mergeDefinitionVisibility(OldDef, ED);
     } else {
       OldDef = ED;
     }
@@ -980,6 +964,43 @@ ObjCTypeParamList *ASTDeclReader::ReadObjCTypeParamList() {
                                    typeParams, rAngleLoc);
 }
 
+void ASTDeclReader::ReadObjCDefinitionData(
+         struct ObjCInterfaceDecl::DefinitionData &Data,
+         const RecordData &R, unsigned &I) {
+  // Read the superclass.
+  Data.SuperClassTInfo = GetTypeSourceInfo(Record, Idx);
+
+  Data.EndLoc = ReadSourceLocation(Record, Idx);
+  Data.HasDesignatedInitializers = Record[Idx++];
+   
+  // Read the directly referenced protocols and their SourceLocations.
+  unsigned NumProtocols = Record[Idx++];
+  SmallVector<ObjCProtocolDecl *, 16> Protocols;
+  Protocols.reserve(NumProtocols);
+  for (unsigned I = 0; I != NumProtocols; ++I)
+    Protocols.push_back(ReadDeclAs<ObjCProtocolDecl>(Record, Idx));
+  SmallVector<SourceLocation, 16> ProtoLocs;
+  ProtoLocs.reserve(NumProtocols);
+  for (unsigned I = 0; I != NumProtocols; ++I)
+    ProtoLocs.push_back(ReadSourceLocation(Record, Idx));
+  Data.ReferencedProtocols.set(Protocols.data(), NumProtocols, ProtoLocs.data(),
+                               Reader.getContext());
+ 
+  // Read the transitive closure of protocols referenced by this class.
+  NumProtocols = Record[Idx++];
+  Protocols.clear();
+  Protocols.reserve(NumProtocols);
+  for (unsigned I = 0; I != NumProtocols; ++I)
+    Protocols.push_back(ReadDeclAs<ObjCProtocolDecl>(Record, Idx));
+  Data.AllReferencedProtocols.set(Protocols.data(), NumProtocols,
+                                  Reader.getContext());
+}
+
+void ASTDeclReader::MergeDefinitionData(ObjCInterfaceDecl *D,
+         struct ObjCInterfaceDecl::DefinitionData &&NewDD) {
+  // FIXME: odr checking?
+}
+
 void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
   RedeclarableResult Redecl = VisitRedeclarable(ID);
   VisitObjCContainerDecl(ID);
@@ -990,43 +1011,22 @@ void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
   if (Record[Idx++]) {
     // Read the definition.
     ID->allocateDefinitionData();
-    
-    // Set the definition data of the canonical declaration, so other
-    // redeclarations will see it.
-    ID->getCanonicalDecl()->Data = ID->Data;
-    
-    ObjCInterfaceDecl::DefinitionData &Data = ID->data();
-    
-    // Read the superclass.
-    Data.SuperClassTInfo = GetTypeSourceInfo(Record, Idx);
 
-    Data.EndLoc = ReadSourceLocation(Record, Idx);
-    Data.HasDesignatedInitializers = Record[Idx++];
+    ReadObjCDefinitionData(ID->data(), Record, Idx);
+    ObjCInterfaceDecl *Canon = ID->getCanonicalDecl();
+    if (Canon->Data.getPointer()) {
+      // If we already have a definition, keep the definition invariant and
+      // merge the data.
+      MergeDefinitionData(Canon, std::move(ID->data()));
+      ID->Data = Canon->Data;
+    } else {
+      // Set the definition data of the canonical declaration, so other
+      // redeclarations will see it.
+      ID->getCanonicalDecl()->Data = ID->Data;
     
-    // Read the directly referenced protocols and their SourceLocations.
-    unsigned NumProtocols = Record[Idx++];
-    SmallVector<ObjCProtocolDecl *, 16> Protocols;
-    Protocols.reserve(NumProtocols);
-    for (unsigned I = 0; I != NumProtocols; ++I)
-      Protocols.push_back(ReadDeclAs<ObjCProtocolDecl>(Record, Idx));
-    SmallVector<SourceLocation, 16> ProtoLocs;
-    ProtoLocs.reserve(NumProtocols);
-    for (unsigned I = 0; I != NumProtocols; ++I)
-      ProtoLocs.push_back(ReadSourceLocation(Record, Idx));
-    ID->setProtocolList(Protocols.data(), NumProtocols, ProtoLocs.data(),
-                        Reader.getContext());
-  
-    // Read the transitive closure of protocols referenced by this class.
-    NumProtocols = Record[Idx++];
-    Protocols.clear();
-    Protocols.reserve(NumProtocols);
-    for (unsigned I = 0; I != NumProtocols; ++I)
-      Protocols.push_back(ReadDeclAs<ObjCProtocolDecl>(Record, Idx));
-    ID->data().AllReferencedProtocols.set(Protocols.data(), NumProtocols,
-                                          Reader.getContext());
-  
-    // We will rebuild this list lazily.
-    ID->setIvarList(nullptr);
+      // We will rebuild this list lazily.
+      ID->setIvarList(nullptr);
+    }
 
     // Note that we have deserialized a definition.
     Reader.PendingDefinitions.insert(ID);
@@ -1366,6 +1366,11 @@ void ASTDeclReader::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   D->setRBraceLoc(ReadSourceLocation(Record, Idx));
 }
 
+void ASTDeclReader::VisitExportDecl(ExportDecl *D) {
+  VisitDecl(D);
+  D->RBraceLoc = ReadSourceLocation(Record, Idx);
+}
+
 void ASTDeclReader::VisitLabelDecl(LabelDecl *D) {
   VisitNamedDecl(D);
   D->setLocStart(ReadSourceLocation(Record, Idx));
@@ -1577,7 +1582,7 @@ void ASTDeclReader::MergeDefinitionData(
                                                     DD.Definition));
     Reader.PendingDefinitions.erase(MergeDD.Definition);
     MergeDD.Definition->IsCompleteDefinition = false;
-    mergeDefinitionVisibility(DD.Definition, MergeDD.Definition);
+    Reader.mergeDefinitionVisibility(DD.Definition, MergeDD.Definition);
     assert(Reader.Lookups.find(MergeDD.Definition) == Reader.Lookups.end() &&
            "already loaded pending lookups for merged definition");
   }
@@ -2234,7 +2239,7 @@ void ASTDeclReader::VisitStaticAssertDecl(StaticAssertDecl *D) {
   VisitDecl(D);
   D->AssertExprAndFailed.setPointer(Reader.ReadExpr(F));
   D->AssertExprAndFailed.setInt(Record[Idx++]);
-  D->Message = cast<StringLiteral>(Reader.ReadExpr(F));
+  D->Message = cast_or_null<StringLiteral>(Reader.ReadExpr(F));
   D->RParenLoc = ReadSourceLocation(Record, Idx);
 }
 
@@ -3266,6 +3271,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   case DECL_LINKAGE_SPEC:
     D = LinkageSpecDecl::CreateDeserialized(Context, ID);
     break;
+  case DECL_EXPORT:
+    D = ExportDecl::CreateDeserialized(Context, ID);
+    break;
   case DECL_LABEL:
     D = LabelDecl::CreateDeserialized(Context, ID);
     break;
@@ -3493,7 +3501,10 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
 
   // Load the categories after recursive loading is finished.
   if (ObjCInterfaceDecl *Class = dyn_cast<ObjCInterfaceDecl>(D))
-    if (Class->isThisDeclarationADefinition())
+    // If we already have a definition when deserializing the ObjCInterfaceDecl,
+    // we put the Decl in PendingDefinitions so we can pull the categories here.
+    if (Class->isThisDeclarationADefinition() ||
+        PendingDefinitions.count(Class))
       loadObjCCategories(ID, Class);
   
   // If we have deserialized a declaration that has a definition the

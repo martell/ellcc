@@ -495,14 +495,14 @@ llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {
 
     auto *ISATy = DBuilder.createPointerType(ClassTy, Size);
 
-    ObjTy =
-        DBuilder.createStructType(TheCU, "objc_object", getOrCreateMainFile(),
-                                  0, 0, 0, llvm::DINode::FlagZero, nullptr, llvm::DINodeArray());
+    ObjTy = DBuilder.createStructType(
+        TheCU, "objc_object", getOrCreateMainFile(), 0, 0, 0,
+        llvm::DINode::FlagZero, nullptr, llvm::DINodeArray());
 
     DBuilder.replaceArrays(
-        ObjTy,
-        DBuilder.getOrCreateArray(&*DBuilder.createMemberType(
-            ObjTy, "isa", getOrCreateMainFile(), 0, Size, 0, 0, llvm::DINode::FlagZero, ISATy)));
+        ObjTy, DBuilder.getOrCreateArray(&*DBuilder.createMemberType(
+                   ObjTy, "isa", getOrCreateMainFile(), 0, Size, 0, 0,
+                   llvm::DINode::FlagZero, ISATy)));
     return ObjTy;
   }
   case BuiltinType::ObjCSel: {
@@ -811,9 +811,9 @@ llvm::DIType *CGDebugInfo::CreateType(const BlockPointerType *Ty,
   FType = CGM.getContext().getPointerType(CGM.getContext().VoidTy);
   FieldSize = CGM.getContext().getTypeSize(Ty);
   FieldAlign = CGM.getContext().getTypeAlign(Ty);
-  EltTys.push_back(DBuilder.createMemberType(Unit, "__descriptor", nullptr, LineNo,
-                                             FieldSize, FieldAlign, FieldOffset,
-                                             llvm::DINode::FlagZero, DescTy));
+  EltTys.push_back(DBuilder.createMemberType(
+      Unit, "__descriptor", nullptr, LineNo, FieldSize, FieldAlign, FieldOffset,
+      llvm::DINode::FlagZero, DescTy));
 
   FieldOffset += FieldSize;
   Elements = DBuilder.getOrCreateArray(EltTys);
@@ -924,7 +924,8 @@ llvm::DIType *CGDebugInfo::CreateType(const FunctionType *Ty,
 /// Convert an AccessSpecifier into the corresponding DINode flag.
 /// As an optimization, return 0 if the access specifier equals the
 /// default for the containing type.
-static llvm::DINode::DIFlags getAccessFlag(AccessSpecifier Access, const RecordDecl *RD) {
+static llvm::DINode::DIFlags getAccessFlag(AccessSpecifier Access,
+                                           const RecordDecl *RD) {
   AccessSpecifier Default = clang::AS_none;
   if (RD && RD->isClass())
     Default = clang::AS_private;
@@ -1575,7 +1576,7 @@ void CGDebugInfo::CollectVTableInfo(const CXXRecordDecl *RD, llvm::DIFile *Unit,
     const VTableLayout &VFTLayout =
         CGM.getMicrosoftVTableContext().getVFTableLayout(RD, CharUnits::Zero());
     unsigned VSlotCount =
-        VFTLayout.getNumVTableComponents() - CGM.getLangOpts().RTTIData;
+        VFTLayout.vtable_components().size() - CGM.getLangOpts().RTTIData;
     unsigned VTableWidth = PtrWidth * VSlotCount;
 
     // Create a very wide void* type and insert it directly in the element list.
@@ -1643,23 +1644,6 @@ void CGDebugInfo::completeType(const RecordDecl *RD) {
     completeRequiredType(RD);
 }
 
-void CGDebugInfo::completeRequiredType(const RecordDecl *RD) {
-  if (DebugKind <= codegenoptions::DebugLineTablesOnly)
-    return;
-
-  if (const auto *CXXDecl = dyn_cast<CXXRecordDecl>(RD))
-    if (CXXDecl->isDynamicClass())
-      return;
-
-  if (DebugTypeExtRefs && RD->isFromASTFile())
-    return;
-
-  QualType Ty = CGM.getContext().getRecordType(RD);
-  llvm::DIType *T = getTypeOrNull(Ty);
-  if (T && T->isForwardDecl())
-    completeClassData(RD);
-}
-
 void CGDebugInfo::completeClassData(const RecordDecl *RD) {
   if (DebugKind <= codegenoptions::DebugLineTablesOnly)
     return;
@@ -1706,6 +1690,16 @@ static bool isDefinedInClangModule(const RecordDecl *RD) {
   return true;
 }
 
+/// Return true if the class or any of its methods are marked dllimport.
+static bool isClassOrMethodDLLImport(const CXXRecordDecl *RD) {
+  if (RD->hasAttr<DLLImportAttr>())
+    return true;
+  for (const CXXMethodDecl *MD : RD->methods())
+    if (MD->hasAttr<DLLImportAttr>())
+      return true;
+  return false;
+}
+
 static bool shouldOmitDefinition(codegenoptions::DebugInfoKind DebugKind,
                                  bool DebugTypeExtRefs, const RecordDecl *RD,
                                  const LangOptions &LangOpts) {
@@ -1728,10 +1722,12 @@ static bool shouldOmitDefinition(codegenoptions::DebugInfoKind DebugKind,
 
   // Only emit complete debug info for a dynamic class when its vtable is
   // emitted.  However, Microsoft debuggers don't resolve type information
-  // across DLL boundaries, so skip this optimization if the class is marked
-  // dllimport.
+  // across DLL boundaries, so skip this optimization if the class or any of its
+  // methods are marked dllimport. This isn't a complete solution, since objects
+  // without any dllimport methods can be used in one DLL and constructed in
+  // another, but it is the current behavior of LimitedDebugInfo.
   if (CXXDecl->hasDefinition() && CXXDecl->isDynamicClass() &&
-      !CXXDecl->hasAttr<DLLImportAttr>())
+      !isClassOrMethodDLLImport(CXXDecl))
     return true;
 
   TemplateSpecializationKind Spec = TSK_Undeclared;
@@ -1744,6 +1740,16 @@ static bool shouldOmitDefinition(codegenoptions::DebugInfoKind DebugKind,
     return true;
 
   return false;
+}
+
+void CGDebugInfo::completeRequiredType(const RecordDecl *RD) {
+  if (shouldOmitDefinition(DebugKind, DebugTypeExtRefs, RD, CGM.getLangOpts()))
+    return;
+
+  QualType Ty = CGM.getContext().getRecordType(RD);
+  llvm::DIType *T = getTypeOrNull(Ty);
+  if (T && T->isForwardDecl())
+    completeClassData(RD);
 }
 
 llvm::DIType *CGDebugInfo::CreateType(const RecordType *Ty) {
@@ -1978,7 +1984,8 @@ llvm::DIType *CGDebugInfo::CreateTypeDefinition(const ObjCInterfaceType *Ty,
     if (!SClassTy)
       return nullptr;
 
-    llvm::DIType *InhTag = DBuilder.createInheritance(RealDecl, SClassTy, 0, llvm::DINode::FlagZero);
+    llvm::DIType *InhTag = DBuilder.createInheritance(RealDecl, SClassTy, 0,
+                                                      llvm::DINode::FlagZero);
     EltTys.push_back(InhTag);
   }
 
@@ -2656,9 +2663,9 @@ llvm::DIType *CGDebugInfo::CreateMemberType(llvm::DIFile *Unit, QualType FType,
   llvm::DIType *FieldTy = CGDebugInfo::getOrCreateType(FType, Unit);
   uint64_t FieldSize = CGM.getContext().getTypeSize(FType);
   unsigned FieldAlign = CGM.getContext().getTypeAlign(FType);
-  llvm::DIType *Ty = DBuilder.createMemberType(Unit, Name, Unit, 0, FieldSize,
-                                               FieldAlign, *Offset,
-                                               llvm::DINode::FlagZero, FieldTy);
+  llvm::DIType *Ty =
+      DBuilder.createMemberType(Unit, Name, Unit, 0, FieldSize, FieldAlign,
+                                *Offset, llvm::DINode::FlagZero, FieldTy);
   *Offset += FieldSize;
   return Ty;
 }
@@ -3518,10 +3525,9 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
       uint64_t xoffset;
       fieldType = EmitTypeForVarWithBlocksAttr(variable, &xoffset);
       fieldType = DBuilder.createPointerType(fieldType, PtrInfo.Width);
-      fieldType =
-          DBuilder.createMemberType(tunit, name, tunit, line, PtrInfo.Width,
-                                    PtrInfo.Align, offsetInBits,
-                                    llvm::DINode::FlagZero, fieldType);
+      fieldType = DBuilder.createMemberType(
+          tunit, name, tunit, line, PtrInfo.Width, PtrInfo.Align, offsetInBits,
+          llvm::DINode::FlagZero, fieldType);
     } else {
       fieldType = createFieldType(name, variable->getType(), loc, AS_public,
                                   offsetInBits, tunit, tunit);
@@ -3535,11 +3541,11 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
 
   llvm::DINodeArray fieldsArray = DBuilder.getOrCreateArray(fields);
 
-  llvm::DIType *type = DBuilder.createStructType(
-      tunit, typeName.str(), tunit, line,
-      CGM.getContext().toBits(block.BlockSize),
-      CGM.getContext().toBits(block.BlockAlign), llvm::DINode::FlagZero,
-      nullptr, fieldsArray);
+  llvm::DIType *type =
+      DBuilder.createStructType(tunit, typeName.str(), tunit, line,
+                                CGM.getContext().toBits(block.BlockSize),
+                                CGM.getContext().toBits(block.BlockAlign),
+                                llvm::DINode::FlagZero, nullptr, fieldsArray);
   type = DBuilder.createPointerType(type, CGM.PointerWidthInBits);
 
   // Get overall information about the block.
@@ -3600,8 +3606,8 @@ llvm::DIGlobalVariable *CGDebugInfo::CollectAnonRecordDecls(
     }
     // Use VarDecl's Tag, Scope and Line number.
     GV = DBuilder.createGlobalVariable(DContext, FieldName, LinkageName, Unit,
-                                       LineNo, FieldTy,
-                                       Var->hasLocalLinkage(), Var, nullptr);
+                                       LineNo, FieldTy, Var->hasLocalLinkage());
+    Var->addDebugInfo(GV);
   }
   return GV;
 }
@@ -3634,14 +3640,14 @@ void CGDebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
   } else {
     GV = DBuilder.createGlobalVariable(
         DContext, DeclName, LinkageName, Unit, LineNo, getOrCreateType(T, Unit),
-        Var->hasLocalLinkage(), Var,
+        Var->hasLocalLinkage(), /*Expr=*/nullptr,
         getOrCreateStaticDataMemberDeclarationOrNull(D));
+    Var->addDebugInfo(GV);
   }
   DeclCache[D->getCanonicalDecl()].reset(GV);
 }
 
-void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD,
-                                     llvm::Constant *Init) {
+void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
   assert(DebugKind >= codegenoptions::LimitedDebugInfo);
   if (VD->hasAttr<NoDebugAttr>())
     return;
@@ -3681,9 +3687,13 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD,
   auto &GV = DeclCache[VD];
   if (GV)
     return;
+  llvm::DIExpression *InitExpr = nullptr;
+  if (Init.isInt())
+    InitExpr =
+        DBuilder.createConstantValueExpression(Init.getInt().getExtValue());
   GV.reset(DBuilder.createGlobalVariable(
       DContext, Name, StringRef(), Unit, getLineNumber(VD->getLocation()), Ty,
-      true, Init, getOrCreateStaticDataMemberDeclarationOrNull(VarD)));
+      true, InitExpr, getOrCreateStaticDataMemberDeclarationOrNull(VarD)));
 }
 
 llvm::DIScope *CGDebugInfo::getCurrentContextDescriptor(const Decl *D) {

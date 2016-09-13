@@ -54,7 +54,7 @@ struct ResolvedReloc {
 template <class ELFT>
 static typename ELFT::uint getAddend(InputSectionBase<ELFT> &Sec,
                                      const typename ELFT::Rel &Rel) {
-  return Target->getImplicitAddend(Sec.getSectionData().begin(),
+  return Target->getImplicitAddend(Sec.Data.begin(),
                                    Rel.getType(Config->Mips64EL));
 }
 
@@ -174,7 +174,7 @@ template <class ELFT> static bool isReserved(InputSectionBase<ELFT> *Sec) {
   case SHT_PREINIT_ARRAY:
     return true;
   default:
-    StringRef S = Sec->getSectionName();
+    StringRef S = Sec->Name;
 
     // We do not want to reclaim sections if they can be referred
     // by __start_* and __stop_* symbols.

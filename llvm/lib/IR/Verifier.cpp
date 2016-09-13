@@ -1112,12 +1112,8 @@ void Verifier::visitDIGlobalVariable(const DIGlobalVariable &N) {
 
   AssertDI(N.getTag() == dwarf::DW_TAG_variable, "invalid tag", &N);
   AssertDI(!N.getName().empty(), "missing global variable name", &N);
-  if (auto *V = N.getRawVariable()) {
-    AssertDI(isa<ConstantAsMetadata>(V) &&
-                 !isa<Function>(cast<ConstantAsMetadata>(V)->getValue()),
-             "invalid global variable ref", &N, V);
-    visitConstantExprsRecursively(cast<ConstantAsMetadata>(V)->getValue());
-  }
+  if (auto *V = N.getRawExpr())
+    AssertDI(isa<DIExpression>(V), "invalid expression location", &N, V);
   if (auto *Member = N.getRawStaticDataMemberDeclaration()) {
     AssertDI(isa<DIDerivedType>(Member),
              "invalid static data member declaration", &N, Member);
@@ -2586,15 +2582,20 @@ void Verifier::verifyCallSite(CallSite CS) {
   }
 
   // For each argument of the callsite, if it has the swifterror argument,
-  // make sure the underlying alloca has swifterror as well.
+  // make sure the underlying alloca/parameter it comes from has a swifterror as
+  // well.
   for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i)
     if (CS.paramHasAttr(i+1, Attribute::SwiftError)) {
       Value *SwiftErrorArg = CS.getArgument(i);
-      auto AI = dyn_cast<AllocaInst>(SwiftErrorArg->stripInBoundsOffsets());
-      Assert(AI, "swifterror argument should come from alloca", AI, I);
-      if (AI)
+      if (auto AI = dyn_cast<AllocaInst>(SwiftErrorArg->stripInBoundsOffsets())) {
         Assert(AI->isSwiftError(),
                "swifterror argument for call has mismatched alloca", AI, I);
+        continue;
+      }
+      auto ArgI = dyn_cast<Argument>(SwiftErrorArg);
+      Assert(ArgI, "swifterror argument should come from an alloca or parameter", SwiftErrorArg, I);
+      Assert(ArgI->hasSwiftErrorAttr(),
+             "swifterror argument for call has mismatched parameter", ArgI, I);
     }
 
   if (FTy->isVarArg()) {

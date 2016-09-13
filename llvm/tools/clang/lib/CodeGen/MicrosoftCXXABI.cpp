@@ -1575,10 +1575,7 @@ void MicrosoftCXXABI::emitVTableDefinitions(CodeGenVTables &CGVT,
                [](const VTableComponent &VTC) { return VTC.isRTTIKind(); }))
       RTTI = getMSCompleteObjectLocator(RD, Info);
 
-    llvm::Constant *Init = CGVT.CreateVTableInitializer(
-        RD, VTLayout.vtable_component_begin(),
-        VTLayout.getNumVTableComponents(), VTLayout.vtable_thunk_begin(),
-        VTLayout.getNumVTableThunks(), RTTI);
+    llvm::Constant *Init = CGVT.CreateVTableInitializer(VTLayout, RTTI);
 
     VTable->setInitializer(Init);
 
@@ -1701,7 +1698,8 @@ llvm::GlobalVariable *MicrosoftCXXABI::getAddrOfVTable(const CXXRecordDecl *RD,
 
   uint64_t NumVTableSlots =
       VTContext.getVFTableLayout(RD, VFPtr->FullOffsetInMDC)
-          .getNumVTableComponents();
+          .vtable_components()
+          .size();
   llvm::GlobalValue::LinkageTypes VTableLinkage =
       VTableAliasIsRequred ? llvm::GlobalValue::PrivateLinkage : VFTableLinkage;
 
@@ -2213,6 +2211,14 @@ void MicrosoftCXXABI::EmitThreadLocalInitFuncs(
     CodeGenModule &CGM, ArrayRef<const VarDecl *> CXXThreadLocals,
     ArrayRef<llvm::Function *> CXXThreadLocalInits,
     ArrayRef<const VarDecl *> CXXThreadLocalInitVars) {
+  if (CXXThreadLocalInits.empty())
+    return;
+
+  CGM.AppendLinkerOptions(CGM.getTarget().getTriple().getArch() ==
+                                  llvm::Triple::x86
+                              ? "/include:___dyn_tls_init@12"
+                              : "/include:__dyn_tls_init");
+
   // This will create a GV in the .CRT$XDU section.  It will point to our
   // initialization function.  The CRT will call all of these function
   // pointers at start-up time and, eventually, at thread-creation time.

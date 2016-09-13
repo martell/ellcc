@@ -165,6 +165,8 @@ public:
       return GV && llvm::canBeOmittedFromSymbolTable(GV);
     }
     Expected<const Comdat *> getComdat() const {
+      if (!GV)
+        return nullptr;
       const GlobalObject *GO;
       if (auto *GA = dyn_cast<GlobalAlias>(GV)) {
         GO = GA->getBaseObject();
@@ -223,6 +225,10 @@ public:
   iterator_range<symbol_iterator> symbols() {
     return llvm::make_range(symbol_iterator(Obj->symbol_begin()),
                             symbol_iterator(Obj->symbol_end()));
+  }
+
+  StringRef getDataLayoutStr() const {
+    return Obj->getModule().getDataLayoutStr();
   }
 
   StringRef getSourceFileName() const {

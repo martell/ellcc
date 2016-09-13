@@ -23,16 +23,13 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Config/config.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
 #include "llvm/Support/Path.h"
 #include <algorithm>
-
-#if defined(HAVE_CXXABI_H)
-#include <cxxabi.h>
-#endif
 
 using lld::mach_o::ArchHandler;
 using lld::mach_o::MachOFile;
@@ -876,22 +873,30 @@ std::string MachOLinkingContext::demangle(StringRef symbolName) const {
   if (!symbolName.startswith("__Z"))
     return symbolName;
 
-#if defined(HAVE_CXXABI_H)
   SmallString<256> symBuff;
   StringRef nullTermSym = Twine(symbolName).toNullTerminatedStringRef(symBuff);
   // Mach-O has extra leading underscore that needs to be removed.
   const char *cstr = nullTermSym.data() + 1;
   int status;
-  char *demangled = abi::__cxa_demangle(cstr, nullptr, nullptr, &status);
+  char *demangled = llvm::itaniumDemangle(cstr, nullptr, nullptr, &status);
   if (demangled) {
     std::string result(demangled);
     // __cxa_demangle() always uses a malloc'ed buffer to return the result.
     free(demangled);
     return result;
   }
-#endif
 
   return symbolName;
+}
+
+static void addDependencyInfoHelper(llvm::raw_fd_ostream *DepInfo,
+                                    char Opcode, StringRef Path) {
+  if (!DepInfo)
+    return;
+
+  *DepInfo << Opcode;
+  *DepInfo << Path;
+  *DepInfo << '\0';
 }
 
 std::error_code MachOLinkingContext::createDependencyFile(StringRef path) {
@@ -903,42 +908,20 @@ std::error_code MachOLinkingContext::createDependencyFile(StringRef path) {
     return ec;
   }
 
-  char linkerVersionOpcode = 0x00;
-  *_dependencyInfo << linkerVersionOpcode;
-  *_dependencyInfo << "lld";     // FIXME
-  *_dependencyInfo << '\0';
-
+  addDependencyInfoHelper(_dependencyInfo.get(), 0x00, "lld" /*FIXME*/);
   return std::error_code();
 }
 
 void MachOLinkingContext::addInputFileDependency(StringRef path) const {
-  if (!_dependencyInfo)
-    return;
-
-  char inputFileOpcode = 0x10;
-  *_dependencyInfo << inputFileOpcode;
-  *_dependencyInfo << path;
-  *_dependencyInfo << '\0';
+  addDependencyInfoHelper(_dependencyInfo.get(), 0x10, path);
 }
 
 void MachOLinkingContext::addInputFileNotFound(StringRef path) const {
-  if (!_dependencyInfo)
-    return;
-
-  char inputFileOpcode = 0x11;
-  *_dependencyInfo << inputFileOpcode;
-  *_dependencyInfo << path;
-  *_dependencyInfo << '\0';
+  addDependencyInfoHelper(_dependencyInfo.get(), 0x11, path);
 }
 
 void MachOLinkingContext::addOutputFileDependency(StringRef path) const {
-  if (!_dependencyInfo)
-    return;
-
-  char outputFileOpcode = 0x40;
-  *_dependencyInfo << outputFileOpcode;
-  *_dependencyInfo << path;
-  *_dependencyInfo << '\0';
+  addDependencyInfoHelper(_dependencyInfo.get(), 0x40, path);
 }
 
 void MachOLinkingContext::appendOrderedSymbol(StringRef symbol,

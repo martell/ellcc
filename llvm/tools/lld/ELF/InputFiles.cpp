@@ -12,6 +12,7 @@
 #include "Error.h"
 #include "InputSection.h"
 #include "LinkerScript.h"
+#include "ELFCreator.h"
 #include "SymbolTable.h"
 #include "Symbols.h"
 #include "llvm/ADT/STLExtras.h"
@@ -19,6 +20,8 @@
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/MC/StringTableBuilder.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -233,53 +236,6 @@ void elf::ObjectFile<ELFT>::initializeSections(
     case SHT_STRTAB:
     case SHT_NULL:
       break;
-    case SHT_RELA:
-    case SHT_REL: {
-      // This section contains relocation information.
-      // If -r is given, we do not interpret or apply relocation
-      // but just copy relocation sections to output.
-      if (Config->Relocatable) {
-        Sections[I] = new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec);
-        break;
-      }
-
-      // Find the relocation target section and associate this
-      // section with it.
-      InputSectionBase<ELFT> *Target = getRelocTarget(Sec);
-      if (!Target)
-        break;
-      if (auto *S = dyn_cast<InputSection<ELFT>>(Target)) {
-        S->RelocSections.push_back(&Sec);
-        break;
-      }
-      if (auto *S = dyn_cast<EhInputSection<ELFT>>(Target)) {
-        if (S->RelocSection)
-          fatal(
-              getFilename(this) +
-              ": multiple relocation sections to .eh_frame are not supported");
-        S->RelocSection = &Sec;
-        break;
-      }
-      fatal(getFilename(this) +
-            ": relocations pointing to SHF_MERGE are not supported");
-    }
-    case SHT_ARM_ATTRIBUTES:
-      // FIXME: ARM meta-data section. At present attributes are ignored,
-      // they can be used to reason about object compatibility.
-      Sections[I] = &InputSection<ELFT>::Discarded;
-      break;
-    case SHT_MIPS_REGINFO:
-      MipsReginfo.reset(new MipsReginfoInputSection<ELFT>(this, &Sec));
-      Sections[I] = MipsReginfo.get();
-      break;
-    case SHT_MIPS_OPTIONS:
-      MipsOptions.reset(new MipsOptionsInputSection<ELFT>(this, &Sec));
-      Sections[I] = MipsOptions.get();
-      break;
-    case SHT_MIPS_ABIFLAGS:
-      MipsAbiFlags.reset(new MipsAbiFlagsInputSection<ELFT>(this, &Sec));
-      Sections[I] = MipsAbiFlags.get();
-      break;
     default:
       Sections[I] = createInputSection(Sec);
     }
@@ -311,6 +267,49 @@ InputSectionBase<ELFT> *
 elf::ObjectFile<ELFT>::createInputSection(const Elf_Shdr &Sec) {
   StringRef Name = check(this->ELFObj.getSectionName(&Sec));
 
+  switch (Sec.sh_type) {
+  case SHT_ARM_ATTRIBUTES:
+    // FIXME: ARM meta-data section. At present attributes are ignored,
+    // they can be used to reason about object compatibility.
+    return &InputSection<ELFT>::Discarded;
+  case SHT_MIPS_REGINFO:
+    MipsReginfo.reset(new MipsReginfoInputSection<ELFT>(this, &Sec, Name));
+    return MipsReginfo.get();
+  case SHT_MIPS_OPTIONS:
+    MipsOptions.reset(new MipsOptionsInputSection<ELFT>(this, &Sec, Name));
+    return MipsOptions.get();
+  case SHT_MIPS_ABIFLAGS:
+    MipsAbiFlags.reset(new MipsAbiFlagsInputSection<ELFT>(this, &Sec, Name));
+    return MipsAbiFlags.get();
+  case SHT_RELA:
+  case SHT_REL: {
+    // This section contains relocation information.
+    // If -r is given, we do not interpret or apply relocation
+    // but just copy relocation sections to output.
+    if (Config->Relocatable)
+      return new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec, Name);
+
+    // Find the relocation target section and associate this
+    // section with it.
+    InputSectionBase<ELFT> *Target = getRelocTarget(Sec);
+    if (!Target)
+      return nullptr;
+    if (auto *S = dyn_cast<InputSection<ELFT>>(Target)) {
+      S->RelocSections.push_back(&Sec);
+      return nullptr;
+    }
+    if (auto *S = dyn_cast<EhInputSection<ELFT>>(Target)) {
+      if (S->RelocSection)
+        fatal(getFilename(this) +
+              ": multiple relocation sections to .eh_frame are not supported");
+      S->RelocSection = &Sec;
+      return nullptr;
+    }
+    fatal(getFilename(this) +
+          ": relocations pointing to SHF_MERGE are not supported");
+  }
+  }
+
   // .note.GNU-stack is a marker section to control the presence of
   // PT_GNU_STACK segment in outputs. Since the presence of the segment
   // is controlled only by the command line option (-z execstack) in LLD,
@@ -330,11 +329,11 @@ elf::ObjectFile<ELFT>::createInputSection(const Elf_Shdr &Sec) {
   // .eh_frame_hdr section for runtime. So we handle them with a special
   // class. For relocatable outputs, they are just passed through.
   if (Name == ".eh_frame" && !Config->Relocatable)
-    return new (EHAlloc.Allocate()) EhInputSection<ELFT>(this, &Sec);
+    return new (EHAlloc.Allocate()) EhInputSection<ELFT>(this, &Sec, Name);
 
   if (shouldMerge(Sec))
-    return new (MAlloc.Allocate()) MergeInputSection<ELFT>(this, &Sec);
-  return new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec);
+    return new (MAlloc.Allocate()) MergeInputSection<ELFT>(this, &Sec, Name);
+  return new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec, Name);
 }
 
 template <class ELFT> void elf::ObjectFile<ELFT>::initializeSymbols() {
@@ -481,7 +480,11 @@ template <class ELFT> void SharedFile<ELFT>::parseSoName() {
   }
 
   this->initStringTable();
-  SoName = this->getName();
+
+  // DSOs are identified by soname, and they usually contain
+  // DT_SONAME tag in their header. But if they are missing,
+  // filenames are used as default sonames.
+  SoName = sys::path::filename(this->getName());
 
   if (!DynamicSec)
     return;
@@ -729,6 +732,50 @@ static std::unique_ptr<InputFile> createELFFile(MemoryBufferRef MB) {
   return Obj;
 }
 
+template <class ELFT> std::unique_ptr<InputFile> BinaryFile::createELF() {
+  // Wrap the binary blob with an ELF header and footer
+  // so that we can link it as a regular ELF file.
+  ELFCreator<ELFT> ELF(ET_REL, Config->EMachine);
+  auto DataSec = ELF.addSection(".data");
+  DataSec.Header->sh_flags = SHF_ALLOC;
+  DataSec.Header->sh_size = MB.getBufferSize();
+  DataSec.Header->sh_type = SHT_PROGBITS;
+  DataSec.Header->sh_addralign = 8;
+
+  std::string Filepath = MB.getBufferIdentifier();
+  std::transform(Filepath.begin(), Filepath.end(), Filepath.begin(),
+                 [](char C) { return isalnum(C) ? C : '_'; });
+  std::string StartSym = "_binary_" + Filepath + "_start";
+  std::string EndSym = "_binary_" + Filepath + "_end";
+  std::string SizeSym = "_binary_" + Filepath + "_size";
+
+  auto SSym = ELF.addSymbol(StartSym);
+  SSym.Sym->setBindingAndType(STB_GLOBAL, STT_OBJECT);
+  SSym.Sym->st_shndx = DataSec.Index;
+
+  auto ESym = ELF.addSymbol(EndSym);
+  ESym.Sym->setBindingAndType(STB_GLOBAL, STT_OBJECT);
+  ESym.Sym->st_shndx = DataSec.Index;
+  ESym.Sym->st_value = MB.getBufferSize();
+
+  auto SZSym = ELF.addSymbol(SizeSym);
+  SZSym.Sym->setBindingAndType(STB_GLOBAL, STT_OBJECT);
+  SZSym.Sym->st_shndx = SHN_ABS;
+  SZSym.Sym->st_value = MB.getBufferSize();
+
+  std::size_t Size = ELF.layout();
+  ELFData.resize(Size);
+
+  ELF.write(ELFData.data());
+
+  // .data
+  std::copy(MB.getBufferStart(), MB.getBufferEnd(),
+            ELFData.data() + DataSec.Header->sh_offset);
+
+  return createELFFile<ObjectFile>(MemoryBufferRef(
+      StringRef((char *)ELFData.data(), Size), MB.getBufferIdentifier()));
+}
+
 static bool isBitcode(MemoryBufferRef MB) {
   using namespace sys::fs;
   return identify_magic(MB.getBuffer()) == file_magic::bitcode;
@@ -849,3 +896,8 @@ template class elf::SharedFile<ELF32LE>;
 template class elf::SharedFile<ELF32BE>;
 template class elf::SharedFile<ELF64LE>;
 template class elf::SharedFile<ELF64BE>;
+
+template std::unique_ptr<InputFile> BinaryFile::createELF<ELF32LE>();
+template std::unique_ptr<InputFile> BinaryFile::createELF<ELF32BE>();
+template std::unique_ptr<InputFile> BinaryFile::createELF<ELF64LE>();
+template std::unique_ptr<InputFile> BinaryFile::createELF<ELF64BE>();

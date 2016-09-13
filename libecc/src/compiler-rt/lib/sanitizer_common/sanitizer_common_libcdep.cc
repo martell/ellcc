@@ -40,7 +40,7 @@ bool ColorizeReports() {
   return internal_strcmp(flag, "always") == 0 ||
          (internal_strcmp(flag, "auto") == 0 && report_file.SupportsColors());
 }
-void ReportErrorSummary(const char *error_type, StackTrace *stack) {
+void ReportErrorSummary(const char *error_type, const StackTrace *stack) {
 #if !SANITIZER_GO
   if (!common_flags()->print_summary)
     return;
