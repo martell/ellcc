@@ -307,63 +307,6 @@ void CoveragePrinterHTML::closeViewFile(OwnedStream OS) {
   emitEpilog(*OS.get());
 }
 
-<<<<<<< .working
-/// \brief Return the color which correponds to the coverage
-/// percentage of a certain metric.
-template <typename T>
-static const char *determineCoveragePercentageColor(const T &Info) {
-  if (Info.isFullyCovered())
-    return "green";
-  return Info.getPercentCovered() >= 80.0 ? "yellow" : "red";
-}
-
-void emitFormattedCount(raw_ostream &OSRef, const format_object_base &Value,
-                        const char *Align, const char *Color = NULL) {
-  OSRef << "<td align=\"" << Align << "\"";
-  if (Color) {
-    OSRef << "style=\"color: " << Color << ";\"";
-  }
-  OSRef << ">";
-  OSRef << Value;
-  OSRef << "</td>";
-}
-
-static void showSummary(raw_ostream &OSRef, StringRef Name,
-                        FileCoverageSummary &File) {
-  OSRef << "<tr>";
-  OSRef << tag("td", Name);
-
-  emitFormattedCount(OSRef, format("%u", File.RegionCoverage.NumRegions),
-                     "right");
-  emitFormattedCount(OSRef, format("%u", File.RegionCoverage.NotCovered),
-                     "right",
-                     File.RegionCoverage.isFullyCovered() ? "green" : "red");
-  emitFormattedCount(
-      OSRef, format("%.2f%%", File.RegionCoverage.getPercentCovered()), "right",
-      determineCoveragePercentageColor(File.RegionCoverage));
-  emitFormattedCount(OSRef, format("%u", File.FunctionCoverage.NumFunctions),
-                     "right");
-  emitFormattedCount(OSRef, format("%u", File.FunctionCoverage.NumFunctions -
-                                             File.FunctionCoverage.Executed),
-                     "right");
-  emitFormattedCount(
-      OSRef, format("%.2f%%", File.FunctionCoverage.getPercentCovered()),
-      "right", determineCoveragePercentageColor(File.FunctionCoverage));
-  emitFormattedCount(OSRef, format("%u", File.LineCoverage.NumLines), "right");
-  emitFormattedCount(OSRef, format("%u", File.LineCoverage.NotCovered), "right",
-                     File.LineCoverage.isFullyCovered() ? "green" : "red");
-  emitFormattedCount(
-      OSRef, format("%.2f%%", File.LineCoverage.getPercentCovered()), "right",
-      determineCoveragePercentageColor(File.LineCoverage));
-  OSRef << "</tr>";
-}
-
-Error CoveragePrinterHTML::createIndexFile(
-    ArrayRef<StringRef> SourceFiles,
-    const coverage::CoverageMapping &Coverage) {
-||||||| .merge-left.r6731
-Error CoveragePrinterHTML::createIndexFile(ArrayRef<StringRef> SourceFiles) {
-=======
 /// Emit column labels for the table in the index.
 static void emitColumnLabelsForIndex(raw_ostream &OS) {
   SmallVector<std::string, 4> Columns;
@@ -437,7 +380,6 @@ Error CoveragePrinterHTML::createIndexFile(
   CSS->operator<<(CSSForCoverage);
 
   // Emit a file index along with some coverage statistics.
->>>>>>> .merge-right.r6731
   auto OSOrErr = createOutputStream("index", "html", /*InToplevel=*/true);
   if (Error E = OSOrErr.takeError())
     return E;
@@ -475,8 +417,7 @@ void SourceCoverageViewHTML::renderViewHeader(raw_ostream &OS) {
 }
 
 void SourceCoverageViewHTML::renderViewFooter(raw_ostream &OS) {
-  OS << EndTable << EndCenteredDiv
-     << tag("h5", escape(getOptions().getLLVMVersionString(), getOptions()));
+  OS << EndTable << EndCenteredDiv;
 }
 
 void SourceCoverageViewHTML::renderSourceName(raw_ostream &OS, bool WholeFile) {
