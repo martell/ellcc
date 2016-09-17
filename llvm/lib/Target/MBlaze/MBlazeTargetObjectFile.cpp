@@ -74,7 +74,7 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
 
 MCSection *MBlazeTargetObjectFile::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                       Mangler &Mang, const TargetMachine &TM) const {
+                       const TargetMachine &TM) const {
   // TODO: Could also support "weak" symbols as well with ".gnu.linkonce.s.*"
   // sections?
 
@@ -85,5 +85,5 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
     return SmallDataSection;
 
   // Otherwise, we work the same as ELF.
-  return TargetLoweringObjectFileELF::SelectSectionForGlobal(GV, Kind, Mang,TM);
+  return TargetLoweringObjectFileELF::SelectSectionForGlobal(GV, Kind, TM);
 }

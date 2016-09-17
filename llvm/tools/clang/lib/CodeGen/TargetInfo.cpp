@@ -8159,10 +8159,6 @@ static bool getTypeString(SmallStringEnc &Enc, const Decl *D,
 // Driver code
 //===----------------------------------------------------------------------===//
 
-const llvm::Triple &CodeGenModule::getTriple() const {
-  return getTarget().getTriple();
-}
-
 bool CodeGenModule::supportsCOMDAT() const {
   return getTriple().supportsCOMDAT();
 }

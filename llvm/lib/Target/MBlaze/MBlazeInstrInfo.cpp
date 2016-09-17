@@ -187,13 +187,15 @@ bool MBlazeInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
 }
 
 unsigned MBlazeInstrInfo::
-InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
              MachineBasicBlock *FBB,
-             ArrayRef<MachineOperand> Cond, const DebugLoc &DL) const {
+             ArrayRef<MachineOperand> Cond, const DebugLoc &DL,
+             int *BytesAdded) const {
   // Shouldn't be a fall through.
-  assert(TBB && "InsertBranch must not be told to insert a fallthrough");
+  assert(TBB && "insertBranch must not be told to insert a fallthrough");
   assert((Cond.size() == 2 || Cond.size() == 0) &&
          "MBlaze branch conditions have two components!");
+  assert(!BytesAdded && "code size not handled");
 
   unsigned Opc = MBlaze::BRID;
   if (!Cond.empty())
@@ -212,7 +214,10 @@ InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   return 2;
 }
 
-unsigned MBlazeInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
+unsigned MBlazeInstrInfo::removeBranch(MachineBasicBlock &MBB,
+                                       int *BytesRemoved) const {
+  assert(!BytesRemoved && "code size not handled");
+
   MachineBasicBlock::iterator I = MBB.end();
   if (I == MBB.begin()) return 0;
   --I;
@@ -241,7 +246,7 @@ unsigned MBlazeInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
   return 2;
 }
 
-bool MBlazeInstrInfo::ReverseBranchCondition(SmallVectorImpl<MachineOperand>
+bool MBlazeInstrInfo::reverseBranchCondition(SmallVectorImpl<MachineOperand>
                                                &Cond) const {
   assert(Cond.size() == 2 && "Invalid MBlaze branch opcode!");
   switch (Cond[0].getImm()) {

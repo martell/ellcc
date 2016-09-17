@@ -38,10 +38,14 @@ add_library_flags("${LIBCXX_CXX_ABI_LIBRARY}")
 add_library_flags_if(LIBCXX_ENABLE_STATIC_ABI_LIBRARY "-Wl,-Bdynamic" "-Wl,--no-whole-archive")
 
 if (APPLE AND LLVM_USE_SANITIZER)
-  if ("${LLVM_USE_SANITIZER}" STREQUAL "Address")
+  if (("${LLVM_USE_SANITIZER}" STREQUAL "Address") OR
+      ("${LLVM_USE_SANITIZER}" STREQUAL "Address;Undefined") OR
+      ("${LLVM_USE_SANITIZER}" STREQUAL "Undefined;Address"))
     set(LIBFILE "libclang_rt.asan_osx_dynamic.dylib")
   elseif("${LLVM_USE_SANITIZER}" STREQUAL "Undefined")
     set(LIBFILE "libclang_rt.ubsan_osx_dynamic.dylib")
+  elseif("${LLVM_USE_SANITIZER}" STREQUAL "Thread")
+    set(LIBFILE "libclang_rt.tsan_osx_dynamic.dylib")
   else()
     message(WARNING "LLVM_USE_SANITIZER=${LLVM_USE_SANITIZER} is not supported on OS X")
   endif()

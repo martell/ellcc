@@ -364,7 +364,7 @@ bool MIParser::parseBasicBlockDefinition(
 
   if (!Name.empty()) {
     BB = dyn_cast_or_null<BasicBlock>(
-        MF.getFunction()->getValueSymbolTable().lookup(Name));
+        MF.getFunction()->getValueSymbolTable()->lookup(Name));
     if (!BB)
       return error(Loc, Twine("basic block '") + Name +
                             "' is not defined in the function '" +
@@ -1039,16 +1039,14 @@ bool MIParser::parseIRConstant(StringRef::iterator Loc, const Constant *&C) {
 }
 
 bool MIParser::parseLowLevelType(StringRef::iterator Loc, LLT &Ty) {
-  if (Token.is(MIToken::Identifier) && Token.stringValue() == "unsized") {
-    lex();
-    Ty = LLT::unsized();
-    return false;
-  } else if (Token.is(MIToken::ScalarType)) {
+  if (Token.is(MIToken::ScalarType)) {
     Ty = LLT::scalar(APSInt(Token.range().drop_front()).getZExtValue());
     lex();
     return false;
   } else if (Token.is(MIToken::PointerType)) {
-    Ty = LLT::pointer(APSInt(Token.range().drop_front()).getZExtValue());
+    const DataLayout &DL = MF.getFunction()->getParent()->getDataLayout();
+    unsigned AS = APSInt(Token.range().drop_front()).getZExtValue();
+    Ty = LLT::pointer(AS, DL.getPointerSizeInBits(AS));
     lex();
     return false;
   }
@@ -1385,7 +1383,7 @@ bool MIParser::parseIRBlock(BasicBlock *&BB, const Function &F) {
   switch (Token.kind()) {
   case MIToken::NamedIRBlock: {
     BB = dyn_cast_or_null<BasicBlock>(
-        F.getValueSymbolTable().lookup(Token.stringValue()));
+        F.getValueSymbolTable()->lookup(Token.stringValue()));
     if (!BB)
       return error(Twine("use of undefined IR block '") + Token.range() + "'");
     break;
@@ -1731,7 +1729,7 @@ bool MIParser::parseOperandsOffset(MachineOperand &Op) {
 bool MIParser::parseIRValue(const Value *&V) {
   switch (Token.kind()) {
   case MIToken::NamedIRValue: {
-    V = MF.getFunction()->getValueSymbolTable().lookup(Token.stringValue());
+    V = MF.getFunction()->getValueSymbolTable()->lookup(Token.stringValue());
     break;
   }
   case MIToken::IRValue: {

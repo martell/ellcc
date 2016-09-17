@@ -315,6 +315,8 @@ private:
     struct CommonResolution {
       uint64_t Size = 0;
       unsigned Align = 0;
+      /// Record if at least one instance of the common was marked as prevailing
+      bool Prevailing = false;
     };
     std::map<std::string, CommonResolution> Commons;
 
@@ -385,7 +387,7 @@ private:
                    ArrayRef<SymbolResolution> Res);
 
   Error runRegularLTO(AddOutputFn AddOutput);
-  Error runThinLTO(AddOutputFn AddOutput);
+  Error runThinLTO(AddOutputFn AddOutput, bool HasRegularLTO);
 
   mutable bool CalledGetMaxTasks = false;
 };

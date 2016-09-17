@@ -1105,29 +1105,38 @@ bool SIInstrInfo::analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
   return true;
 }
 
-unsigned SIInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
+unsigned SIInstrInfo::removeBranch(MachineBasicBlock &MBB,
+                                   int *BytesRemoved) const {
   MachineBasicBlock::iterator I = MBB.getFirstTerminator();
 
   unsigned Count = 0;
+  unsigned RemovedSize = 0;
   while (I != MBB.end()) {
     MachineBasicBlock::iterator Next = std::next(I);
+    RemovedSize += getInstSizeInBytes(*I);
     I->eraseFromParent();
     ++Count;
     I = Next;
   }
 
+  if (BytesRemoved)
+    *BytesRemoved = RemovedSize;
+
   return Count;
 }
 
-unsigned SIInstrInfo::InsertBranch(MachineBasicBlock &MBB,
+unsigned SIInstrInfo::insertBranch(MachineBasicBlock &MBB,
                                    MachineBasicBlock *TBB,
                                    MachineBasicBlock *FBB,
                                    ArrayRef<MachineOperand> Cond,
-                                   const DebugLoc &DL) const {
+                                   const DebugLoc &DL,
+                                   int *BytesAdded) const {
 
   if (!FBB && Cond.empty()) {
     BuildMI(&MBB, DL, get(AMDGPU::S_BRANCH))
       .addMBB(TBB);
+    if (BytesAdded)
+      *BytesAdded = 4;
     return 1;
   }
 
@@ -1139,6 +1148,9 @@ unsigned SIInstrInfo::InsertBranch(MachineBasicBlock &MBB,
   if (!FBB) {
     BuildMI(&MBB, DL, get(Opcode))
       .addMBB(TBB);
+
+    if (BytesAdded)
+      *BytesAdded = 4;
     return 1;
   }
 
@@ -1149,10 +1161,13 @@ unsigned SIInstrInfo::InsertBranch(MachineBasicBlock &MBB,
   BuildMI(&MBB, DL, get(AMDGPU::S_BRANCH))
     .addMBB(FBB);
 
+  if (BytesAdded)
+      *BytesAdded = 8;
+
   return 2;
 }
 
-bool SIInstrInfo::ReverseBranchCondition(
+bool SIInstrInfo::reverseBranchCondition(
   SmallVectorImpl<MachineOperand> &Cond) const {
   assert(Cond.size() == 1);
   Cond[0].setImm(-Cond[0].getImm());
@@ -1797,6 +1812,21 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     }
   }
 
+  if (isSOPK(MI)) {
+    int64_t Imm = getNamedOperand(MI, AMDGPU::OpName::simm16)->getImm();
+    if (sopkIsZext(MI)) {
+      if (!isUInt<16>(Imm)) {
+        ErrInfo = "invalid immediate for SOPK instruction";
+        return false;
+      }
+    } else {
+      if (!isInt<16>(Imm)) {
+        ErrInfo = "invalid immediate for SOPK instruction";
+        return false;
+      }
+    }
+  }
+
   if (Desc.getOpcode() == AMDGPU::V_MOVRELS_B32_e32 ||
       Desc.getOpcode() == AMDGPU::V_MOVRELS_B32_e64 ||
       Desc.getOpcode() == AMDGPU::V_MOVRELD_B32_e32 ||
@@ -1900,6 +1930,8 @@ unsigned SIInstrInfo::getVALUOp(const MachineInstr &MI) {
   case AMDGPU::S_CMP_GE_U32: return AMDGPU::V_CMP_GE_U32_e32;
   case AMDGPU::S_CMP_LT_U32: return AMDGPU::V_CMP_LT_U32_e32;
   case AMDGPU::S_CMP_LE_U32: return AMDGPU::V_CMP_LE_U32_e32;
+  case AMDGPU::S_CMP_EQ_U64: return AMDGPU::V_CMP_EQ_U64_e32;
+  case AMDGPU::S_CMP_LG_U64: return AMDGPU::V_CMP_NE_U64_e32;
   case AMDGPU::S_BCNT1_I32_B32: return AMDGPU::V_BCNT_U32_B32_e64;
   case AMDGPU::S_FF1_I32_B32: return AMDGPU::V_FFBL_B32_e32;
   case AMDGPU::S_FLBIT_I32_B32: return AMDGPU::V_FFBH_U32_e32;

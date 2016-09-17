@@ -163,13 +163,15 @@ public:
                      SmallVectorImpl<MachineOperand> &Cond,
                      bool AllowModify) const override;
 
-  unsigned RemoveBranch(MachineBasicBlock &MBB) const override;
+  unsigned removeBranch(MachineBasicBlock &MBB,
+                        int *BytesRemoved = nullptr) const override;
 
-  unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+  unsigned insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                         MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
-                        const DebugLoc &DL) const override;
+                        const DebugLoc &DL,
+                        int *BytesAdded = nullptr) const override;
 
-  bool ReverseBranchCondition(
+  bool reverseBranchCondition(
     SmallVectorImpl<MachineOperand> &Cond) const override;
 
   bool
@@ -389,6 +391,14 @@ public:
     return MI.getDesc().TSFlags & SIInstrFlags::VM_CNT;
   }
 
+  static bool sopkIsZext(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::SOPK_ZEXT;
+  }
+
+  bool sopkIsZext(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::SOPK_ZEXT;
+  }
+
   bool isVGPRCopy(const MachineInstr &MI) const {
     assert(MI.isCopy());
     unsigned Dest = MI.getOperand(0).getReg();
@@ -600,6 +610,9 @@ namespace AMDGPU {
 
   LLVM_READONLY
   int getAtomicNoRetOp(uint16_t Opcode);
+
+  LLVM_READONLY
+  int getSOPKOp(uint16_t Opcode);
 
   const uint64_t RSRC_DATA_FORMAT = 0xf00000000000LL;
   const uint64_t RSRC_ELEMENT_SIZE_SHIFT = (32 + 19);

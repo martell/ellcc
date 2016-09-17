@@ -150,8 +150,8 @@ template <class ELFT> void elf::writeResult() {
   if (needsInterpSection<ELFT>())
     Interp.reset(new InterpSection<ELFT>);
 
-  if (Config->BuildId == BuildIdKind::Fnv1)
-    BuildId.reset(new BuildIdFnv1<ELFT>);
+  if (Config->BuildId == BuildIdKind::Fast)
+    BuildId.reset(new BuildIdFastHash<ELFT>);
   else if (Config->BuildId == BuildIdKind::Md5)
     BuildId.reset(new BuildIdMd5<ELFT>);
   else if (Config->BuildId == BuildIdKind::Sha1)
@@ -249,13 +249,13 @@ template <class ELFT> void Writer<ELFT>::run() {
   CommonInputSection<ELFT> Common(getCommonSymbols<ELFT>());
   CommonInputSection<ELFT>::X = &Common;
 
-  Script<ELFT>::X->createAssignments();
-
   Script<ELFT>::X->OutputSections = &OutputSections;
-  if (ScriptConfig->HasSections)
+  if (ScriptConfig->HasSections) {
     Script<ELFT>::X->createSections(Factory);
-  else
+  } else {
     createSections();
+    Script<ELFT>::X->processCommands(Factory);
+  }
 
   finalizeSections();
   if (HasError)
@@ -307,7 +307,9 @@ template <class ELFT> static void reportUndefined(SymbolBody *Sym) {
       Config->UnresolvedSymbols != UnresolvedPolicy::NoUndef)
     return;
 
-  std::string Msg = "undefined symbol: " + Sym->getName().str();
+  std::string Msg = "undefined symbol: ";
+  Msg += Config->Demangle ? demangle(Sym->getName()) : Sym->getName().str();
+
   if (Sym->File)
     Msg += " in " + getFilename(Sym->File);
   if (Config->UnresolvedSymbols == UnresolvedPolicy::Warn)
@@ -435,10 +437,6 @@ static bool compareSections(OutputSectionBase<ELFT> *A,
                             OutputSectionBase<ELFT> *B) {
   typedef typename ELFT::uint uintX_t;
 
-  int Comp = Script<ELFT>::X->compareSections(A->getName(), B->getName());
-  if (Comp != 0)
-    return Comp < 0;
-
   uintX_t AFlags = A->getFlags();
   uintX_t BFlags = B->getFlags();
 
@@ -448,6 +446,10 @@ static bool compareSections(OutputSectionBase<ELFT> *A,
   bool BIsAlloc = BFlags & SHF_ALLOC;
   if (AIsAlloc != BIsAlloc)
     return AIsAlloc;
+
+  int Comp = Script<ELFT>::X->compareSections(A->getName(), B->getName());
+  if (Comp != 0)
+    return Comp < 0;
 
   // We don't have any special requirements for the relative order of
   // two non allocatable sections.
@@ -1079,6 +1081,10 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
     uintX_t Alignment = Sec->getAlignment();
     if (Sec->PageAlign)
       Alignment = std::max<uintX_t>(Alignment, Target->PageSize);
+
+    auto I = Config->SectionStartMap.find(Sec->getName());
+    if (I != Config->SectionStartMap.end())
+      VA = I->second;
 
     // We only assign VAs to allocated sections.
     if (needsPtLoad(Sec)) {
