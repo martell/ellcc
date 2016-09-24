@@ -399,7 +399,6 @@ bool IRTranslator::translateCall(const User &U) {
   const Function *F = CI.getCalledFunction();
 
   if (!F || !F->isIntrinsic()) {
-    // FIXME: handle multiple return values.
     unsigned Res = CI.getType()->isVoidTy() ? 0 : getOrCreateVReg(CI);
     SmallVector<unsigned, 8> Args;
     for (auto &Arg: CI.arg_operands())
@@ -557,8 +556,7 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &MF) {
   SmallVector<unsigned, 8> VRegArgs;
   for (const Argument &Arg: F.args())
     VRegArgs.push_back(getOrCreateVReg(Arg));
-  bool Succeeded =
-      CLI->lowerFormalArguments(MIRBuilder, F.getArgumentList(), VRegArgs);
+  bool Succeeded = CLI->lowerFormalArguments(MIRBuilder, F, VRegArgs);
   if (!Succeeded) {
     if (!TPC->isGlobalISelAbortEnabled()) {
       MIRBuilder.getMF().getProperties().set(

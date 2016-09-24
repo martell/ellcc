@@ -109,12 +109,6 @@ bool LinkerScript<ELFT>::shouldKeep(InputSectionBase<ELFT> *S) {
   return false;
 }
 
-// We need to use const_cast because match() is not a const function.
-// This function encapsulates that ugliness.
-static bool match(const Regex &Re, StringRef S) {
-  return const_cast<Regex &>(Re).match(S);
-}
-
 static bool comparePriority(InputSectionData *A, InputSectionData *B) {
   return getPriority(A->Name) < getPriority(B->Name);
 }
@@ -144,22 +138,23 @@ getComparator(SortSectionPolicy K) {
   }
 }
 
-static bool checkConstraint(uint64_t Flags, ConstraintKind Kind) {
-  bool RO = (Kind == ConstraintKind::ReadOnly);
-  bool RW = (Kind == ConstraintKind::ReadWrite);
-  bool Writable = Flags & SHF_WRITE;
-  return !(RO && Writable) && !(RW && !Writable);
-}
-
 template <class ELFT>
 static bool matchConstraints(ArrayRef<InputSectionBase<ELFT> *> Sections,
                              ConstraintKind Kind) {
   if (Kind == ConstraintKind::NoConstraint)
     return true;
-  return llvm::all_of(Sections, [=](InputSectionData *Sec2) {
+  bool IsRW = llvm::any_of(Sections, [=](InputSectionData *Sec2) {
     auto *Sec = static_cast<InputSectionBase<ELFT> *>(Sec2);
-    return checkConstraint(Sec->getSectionHdr()->sh_flags, Kind);
+    return Sec->getSectionHdr()->sh_flags & SHF_WRITE;
   });
+  return (IsRW && Kind == ConstraintKind::ReadWrite) ||
+         (!IsRW && Kind == ConstraintKind::ReadOnly);
+}
+
+static void sortSections(InputSectionData **Begin, InputSectionData **End,
+                         SortSectionPolicy K) {
+  if (K != SortSectionPolicy::Default && K != SortSectionPolicy::None)
+    std::stable_sort(Begin, End, getComparator(K));
 }
 
 // Compute and remember which sections the InputSectionDescription matches.
@@ -168,26 +163,40 @@ void LinkerScript<ELFT>::computeInputSections(InputSectionDescription *I) {
   // Collects all sections that satisfy constraints of I
   // and attach them to I.
   for (SectionPattern &Pat : I->SectionPatterns) {
+    size_t SizeBefore = I->Sections.size();
     for (ObjectFile<ELFT> *F : Symtab<ELFT>::X->getObjectFiles()) {
       StringRef Filename = sys::path::filename(F->getName());
-      if (!match(I->FileRe, Filename) || match(Pat.ExcludedFileRe, Filename))
+      if (!I->FileRe.match(Filename) || Pat.ExcludedFileRe.match(Filename))
         continue;
 
       for (InputSectionBase<ELFT> *S : F->getSections())
-        if (!isDiscarded(S) && !S->OutSec && match(Pat.SectionRe, S->Name))
+        if (!isDiscarded(S) && !S->OutSec && Pat.SectionRe.match(S->Name))
           I->Sections.push_back(S);
-      if (match(Pat.SectionRe, "COMMON"))
+      if (Pat.SectionRe.match("COMMON"))
         I->Sections.push_back(CommonInputSection<ELFT>::X);
     }
-  }
 
-  // Sort for SORT() commands.
-  if (I->SortInner != SortSectionPolicy::Default)
-    std::stable_sort(I->Sections.begin(), I->Sections.end(),
-                     getComparator(I->SortInner));
-  if (I->SortOuter != SortSectionPolicy::Default)
-    std::stable_sort(I->Sections.begin(), I->Sections.end(),
-                     getComparator(I->SortOuter));
+    // Sort sections as instructed by SORT-family commands and --sort-section
+    // option. Because SORT-family commands can be nested at most two depth
+    // (e.g. SORT_BY_NAME(SORT_BY_ALIGNMENT(.text.*))) and because the command
+    // line option is respected even if a SORT command is given, the exact
+    // behavior we have here is a bit complicated. Here are the rules.
+    //
+    // 1. If two SORT commands are given, --sort-section is ignored.
+    // 2. If one SORT command is given, and if it is not SORT_NONE,
+    //    --sort-section is handled as an inner SORT command.
+    // 3. If one SORT command is given, and if it is SORT_NONE, don't sort.
+    // 4. If no SORT command is given, sort according to --sort-section.
+    InputSectionData **Begin = I->Sections.data() + SizeBefore;
+    InputSectionData **End = I->Sections.data() + I->Sections.size();
+    if (Pat.SortOuter != SortSectionPolicy::None) {
+      if (Pat.SortInner == SortSectionPolicy::Default)
+        sortSections(Begin, End, Config->SortSection);
+      else
+        sortSections(Begin, End, Pat.SortInner);
+      sortSections(Begin, End, Pat.SortOuter);
+    }
+  }
 
   // We do not add duplicate input sections, so mark them with a dummy output
   // section for now.
@@ -278,7 +287,7 @@ void LinkerScript<ELFT>::processCommands(OutputSectionFactory<ELFT> &Factory) {
     }
     if (auto *Cmd = dyn_cast<AssertCommand>(Base1.get())) {
       // If we don't have SECTIONS then output sections have already been
-      // created by Writer<EFLT>. The LinkerScript<ELFT>::assignAddresses
+      // created by Writer<ELFT>. The LinkerScript<ELFT>::assignAddresses
       // will not be called, so ASSERT should be evaluated now.
       if (!Opt.HasSections)
         Cmd->Expression(0);
@@ -348,11 +357,14 @@ static void assignSectionSymbol(SymbolAssignment *Cmd,
   Body->Value = Cmd->Expression(Sec->getVA() + Off);
 }
 
+template <class ELFT> static bool isTbss(OutputSectionBase<ELFT> *Sec) {
+  return (Sec->getFlags() & SHF_TLS) && Sec->getType() == SHT_NOBITS;
+}
+
 template <class ELFT> void LinkerScript<ELFT>::output(InputSection<ELFT> *S) {
   if (!AlreadyOutputIS.insert(S).second)
     return;
-  bool IsTbss =
-      (CurOutSec->getFlags() & SHF_TLS) && CurOutSec->getType() == SHT_NOBITS;
+  bool IsTbss = isTbss(CurOutSec);
 
   uintX_t Pos = IsTbss ? Dot + ThreadBssOffset : Dot;
   Pos = alignTo(Pos, S->Alignment);
@@ -364,15 +376,20 @@ template <class ELFT> void LinkerScript<ELFT>::output(InputSection<ELFT> *S) {
   // .foo { *(.aaa) a = SIZEOF(.foo); *(.bbb) }
   CurOutSec->setSize(Pos - CurOutSec->getVA());
 
-  if (!IsTbss)
+  if (IsTbss)
+    ThreadBssOffset = Pos - Dot;
+  else
     Dot = Pos;
 }
 
 template <class ELFT> void LinkerScript<ELFT>::flush() {
-  if (auto *OutSec = dyn_cast_or_null<OutputSection<ELFT>>(CurOutSec)) {
+  if (!CurOutSec || !AlreadyOutputOS.insert(CurOutSec).second)
+    return;
+  if (auto *OutSec = dyn_cast<OutputSection<ELFT>>(CurOutSec)) {
     for (InputSection<ELFT> *I : OutSec->Sections)
       output(I);
-    AlreadyOutputOS.insert(CurOutSec);
+  } else {
+    Dot += CurOutSec->getSize();
   }
 }
 
@@ -387,7 +404,7 @@ void LinkerScript<ELFT>::switchTo(OutputSectionBase<ELFT> *Sec) {
   CurOutSec = Sec;
 
   Dot = alignTo(Dot, CurOutSec->getAlignment());
-  CurOutSec->setVA(Dot);
+  CurOutSec->setVA(isTbss(CurOutSec) ? Dot + ThreadBssOffset : Dot);
 }
 
 template <class ELFT> void LinkerScript<ELFT>::process(BaseCommand &Base) {
@@ -407,8 +424,8 @@ template <class ELFT> void LinkerScript<ELFT>::process(BaseCommand &Base) {
     switchTo(IB->OutSec);
     if (auto *I = dyn_cast<InputSection<ELFT>>(IB))
       output(I);
-    else if (AlreadyOutputOS.insert(CurOutSec).second)
-      Dot += CurOutSec->getSize();
+    else
+      flush();
   }
 }
 
@@ -440,15 +457,82 @@ void LinkerScript<ELFT>::assignOffsets(OutputSectionCommand *Cmd) {
                .base();
   for (auto I = Cmd->Commands.begin(); I != E; ++I)
     process(**I);
-  flush();
-  for (OutputSectionBase<ELFT> *Base : Sections) {
-    if (!AlreadyOutputOS.insert(Base).second)
-      continue;
+  for (OutputSectionBase<ELFT> *Base : Sections)
     switchTo(Base);
-    Dot += CurOutSec->getSize();
+  flush();
+  std::for_each(E, Cmd->Commands.end(),
+                [this](std::unique_ptr<BaseCommand> &B) { process(*B.get()); });
+}
+
+template <class ELFT> void LinkerScript<ELFT>::adjustSectionsBeforeSorting() {
+  // It is common practice to use very generic linker scripts. So for any
+  // given run some of the output sections in the script will be empty.
+  // We could create corresponding empty output sections, but that would
+  // clutter the output.
+  // We instead remove trivially empty sections. The bfd linker seems even
+  // more aggressive at removing them.
+  auto Pos = std::remove_if(
+      Opt.Commands.begin(), Opt.Commands.end(),
+      [&](const std::unique_ptr<BaseCommand> &Base) {
+        auto *Cmd = dyn_cast<OutputSectionCommand>(Base.get());
+        if (!Cmd)
+          return false;
+        std::vector<OutputSectionBase<ELFT> *> Secs =
+            findSections(*Cmd, *OutputSections);
+        if (!Secs.empty())
+          return false;
+        for (const std::unique_ptr<BaseCommand> &I : Cmd->Commands)
+          if (!isa<InputSectionDescription>(I.get()))
+            return false;
+        return true;
+      });
+  Opt.Commands.erase(Pos, Opt.Commands.end());
+
+  // If the output section contains only symbol assignments, create a
+  // corresponding output section. The bfd linker seems to only create them if
+  // '.' is assigned to, but creating these section should not have any bad
+  // consequeces and gives us a section to put the symbol in.
+  uintX_t Flags = SHF_ALLOC;
+  uint32_t Type = 0;
+  for (const std::unique_ptr<BaseCommand> &Base : Opt.Commands) {
+    auto *Cmd = dyn_cast<OutputSectionCommand>(Base.get());
+    if (!Cmd)
+      continue;
+    std::vector<OutputSectionBase<ELFT> *> Secs =
+        findSections(*Cmd, *OutputSections);
+    if (!Secs.empty()) {
+      Flags = Secs[0]->getFlags();
+      Type = Secs[0]->getType();
+      continue;
+    }
+
+    auto *OutSec = new OutputSection<ELFT>(Cmd->Name, Type, Flags);
+    Out<ELFT>::Pool.emplace_back(OutSec);
+    OutputSections->push_back(OutSec);
   }
-  for (auto I = E, E = Cmd->Commands.end(); I != E; ++I)
-    process(**I);
+}
+
+// When placing orphan sections, we want to place them after symbol assignments
+// so that an orphan after
+//   begin_foo = .;
+//   foo : { *(foo) }
+//   end_foo = .;
+// doesn't break the intended meaning of the begin/end symbols.
+// We don't want to go over sections since Writer<ELFT>::sortSections is the
+// one in charge of deciding the order of the sections.
+// We don't want to go over alignments, since doing so in
+//  rx_sec : { *(rx_sec) }
+//  . = ALIGN(0x1000);
+//  /* The RW PT_LOAD starts here*/
+//  rw_sec : { *(rw_sec) }
+// would mean that the RW PT_LOAD would become unaligned.
+static bool shouldSkip(const BaseCommand &Cmd) {
+  if (isa<OutputSectionCommand>(Cmd))
+    return false;
+  const auto *Assign = dyn_cast<SymbolAssignment>(&Cmd);
+  if (!Assign)
+    return true;
+  return Assign->Name != ".";
 }
 
 template <class ELFT> void LinkerScript<ELFT>::assignAddresses() {
@@ -466,10 +550,10 @@ template <class ELFT> void LinkerScript<ELFT>::assignAddresses() {
     StringRef Name = Sec->getName();
 
     // Find the last spot where we can insert a command and still get the
-    // correct order.
+    // correct result.
     auto CmdIter = Opt.Commands.begin() + CmdIndex;
     auto E = Opt.Commands.end();
-    while (CmdIter != E && !isa<OutputSectionCommand>(**CmdIter)) {
+    while (CmdIter != E && shouldSkip(**CmdIter)) {
       ++CmdIter;
       ++CmdIndex;
     }
@@ -482,13 +566,13 @@ template <class ELFT> void LinkerScript<ELFT>::assignAddresses() {
     if (Pos == E) {
       Opt.Commands.insert(CmdIter,
                           llvm::make_unique<OutputSectionCommand>(Name));
-    } else {
-      // If linker script lists alloc/non-alloc sections is the wrong order,
-      // this does a right rotate to bring the desired command in place.
-      auto RPos = llvm::make_reverse_iterator(Pos + 1);
-      std::rotate(RPos, RPos + 1, llvm::make_reverse_iterator(CmdIter));
+      ++CmdIndex;
+      continue;
     }
-    ++CmdIndex;
+
+    // Continue from where we found it.
+    CmdIndex = (Pos - Opt.Commands.begin()) + 1;
+    continue;
   }
 
   // Assign addresses as instructed by linker script SECTIONS sub-commands.
@@ -525,8 +609,7 @@ template <class ELFT> void LinkerScript<ELFT>::assignAddresses() {
       Sec->setVA(0);
   }
 
-  uintX_t HeaderSize =
-      Out<ELFT>::ElfHeader->getSize() + Out<ELFT>::ProgramHeaders->getSize();
+  uintX_t HeaderSize = getHeaderSize();
   if (HeaderSize > MinVA)
     fatal("Not enough space for ELF and program headers");
 
@@ -629,17 +712,6 @@ template <class ELFT> int LinkerScript<ELFT>::getSectionIndex(StringRef Name) {
   return INT_MAX;
 }
 
-// A compartor to sort output sections. Returns -1 or 1 if
-// A or B are mentioned in linker script. Otherwise, returns 0.
-template <class ELFT>
-int LinkerScript<ELFT>::compareSections(StringRef A, StringRef B) {
-  int I = getSectionIndex(A);
-  int J = getSectionIndex(B);
-  if (I == INT_MAX && J == INT_MAX)
-    return 0;
-  return I < J ? -1 : 1;
-}
-
 template <class ELFT> bool LinkerScript<ELFT>::hasPhdrsCommands() {
   return !Opt.PhdrsCommands.empty();
 }
@@ -672,7 +744,7 @@ uint64_t LinkerScript<ELFT>::getOutputSectionAlign(StringRef Name) {
 }
 
 template <class ELFT> uint64_t LinkerScript<ELFT>::getHeaderSize() {
-  return Out<ELFT>::ElfHeader->getSize() + Out<ELFT>::ProgramHeaders->getSize();
+  return elf::getHeaderSize<ELFT>();
 }
 
 template <class ELFT> uint64_t LinkerScript<ELFT>::getSymbolValue(StringRef S) {
@@ -680,6 +752,10 @@ template <class ELFT> uint64_t LinkerScript<ELFT>::getSymbolValue(StringRef S) {
     return B->getVA<ELFT>();
   error("symbol not found: " + S);
   return 0;
+}
+
+template <class ELFT> bool LinkerScript<ELFT>::isDefined(StringRef S) {
+  return Symtab<ELFT>::X->find(S) != nullptr;
 }
 
 // Returns indices of ELF headers containing specific section, identified
@@ -745,7 +821,7 @@ private:
   std::vector<StringRef> readOutputSectionPhdrs();
   InputSectionDescription *readInputSectionDescription(StringRef Tok);
   Regex readFilePatterns();
-  void readSectionExcludes(InputSectionDescription *Cmd);
+  std::vector<SectionPattern> readInputSectionsList();
   InputSectionDescription *readInputSectionRules(StringRef FilePattern);
   unsigned readPhdrType();
   SortSectionPolicy readSortKind();
@@ -1007,18 +1083,11 @@ void ScriptParser::readSections() {
 
 static int precedence(StringRef Op) {
   return StringSwitch<int>(Op)
-      .Case("*", 4)
-      .Case("/", 4)
-      .Case("+", 3)
-      .Case("-", 3)
-      .Case("<", 2)
-      .Case(">", 2)
-      .Case(">=", 2)
-      .Case("<=", 2)
-      .Case("==", 2)
-      .Case("!=", 2)
-      .Case("&", 1)
-      .Case("|", 1)
+      .Cases("*", "/", 5)
+      .Cases("+", "-", 4)
+      .Cases("<<", ">>", 3)
+      .Cases("<", "<=", ">", ">=", "==", "!=", 2)
+      .Cases("&", "|", 1)
       .Default(-1);
 }
 
@@ -1041,83 +1110,70 @@ SortSectionPolicy ScriptParser::readSortKind() {
   return SortSectionPolicy::Default;
 }
 
-static void selectSortKind(InputSectionDescription *Cmd) {
-  if (Cmd->SortOuter == SortSectionPolicy::None) {
-    Cmd->SortOuter = SortSectionPolicy::Default;
-    return;
-  }
-
-  if (Cmd->SortOuter != SortSectionPolicy::Default) {
-    // If the section sorting command in linker script is nested, the command
-    // line option will be ignored.
-    if (Cmd->SortInner != SortSectionPolicy::Default)
-      return;
-    // If the section sorting command in linker script isn't nested, the
-    // command line option will make the section sorting command to be treated
-    // as nested sorting command.
-    Cmd->SortInner = Config->SortSection;
-    return;
-  }
-  // If sorting rule not specified, use command line option.
-  Cmd->SortOuter = Config->SortSection;
-}
-
 // Method reads a list of sequence of excluded files and section globs given in
 // a following form: ((EXCLUDE_FILE(file_pattern+))? section_pattern+)+
 // Example: *(.foo.1 EXCLUDE_FILE (*a.o) .foo.2 EXCLUDE_FILE (*b.o) .foo.3)
-void ScriptParser::readSectionExcludes(InputSectionDescription *Cmd) {
-  Regex ExcludeFileRe;
-  std::vector<StringRef> V;
-
-  while (!Error) {
-    if (skip(")")) {
-      Cmd->SectionPatterns.push_back(
-          {std::move(ExcludeFileRe), compileGlobPatterns(V)});
-      return;
-    }
-
+// The semantics of that is next:
+// * Include .foo.1 from every file.
+// * Include .foo.2 from every file but a.o
+// * Include .foo.3 from every file but b.o
+std::vector<SectionPattern> ScriptParser::readInputSectionsList() {
+  std::vector<SectionPattern> Ret;
+  while (!Error && peek() != ")") {
+    Regex ExcludeFileRe;
     if (skip("EXCLUDE_FILE")) {
-      if (!V.empty()) {
-        Cmd->SectionPatterns.push_back(
-            {std::move(ExcludeFileRe), compileGlobPatterns(V)});
-        V.clear();
-      }
-
       expect("(");
       ExcludeFileRe = readFilePatterns();
-      continue;
     }
 
-    V.push_back(next());
+    std::vector<StringRef> V;
+    while (!Error && peek() != ")" && peek() != "EXCLUDE_FILE")
+      V.push_back(next());
+
+    if (!V.empty())
+      Ret.push_back({std::move(ExcludeFileRe), compileGlobPatterns(V)});
+    else
+      setError("section pattern is expected");
   }
+  return Ret;
 }
 
+// Section pattern grammar can have complex expressions, for example:
+// *(SORT(.foo.* EXCLUDE_FILE (*file1.o) .bar.*) .bar.* SORT(.zed.*))
+// Generally is a sequence of globs and excludes that may be wrapped in a SORT()
+// commands, like: SORT(glob0) glob1 glob2 SORT(glob4)
+// This methods handles wrapping sequences of excluded files and section globs
+// into SORT() if that needed and reads them all.
 InputSectionDescription *
 ScriptParser::readInputSectionRules(StringRef FilePattern) {
   auto *Cmd = new InputSectionDescription(FilePattern);
   expect("(");
-
-  // Read SORT().
-  SortSectionPolicy K1 = readSortKind();
-  if (K1 != SortSectionPolicy::Default) {
-    Cmd->SortOuter = K1;
-    expect("(");
-    SortSectionPolicy K2 = readSortKind();
-    if (K2 != SortSectionPolicy::Default) {
-      Cmd->SortInner = K2;
+  while (!HasError && !skip(")")) {
+    SortSectionPolicy Outer = readSortKind();
+    SortSectionPolicy Inner = SortSectionPolicy::Default;
+    std::vector<SectionPattern> V;
+    if (Outer != SortSectionPolicy::Default) {
       expect("(");
-      Cmd->SectionPatterns.push_back({Regex(), readFilePatterns()});
+      Inner = readSortKind();
+      if (Inner != SortSectionPolicy::Default) {
+        expect("(");
+        V = readInputSectionsList();
+        expect(")");
+      } else {
+        V = readInputSectionsList();
+      }
       expect(")");
     } else {
-      Cmd->SectionPatterns.push_back({Regex(), readFilePatterns()});
+      V = readInputSectionsList();
     }
-    expect(")");
-    selectSortKind(Cmd);
-    return Cmd;
-  }
 
-  selectSortKind(Cmd);
-  readSectionExcludes(Cmd);
+    for (SectionPattern &Pat : V) {
+      Pat.SortInner = Inner;
+      Pat.SortOuter = Outer;
+    }
+
+    std::move(V.begin(), V.end(), std::back_inserter(Cmd->SectionPatterns));
+  }
   return Cmd;
 }
 
@@ -1208,8 +1264,12 @@ ScriptParser::readOutputSectionDescription(StringRef OutSec) {
       setError("unknown command " + Tok);
   }
   Cmd->Phdrs = readOutputSectionPhdrs();
-  if (peek().startswith("="))
+
+  if (skip("="))
+    Cmd->Filler = readOutputSectionFiller(next());
+  else if (peek().startswith("="))
     Cmd->Filler = readOutputSectionFiller(next().drop_front());
+
   return Cmd;
 }
 
@@ -1300,6 +1360,10 @@ static Expr combine(StringRef Op, Expr L, Expr R) {
     return [=](uint64_t Dot) { return L(Dot) + R(Dot); };
   if (Op == "-")
     return [=](uint64_t Dot) { return L(Dot) - R(Dot); };
+  if (Op == "<<")
+    return [=](uint64_t Dot) { return L(Dot) << R(Dot); };
+  if (Op == ">>")
+    return [=](uint64_t Dot) { return L(Dot) >> R(Dot); };
   if (Op == "<")
     return [=](uint64_t Dot) { return L(Dot) < R(Dot); };
   if (Op == ">")
@@ -1423,15 +1487,21 @@ Expr ScriptParser::readPrimary() {
     expect(")");
     return [=](uint64_t Dot) { return getConstant(Tok); };
   }
+  if (Tok == "DEFINED") {
+    expect("(");
+    StringRef Tok = next();
+    expect(")");
+    return [=](uint64_t Dot) {
+      return ScriptBase->isDefined(Tok) ? 1 : 0;
+    };
+  }
   if (Tok == "SEGMENT_START") {
     expect("(");
     next();
     expect(",");
-    uint64_t Val;
-    if (next().getAsInteger(0, Val))
-      setError("integer expected");
+    Expr E = readExpr();
     expect(")");
-    return [=](uint64_t Dot) { return Val; };
+    return [=](uint64_t Dot) { return E(Dot); };
   }
   if (Tok == "DATA_SEGMENT_ALIGN") {
     expect("(");

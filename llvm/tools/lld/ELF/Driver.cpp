@@ -665,17 +665,21 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   // Add the start symbol.
   // It initializes either Config->Entry or Config->EntryAddr.
   // Note that AMDGPU binaries have no entries.
+  bool HasEntryAddr = false;
   if (!Config->Entry.empty()) {
     // It is either "-e <addr>" or "-e <symbol>".
-    if (Config->Entry.getAsInteger(0, Config->EntryAddr))
-      Config->EntrySym = Symtab.addUndefined(Config->Entry);
+    HasEntryAddr = !Config->Entry.getAsInteger(0, Config->EntryAddr);
   } else if (!Config->Shared && !Config->Relocatable &&
              Config->EMachine != EM_AMDGPU) {
     // -e was not specified. Use the default start symbol name
     // if it is resolvable.
     Config->Entry = (Config->EMachine == EM_MIPS) ? "__start" : "_start";
+  }
+  if (!HasEntryAddr) {
     if (Symtab.find(Config->Entry))
       Config->EntrySym = Symtab.addUndefined(Config->Entry);
+    else
+      warning("entry symbol " + Config->Entry + " not found, assuming 0");
   }
 
   if (HasError)

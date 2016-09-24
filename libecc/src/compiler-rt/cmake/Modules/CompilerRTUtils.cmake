@@ -132,8 +132,12 @@ macro(test_target_arch arch def)
       try_compile_only(CAN_TARGET_${arch} ${TARGET_${arch}_CFLAGS})
     else()
       set(argstring "${CMAKE_EXE_LINKER_FLAGS} ${argstring}")
+      set(FLAG_NO_EXCEPTIONS "")
+      if(COMPILER_RT_HAS_FNO_EXCEPTIONS_FLAG)
+        set(FLAG_NO_EXCEPTIONS " -fno-exceptions ")
+      endif()
       try_compile(CAN_TARGET_${arch} ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE}
-                  COMPILE_DEFINITIONS "${TARGET_${arch}_CFLAGS}"
+                  COMPILE_DEFINITIONS "${TARGET_${arch}_CFLAGS} ${FLAG_NO_EXCEPTIONS}"
                   OUTPUT_VARIABLE TARGET_${arch}_OUTPUT
                   CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${argstring}")
     endif()
@@ -215,7 +219,7 @@ macro(load_llvm_config)
   include("${LLVM_CMAKE_PATH}/LLVMConfig.cmake")
 
   set(LLVM_LIBRARY_OUTPUT_INTDIR
-    ${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lib${LLVM_LIBDIR_SUFFIX})
+    ${LLVM_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lib${LLVM_LIBDIR_SUFFIX})
 endmacro()
 
 macro(construct_compiler_rt_default_triple)

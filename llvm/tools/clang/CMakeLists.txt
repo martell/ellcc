@@ -261,10 +261,16 @@ if( NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR )
   endif()
 endif()
 
-# Compute the Clang version from the LLVM version.
-set(CLANG_VERSION_MAJOR ${LLVM_VERSION_MAJOR})
-set(CLANG_VERSION_MINOR ${LLVM_VERSION_MINOR})
-set(CLANG_VERSION_PATCHLEVEL ${LLVM_VERSION_PATCH})
+# If CLANG_VERSION_* is specified, use it, if not use LLVM_VERSION_*.
+if(NOT DEFINED CLANG_VERSION_MAJOR)
+  set(CLANG_VERSION_MAJOR ${LLVM_VERSION_MAJOR})
+endif()
+if(NOT DEFINED CLANG_VERSION_MINOR)
+  set(CLANG_VERSION_MINOR ${LLVM_VERSION_MINOR})
+endif()
+if(NOT DEFINED CLANG_VERSION_PATCHLEVEL)
+  set(CLANG_VERSION_PATCHLEVEL ${LLVM_VERSION_PATCH})
+endif()
 # Unlike PACKAGE_VERSION, CLANG_VERSION does not include LLVM_VERSION_SUFFIX.
 set(CLANG_VERSION "${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}.${CLANG_VERSION_PATCHLEVEL}")
 message(STATUS "Clang version: ${CLANG_VERSION}")
@@ -543,6 +549,9 @@ if (CLANG_ENABLE_BOOTSTRAP)
     LLVM_VERSION_MAJOR
     LLVM_VERSION_MINOR
     LLVM_VERSION_PATCH
+    CLANG_VERSION_MAJOR
+    CLANG_VERSION_MINOR
+    CLANG_VERSION_PATCHLEVEL
     LLVM_VERSION_SUFFIX
     LLVM_BINUTILS_INCDIR
     CLANG_REPOSITORY_STRING
@@ -601,8 +610,12 @@ if (CLANG_ENABLE_BOOTSTRAP)
 
   # Populate the passthrough variables
   foreach(variableName ${CLANG_BOOTSTRAP_PASSTHROUGH} ${_BOOTSTRAP_DEFAULT_PASSTHROUGH})
-    if(${variableName})
-      string(REPLACE ";" "\;" value ${${variableName}})
+    if(DEFINED ${variableName})
+      if("${${variableName}}" STREQUAL "")
+        set(value "")
+      else()
+        string(REPLACE ";" "\;" value ${${variableName}})
+      endif()
       list(APPEND PASSTHROUGH_VARIABLES
         -D${variableName}=${value})
     endif()

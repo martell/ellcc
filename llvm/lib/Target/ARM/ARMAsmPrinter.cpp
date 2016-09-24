@@ -97,13 +97,6 @@ void ARMAsmPrinter::EmitXXStructor(const DataLayout &DL, const Constant *CV) {
   OutStreamer->EmitValue(E, Size);
 }
 
-void ARMAsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
-  if (PromotedGlobals.count(GV))
-    // The global was promoted into a constant pool. It should not be emitted.
-    return;
-  AsmPrinter::EmitGlobalVariable(GV);
-}
-
 /// runOnMachineFunction - This uses the EmitInstruction()
 /// method to print assembly for each instruction.
 ///
@@ -116,12 +109,6 @@ bool ARMAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   const Function* F = MF.getFunction();
   const TargetMachine& TM = MF.getTarget();
 
-  // Collect all globals that had their storage promoted to a constant pool.
-  // Functions are emitted before variables, so this accumulates promoted
-  // globals from all functions in PromotedGlobals.
-  for (auto *GV : AFI->getGlobalsPromotedToConstantPool())
-    PromotedGlobals.insert(GV);
-  
   // Calculate this function's optimization goal.
   unsigned OptimizationGoal;
   if (F->hasFnAttribute(Attribute::OptimizeNone))
@@ -163,6 +150,9 @@ bool ARMAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
 
   // Emit the rest of the function body.
   EmitFunctionBody();
+
+  // Emit the XRay table for this function.
+  EmitXRayTable();
 
   // If we need V4T thumb mode Register Indirect Jump pads, emit them.
   // These are created per function, rather than per TU, since it's
@@ -2019,6 +2009,12 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
                                      .addReg(0));
     return;
   }
+  case ARM::PATCHABLE_FUNCTION_ENTER:
+    LowerPATCHABLE_FUNCTION_ENTER(*MI);
+    return;
+  case ARM::PATCHABLE_FUNCTION_EXIT:
+    LowerPATCHABLE_FUNCTION_EXIT(*MI);
+    return;
   }
 
   MCInst TmpInst;

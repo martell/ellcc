@@ -194,7 +194,8 @@ public:
     Cygnus,
     AMDOpenCL,
     CoreCLR,
-    LastEnvironmentType = CoreCLR
+    OpenCL,
+    LastEnvironmentType = OpenCL
   };
   enum ObjectFormatType {
     UnknownObjectFormat,

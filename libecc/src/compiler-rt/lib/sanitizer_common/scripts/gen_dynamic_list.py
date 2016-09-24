@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import platform
 
 new_delete = set([
                   '_Znam', '_ZnamRKSt9nothrow_t',    # operator new[](unsigned long)
@@ -49,7 +50,7 @@ def get_global_functions(library):
     raise subprocess.CalledProcessError(nm_proc.returncode, nm)
   func_symbols = ['T', 'W']
   # On PowerPC, nm prints function descriptors from .data section.
-  if os.uname()[4] in ["powerpc", "ppc64"]:
+  if platform.uname()[4] in ["powerpc", "ppc64"]:
     func_symbols += ['D']
   for line in nm_out:
     cols = line.split(' ')
