@@ -284,6 +284,29 @@ constexpr auto SHRPX_OPT_API_MAX_REQUEST_BODY =
     StringRef::from_lit("api-max-request-body");
 constexpr auto SHRPX_OPT_BACKEND_MAX_BACKOFF =
     StringRef::from_lit("backend-max-backoff");
+constexpr auto SHRPX_OPT_SERVER_NAME = StringRef::from_lit("server-name");
+constexpr auto SHRPX_OPT_NO_SERVER_REWRITE =
+    StringRef::from_lit("no-server-rewrite");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WRITE_BUFFER_SIZE =
+    StringRef::from_lit("frontend-http2-optimize-write-buffer-size");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WINDOW_SIZE =
+    StringRef::from_lit("frontend-http2-optimize-window-size");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_WINDOW_SIZE =
+    StringRef::from_lit("frontend-http2-window-size");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_SIZE =
+    StringRef::from_lit("frontend-http2-connection-window-size");
+constexpr auto SHRPX_OPT_BACKEND_HTTP2_WINDOW_SIZE =
+    StringRef::from_lit("backend-http2-window-size");
+constexpr auto SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_SIZE =
+    StringRef::from_lit("backend-http2-connection-window-size");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE =
+    StringRef::from_lit("frontend-http2-encoder-dynamic-table-size");
+constexpr auto SHRPX_OPT_FRONTEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE =
+    StringRef::from_lit("frontend-http2-decoder-dynamic-table-size");
+constexpr auto SHRPX_OPT_BACKEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE =
+    StringRef::from_lit("backend-http2-encoder-dynamic-table-size");
+constexpr auto SHRPX_OPT_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE =
+    StringRef::from_lit("backend-http2-decoder-dynamic-table-size");
 
 constexpr size_t SHRPX_OBFUSCATED_NODE_LENGTH = 8;
 
@@ -552,7 +575,7 @@ struct HttpConfig {
   std::vector<ErrorPage> error_pages;
   Headers add_request_headers;
   Headers add_response_headers;
-  StringRef server_name;
+  ImmutableString server_name;
   size_t request_header_field_buffer;
   size_t max_request_header_fields;
   size_t response_header_field_buffer;
@@ -560,6 +583,7 @@ struct HttpConfig {
   bool no_via;
   bool no_location_rewrite;
   bool no_host_rewrite;
+  bool no_server_rewrite;
 };
 
 struct Http2Config {
@@ -579,9 +603,13 @@ struct Http2Config {
     nghttp2_option *option;
     nghttp2_option *alt_mode_option;
     nghttp2_session_callbacks *callbacks;
-    size_t window_bits;
-    size_t connection_window_bits;
     size_t max_concurrent_streams;
+    size_t encoder_dynamic_table_size;
+    size_t decoder_dynamic_table_size;
+    int32_t window_size;
+    int32_t connection_window_size;
+    bool optimize_write_buffer_size;
+    bool optimize_window_size;
   } upstream;
   struct {
     struct {
@@ -589,8 +617,10 @@ struct Http2Config {
     } timeout;
     nghttp2_option *option;
     nghttp2_session_callbacks *callbacks;
-    size_t window_bits;
-    size_t connection_window_bits;
+    size_t encoder_dynamic_table_size;
+    size_t decoder_dynamic_table_size;
+    int32_t window_size;
+    int32_t connection_window_size;
     size_t max_concurrent_streams;
   } downstream;
   struct {
@@ -645,6 +675,15 @@ struct RouterConfig {
 };
 
 struct DownstreamConfig {
+  DownstreamConfig()
+      : timeout{},
+        addr_group_catch_all{0},
+        connections_per_host{0},
+        connections_per_frontend{0},
+        request_buffer_size{0},
+        response_buffer_size{0},
+        family{0} {}
+
   struct {
     ev_tstamp read;
     ev_tstamp write;
@@ -766,10 +805,14 @@ enum {
   SHRPX_OPTID_BACKEND_HTTP1_CONNECTIONS_PER_HOST,
   SHRPX_OPTID_BACKEND_HTTP1_TLS,
   SHRPX_OPTID_BACKEND_HTTP2_CONNECTION_WINDOW_BITS,
+  SHRPX_OPTID_BACKEND_HTTP2_CONNECTION_WINDOW_SIZE,
   SHRPX_OPTID_BACKEND_HTTP2_CONNECTIONS_PER_WORKER,
+  SHRPX_OPTID_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE,
+  SHRPX_OPTID_BACKEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE,
   SHRPX_OPTID_BACKEND_HTTP2_MAX_CONCURRENT_STREAMS,
   SHRPX_OPTID_BACKEND_HTTP2_SETTINGS_TIMEOUT,
   SHRPX_OPTID_BACKEND_HTTP2_WINDOW_BITS,
+  SHRPX_OPTID_BACKEND_HTTP2_WINDOW_SIZE,
   SHRPX_OPTID_BACKEND_IPV4,
   SHRPX_OPTID_BACKEND_IPV6,
   SHRPX_OPTID_BACKEND_KEEP_ALIVE_TIMEOUT,
@@ -802,12 +845,18 @@ enum {
   SHRPX_OPTID_FRONTEND,
   SHRPX_OPTID_FRONTEND_FRAME_DEBUG,
   SHRPX_OPTID_FRONTEND_HTTP2_CONNECTION_WINDOW_BITS,
+  SHRPX_OPTID_FRONTEND_HTTP2_CONNECTION_WINDOW_SIZE,
+  SHRPX_OPTID_FRONTEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE,
   SHRPX_OPTID_FRONTEND_HTTP2_DUMP_REQUEST_HEADER,
   SHRPX_OPTID_FRONTEND_HTTP2_DUMP_RESPONSE_HEADER,
+  SHRPX_OPTID_FRONTEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE,
   SHRPX_OPTID_FRONTEND_HTTP2_MAX_CONCURRENT_STREAMS,
+  SHRPX_OPTID_FRONTEND_HTTP2_OPTIMIZE_WINDOW_SIZE,
+  SHRPX_OPTID_FRONTEND_HTTP2_OPTIMIZE_WRITE_BUFFER_SIZE,
   SHRPX_OPTID_FRONTEND_HTTP2_READ_TIMEOUT,
   SHRPX_OPTID_FRONTEND_HTTP2_SETTINGS_TIMEOUT,
   SHRPX_OPTID_FRONTEND_HTTP2_WINDOW_BITS,
+  SHRPX_OPTID_FRONTEND_HTTP2_WINDOW_SIZE,
   SHRPX_OPTID_FRONTEND_NO_TLS,
   SHRPX_OPTID_FRONTEND_READ_TIMEOUT,
   SHRPX_OPTID_FRONTEND_WRITE_TIMEOUT,
@@ -831,6 +880,7 @@ enum {
   SHRPX_OPTID_NO_LOCATION_REWRITE,
   SHRPX_OPTID_NO_OCSP,
   SHRPX_OPTID_NO_SERVER_PUSH,
+  SHRPX_OPTID_NO_SERVER_REWRITE,
   SHRPX_OPTID_NO_VIA,
   SHRPX_OPTID_NPN_LIST,
   SHRPX_OPTID_OCSP_UPDATE_INTERVAL,
@@ -843,6 +893,7 @@ enum {
   SHRPX_OPTID_REQUEST_HEADER_FIELD_BUFFER,
   SHRPX_OPTID_RESPONSE_HEADER_FIELD_BUFFER,
   SHRPX_OPTID_RLIMIT_NOFILE,
+  SHRPX_OPTID_SERVER_NAME,
   SHRPX_OPTID_STREAM_READ_TIMEOUT,
   SHRPX_OPTID_STREAM_WRITE_TIMEOUT,
   SHRPX_OPTID_STRIP_INCOMING_FORWARDED,

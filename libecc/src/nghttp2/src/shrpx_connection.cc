@@ -27,6 +27,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif // HAVE_UNISTD_H
+#include <netinet/tcp.h>
 
 #include <limits>
 
@@ -42,13 +43,13 @@ using namespace nghttp2;
 
 namespace shrpx {
 
-#if !OPENSSL_101_API
+#if !OPENSSL_1_1_API
 
 void *BIO_get_data(BIO *bio) { return bio->ptr; }
 void BIO_set_data(BIO *bio, void *ptr) { bio->ptr = ptr; }
 void BIO_set_init(BIO *bio, int init) { bio->init = init; }
 
-#endif // !OPENSSL_101_API
+#endif // !OPENSSL_1_1_API
 
 Connection::Connection(struct ev_loop *loop, int fd, SSL *ssl,
                        MemchunkPool *mcpool, ev_tstamp write_timeout,
@@ -237,14 +238,14 @@ long shrpx_bio_ctrl(BIO *b, int cmd, long num, void *ptr) {
 
 namespace {
 int shrpx_bio_create(BIO *b) {
-#if OPENSSL_101_API
+#if OPENSSL_1_1_API
   BIO_set_init(b, 1);
-#else  // !OPENSSL_101_API
+#else  // !OPENSSL_1_1_API
   b->init = 1;
   b->num = 0;
   b->ptr = nullptr;
   b->flags = 0;
-#endif // !OPENSSL_101_API
+#endif // !OPENSSL_1_1_API
   return 1;
 }
 } // namespace
@@ -255,17 +256,17 @@ int shrpx_bio_destroy(BIO *b) {
     return 0;
   }
 
-#if !OPENSSL_101_API
+#if !OPENSSL_1_1_API
   b->ptr = nullptr;
   b->init = 0;
   b->flags = 0;
-#endif // !OPENSSL_101_API
+#endif // !OPENSSL_1_1_API
 
   return 1;
 }
 } // namespace
 
-#if OPENSSL_101_API
+#if OPENSSL_1_1_API
 
 BIO_METHOD *create_bio_method() {
   auto meth = BIO_meth_new(BIO_TYPE_FD, "nghttpx-bio");
@@ -282,7 +283,7 @@ BIO_METHOD *create_bio_method() {
 
 void delete_bio_method(BIO_METHOD *bio_method) { BIO_meth_free(bio_method); }
 
-#else // !OPENSSL_101_API
+#else // !OPENSSL_1_1_API
 
 BIO_METHOD *create_bio_method() {
   static BIO_METHOD shrpx_bio_method = {
@@ -296,7 +297,7 @@ BIO_METHOD *create_bio_method() {
 
 void delete_bio_method(BIO_METHOD *bio_method) {}
 
-#endif // !OPENSSL_101_API
+#endif // !OPENSSL_1_1_API
 
 void Connection::set_ssl(SSL *ssl) {
   tls.ssl = ssl;
@@ -625,8 +626,6 @@ ssize_t Connection::write_tls(const void *data, size_t len) {
     }
   }
 
-  wlimit.drain(rv);
-
   update_tls_warmup_writelen(rv);
 
   return rv;
@@ -677,8 +676,6 @@ ssize_t Connection::read_tls(void *data, size_t len) {
       return SHRPX_ERR_NETWORK;
     }
   }
-
-  rlimit.drain(rv);
 
   return rv;
 }
@@ -759,6 +756,57 @@ void Connection::handle_tls_pending_read() {
     return;
   }
   rlimit.handle_tls_pending_read();
+}
+
+int Connection::get_tcp_hint(TCPHint *hint) const {
+#if defined(TCP_INFO) && defined(TCP_NOTSENT_LOWAT)
+  struct tcp_info tcp_info;
+  socklen_t tcp_info_len = sizeof(tcp_info);
+  int rv;
+
+  rv = getsockopt(fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &tcp_info_len);
+
+  if (rv != 0) {
+    return -1;
+  }
+
+  auto avail_packets = tcp_info.tcpi_snd_cwnd > tcp_info.tcpi_unacked
+                           ? tcp_info.tcpi_snd_cwnd - tcp_info.tcpi_unacked
+                           : 0;
+
+  // http://www.slideshare.net/kazuho/programming-tcp-for-responsiveness
+  //
+  // TODO 29 (5 + 8 + 16) is TLS overhead for AES-GCM.  For
+  // CHACHA20_POLY1305, it is 21 since it does not need 8 bytes
+  // explicit nonce.
+  auto writable_size = (avail_packets + 2) * (tcp_info.tcpi_snd_mss - 29);
+  if (writable_size > 16_k) {
+    writable_size = writable_size & ~(16_k - 1);
+  } else {
+    if (writable_size < 536) {
+      LOG(INFO) << "writable_size is too small: " << writable_size;
+    }
+    // TODO is this required?
+    writable_size = std::max(writable_size, static_cast<uint32_t>(536 * 2));
+  }
+
+  // if (LOG_ENABLED(INFO)) {
+  //   LOG(INFO) << "snd_cwnd=" << tcp_info.tcpi_snd_cwnd
+  //             << ", unacked=" << tcp_info.tcpi_unacked
+  //             << ", snd_mss=" << tcp_info.tcpi_snd_mss
+  //             << ", rtt=" << tcp_info.tcpi_rtt << "us"
+  //             << ", rcv_space=" << tcp_info.tcpi_rcv_space
+  //             << ", writable=" << writable_size;
+  // }
+
+  hint->write_buffer_size = writable_size;
+  // TODO tcpi_rcv_space is considered as rwin, is that correct?
+  hint->rwin = tcp_info.tcpi_rcv_space;
+
+  return 0;
+#else  // !defined(TCP_INFO) || !defined(TCP_NOTSENT_LOWAT)
+  return -1;
+#endif // !defined(TCP_INFO) || !defined(TCP_NOTSENT_LOWAT)
 }
 
 } // namespace shrpx

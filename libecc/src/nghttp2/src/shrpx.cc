@@ -574,7 +574,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
                 << (faddr.tls ? ", tls" : "");
     (*found).used = true;
     faddr.fd = (*found).fd;
-    faddr.hostport = "localhost";
+    faddr.hostport = ImmutableString::from_lit("localhost");
 
     return 0;
   }
@@ -639,7 +639,7 @@ int create_unix_domain_server_socket(UpstreamAddr &faddr,
               << (faddr.tls ? ", tls" : "");
 
   faddr.fd = fd;
-  faddr.hostport = "localhost";
+  faddr.hostport = ImmutableString::from_lit("localhost");
 
   return 0;
 }
@@ -791,7 +791,8 @@ int create_tcp_server_socket(UpstreamAddr &faddr,
   }
 
   faddr.fd = fd;
-  faddr.hostport = util::make_http_hostport(StringRef{host.data()}, faddr.port);
+  faddr.hostport = ImmutableString{
+      util::make_http_hostport(StringRef{host.data()}, faddr.port)};
 
   LOG(NOTICE) << "Listening on " << faddr.hostport
               << (faddr.tls ? ", tls" : "");
@@ -855,7 +856,7 @@ get_inherited_addr_from_config(const Config *config) {
       continue;
     }
 
-    iaddr.host = host.data();
+    iaddr.host = ImmutableString{host.data()};
   }
 
   return iaddrs;
@@ -947,7 +948,7 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
       }
 
       InheritedAddr addr{};
-      addr.host = path;
+      addr.host = ImmutableString{path};
       addr.host_unix = true;
       addr.fd = static_cast<int>(fd);
       iaddrs.push_back(std::move(addr));
@@ -1001,7 +1002,7 @@ std::vector<InheritedAddr> get_inherited_addr_from_env() {
       }
 
       InheritedAddr addr{};
-      addr.host = host.data();
+      addr.host = ImmutableString{host.data()};
       addr.port = static_cast<uint16_t>(port);
       addr.fd = static_cast<int>(fd);
       iaddrs.push_back(std::move(addr));
@@ -1273,7 +1274,7 @@ constexpr auto DEFAULT_ACCESSLOG_FORMAT = StringRef::from_lit(
 namespace {
 void fill_default_config(Config *config) {
   config->num_worker = 1;
-  config->conf_path = "/etc/nghttpx/nghttpx.conf";
+  config->conf_path = ImmutableString::from_lit("/etc/nghttpx/nghttpx.conf");
   config->pid = getpid();
 
   if (ev_supported_backends() & ~ev_recommended_backends() & EVBACKEND_KQUEUE) {
@@ -1304,7 +1305,8 @@ void fill_default_config(Config *config) {
     auto &ocspconf = tlsconf.ocsp;
     // ocsp update interval = 14400 secs = 4 hours, borrowed from h2o
     ocspconf.update_interval = 4_h;
-    ocspconf.fetch_ocsp_response_file = PKGDATADIR "/fetch-ocsp-response";
+    ocspconf.fetch_ocsp_response_file =
+        ImmutableString::from_lit(PKGDATADIR "/fetch-ocsp-response");
   }
 
   {
@@ -1317,7 +1319,7 @@ void fill_default_config(Config *config) {
 
   auto &httpconf = config->http;
   httpconf.server_name =
-      StringRef::from_lit("nghttpx nghttp2/" NGHTTP2_VERSION);
+      ImmutableString::from_lit("nghttpx nghttp2/" NGHTTP2_VERSION);
   httpconf.no_host_rewrite = true;
   httpconf.request_header_field_buffer = 64_k;
   httpconf.max_request_header_fields = 100;
@@ -1333,23 +1335,31 @@ void fill_default_config(Config *config) {
       timeoutconf.settings = 10_s;
     }
 
-    // window bits for HTTP/2 and SPDY upstream connection per
-    // stream. 2**16-1 = 64KiB-1, which is HTTP/2 default. Please note
-    // that SPDY/3 default is 64KiB.
-    upstreamconf.window_bits = 16;
-    // HTTP/2 SPDY/3.1 has connection-level flow control. The default
-    // window size for HTTP/2 is 64KiB - 1. SPDY/3's default is 64KiB
-    upstreamconf.connection_window_bits = 16;
+    // window size for HTTP/2 and SPDY upstream connection per stream.
+    // 2**16-1 = 64KiB-1, which is HTTP/2 default.  Please note that
+    // SPDY/3 default is 64KiB.
+    upstreamconf.window_size = 64_k - 1;
+    // HTTP/2 and SPDY/3.1 has connection-level flow control. The
+    // default window size for HTTP/2 is 64KiB - 1.  SPDY/3's default
+    // is 64KiB
+    upstreamconf.connection_window_size = 64_k - 1;
     upstreamconf.max_concurrent_streams = 100;
+
+    upstreamconf.encoder_dynamic_table_size = 4_k;
+    upstreamconf.decoder_dynamic_table_size = 4_k;
 
     nghttp2_option_new(&upstreamconf.option);
     nghttp2_option_set_no_auto_window_update(upstreamconf.option, 1);
     nghttp2_option_set_no_recv_client_magic(upstreamconf.option, 1);
+    nghttp2_option_set_max_deflate_dynamic_table_size(
+        upstreamconf.option, upstreamconf.encoder_dynamic_table_size);
 
     // For API endpoint, we enable automatic window update.  This is
     // because we are a sink.
     nghttp2_option_new(&upstreamconf.alt_mode_option);
     nghttp2_option_set_no_recv_client_magic(upstreamconf.alt_mode_option, 1);
+    nghttp2_option_set_max_deflate_dynamic_table_size(
+        upstreamconf.alt_mode_option, upstreamconf.encoder_dynamic_table_size);
   }
 
   {
@@ -1360,13 +1370,18 @@ void fill_default_config(Config *config) {
       timeoutconf.settings = 10_s;
     }
 
-    downstreamconf.window_bits = 16;
-    downstreamconf.connection_window_bits = 30;
+    downstreamconf.window_size = 64_k - 1;
+    downstreamconf.connection_window_size = (1u << 31) - 1;
     downstreamconf.max_concurrent_streams = 100;
+
+    downstreamconf.encoder_dynamic_table_size = 4_k;
+    downstreamconf.decoder_dynamic_table_size = 4_k;
 
     nghttp2_option_new(&downstreamconf.option);
     nghttp2_option_set_no_auto_window_update(downstreamconf.option, 1);
     nghttp2_option_set_peer_max_concurrent_streams(downstreamconf.option, 100);
+    nghttp2_option_set_max_deflate_dynamic_table_size(
+        downstreamconf.option, downstreamconf.encoder_dynamic_table_size);
   }
 
   auto &loggingconf = config->logging;
@@ -1375,7 +1390,7 @@ void fill_default_config(Config *config) {
     accessconf.format = parse_log_format(DEFAULT_ACCESSLOG_FORMAT);
 
     auto &errorconf = loggingconf.error;
-    errorconf.file = "/dev/stderr";
+    errorconf.file = ImmutableString::from_lit("/dev/stderr");
   }
 
   loggingconf.syslog_facility = LOG_DAEMON;
@@ -1995,26 +2010,25 @@ HTTP/2 and SPDY:
               concurrent requests are set by a remote server.
               Default: )"
       << get_config()->http2.downstream.max_concurrent_streams << R"(
-  --frontend-http2-window-bits=<N>
-              Sets the  per-stream initial window size  of HTTP/2 SPDY
-              frontend connection.  For HTTP/2,  the size is 2**<N>-1.
-              For SPDY, the size is 2**<N>.
-              Default: )" << get_config()->http2.upstream.window_bits << R"(
-  --frontend-http2-connection-window-bits=<N>
+  --frontend-http2-window-size=<SIZE>
+              Sets the  per-stream initial  window size of  HTTP/2 and
+              SPDY frontend connection.
+              Default: )" << get_config()->http2.upstream.window_size << R"(
+  --frontend-http2-connection-window-size=<SIZE>
               Sets the  per-connection window size of  HTTP/2 and SPDY
-              frontend   connection.    For   HTTP/2,  the   size   is
-              2**<N>-1. For SPDY, the size is 2**<N>.
-              Default: )" << get_config()->http2.upstream.connection_window_bits
+              frontend  connection.  For  SPDY  connection, the  value
+              less than 64KiB is rounded up to 64KiB.
+              Default: )" << get_config()->http2.upstream.connection_window_size
       << R"(
-  --backend-http2-window-bits=<N>
+  --backend-http2-window-size=<SIZE>
               Sets  the   initial  window   size  of   HTTP/2  backend
-              connection to 2**<N>-1.
-              Default: )" << get_config()->http2.downstream.window_bits << R"(
-  --backend-http2-connection-window-bits=<N>
+              connection.
+              Default: )" << get_config()->http2.downstream.window_size << R"(
+  --backend-http2-connection-window-size=<SIZE>
               Sets the  per-connection window  size of  HTTP/2 backend
-              connection to 2**<N>-1.
+              connection.
               Default: )"
-      << get_config()->http2.downstream.connection_window_bits << R"(
+      << get_config()->http2.downstream.connection_window_size << R"(
   --http2-no-cookie-crumbling
               Don't crumble cookie header field.
   --padding=<N>
@@ -2030,6 +2044,57 @@ HTTP/2 and SPDY:
               backend session is relayed  to frontend, and server push
               via Link header field  is also supported.  SPDY frontend
               does not support server push.
+  --frontend-http2-optimize-write-buffer-size
+              (Experimental) Enable write  buffer size optimization in
+              frontend HTTP/2 TLS  connection.  This optimization aims
+              to reduce  write buffer  size so  that it  only contains
+              bytes  which can  send immediately.   This makes  server
+              more responsive to prioritized HTTP/2 stream because the
+              buffering  of lower  priority stream  is reduced.   This
+              option is only effective on recent Linux platform.
+  --frontend-http2-optimize-window-size
+              (Experimental)   Automatically  tune   connection  level
+              window size of frontend  HTTP/2 TLS connection.  If this
+              feature is  enabled, connection window size  starts with
+              the   default  window   size,   65535  bytes.    nghttpx
+              automatically  adjusts connection  window size  based on
+              TCP receiving  window size.  The maximum  window size is
+              capped      by      the     value      specified      by
+              --frontend-http2-connection-window-size.     Since   the
+              stream is subject to stream level window size, it should
+              be adjusted using --frontend-http2-window-size option as
+              well.   This option  is only  effective on  recent Linux
+              platform.
+  --frontend-http2-encoder-dynamic-table-size=<SIZE>
+              Specify the maximum dynamic  table size of HPACK encoder
+              in the frontend HTTP/2 connection.  The decoder (client)
+              specifies  the maximum  dynamic table  size it  accepts.
+              Then the negotiated dynamic table size is the minimum of
+              this option value and the value which client specified.
+              Default: )"
+      << util::utos_unit(
+             get_config()->http2.upstream.encoder_dynamic_table_size) << R"(
+  --frontend-http2-decoder-dynamic-table-size=<SIZE>
+              Specify the maximum dynamic  table size of HPACK decoder
+              in the frontend HTTP/2 connection.
+              Default: )"
+      << util::utos_unit(
+             get_config()->http2.upstream.decoder_dynamic_table_size) << R"(
+  --backend-http2-encoder-dynamic-table-size=<SIZE>
+              Specify the maximum dynamic  table size of HPACK encoder
+              in the backend HTTP/2 connection.  The decoder (backend)
+              specifies  the maximum  dynamic table  size it  accepts.
+              Then the negotiated dynamic table size is the minimum of
+              this option value and the value which backend specified.
+              Default: )"
+      << util::utos_unit(
+             get_config()->http2.downstream.encoder_dynamic_table_size) << R"(
+  --backend-http2-decoder-dynamic-table-size=<SIZE>
+              Specify the maximum dynamic  table size of HPACK decoder
+              in the backend HTTP/2 connection.
+              Default: )"
+      << util::utos_unit(
+             get_config()->http2.downstream.decoder_dynamic_table_size) << R"(
 
 Mode:
   (default mode)
@@ -2203,6 +2268,13 @@ HTTP:
               599.  If "*"  is used instead of <CODE>,  it matches all
               HTTP  status  code.  If  error  status  code comes  from
               backend server, the custom error pages are not used.
+  --server-name=<NAME>
+              Change server response header field value to <NAME>.
+              Default: )" << get_config()->http.server_name << R"(
+  --no-server-rewrite
+              Don't rewrite server header field in default mode.  When
+              --http2-proxy is used, these headers will not be altered
+              regardless of this option.
 
 API:
   --api-max-request-body=<SIZE>
@@ -2394,7 +2466,7 @@ int process_options(Config *config,
 
   if (listenerconf.addrs.empty()) {
     UpstreamAddr addr{};
-    addr.host = "*";
+    addr.host = ImmutableString::from_lit("*");
     addr.port = 3000;
     addr.tls = true;
     addr.family = AF_INET;
@@ -2831,6 +2903,28 @@ int main(int argc, char **argv) {
          &flag, 125},
         {SHRPX_OPT_API_MAX_REQUEST_BODY.c_str(), required_argument, &flag, 126},
         {SHRPX_OPT_BACKEND_MAX_BACKOFF.c_str(), required_argument, &flag, 127},
+        {SHRPX_OPT_SERVER_NAME.c_str(), required_argument, &flag, 128},
+        {SHRPX_OPT_NO_SERVER_REWRITE.c_str(), no_argument, &flag, 129},
+        {SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WRITE_BUFFER_SIZE.c_str(),
+         no_argument, &flag, 130},
+        {SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WINDOW_SIZE.c_str(), no_argument,
+         &flag, 131},
+        {SHRPX_OPT_FRONTEND_HTTP2_WINDOW_SIZE.c_str(), required_argument, &flag,
+         132},
+        {SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_SIZE.c_str(),
+         required_argument, &flag, 133},
+        {SHRPX_OPT_BACKEND_HTTP2_WINDOW_SIZE.c_str(), required_argument, &flag,
+         134},
+        {SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_SIZE.c_str(),
+         required_argument, &flag, 135},
+        {SHRPX_OPT_FRONTEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE.c_str(),
+         required_argument, &flag, 136},
+        {SHRPX_OPT_FRONTEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE.c_str(),
+         required_argument, &flag, 137},
+        {SHRPX_OPT_BACKEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE.c_str(),
+         required_argument, &flag, 138},
+        {SHRPX_OPT_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE.c_str(),
+         required_argument, &flag, 139},
         {nullptr, 0, nullptr, 0}};
 
     int option_index = 0;
@@ -2933,7 +3027,7 @@ int main(int argc, char **argv) {
         break;
       case 12:
         // --conf
-        mod_config()->conf_path = optarg;
+        mod_config()->conf_path = ImmutableString{optarg};
         break;
       case 14:
         // --syslog-facility
@@ -3427,6 +3521,68 @@ int main(int argc, char **argv) {
       case 127:
         // --backend-max-backoff
         cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_MAX_BACKOFF, StringRef{optarg});
+        break;
+      case 128:
+        // --server-name
+        cmdcfgs.emplace_back(SHRPX_OPT_SERVER_NAME, StringRef{optarg});
+        break;
+      case 129:
+        // --no-server-rewrite
+        cmdcfgs.emplace_back(SHRPX_OPT_NO_SERVER_REWRITE,
+                             StringRef::from_lit("yes"));
+        break;
+      case 130:
+        // --frontend-http2-optimize-write-buffer-size
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WRITE_BUFFER_SIZE,
+            StringRef::from_lit("yes"));
+        break;
+      case 131:
+        // --frontend-http2-optimize-window-size
+        cmdcfgs.emplace_back(SHRPX_OPT_FRONTEND_HTTP2_OPTIMIZE_WINDOW_SIZE,
+                             StringRef::from_lit("yes"));
+        break;
+      case 132:
+        // --frontend-http2-window-size
+        cmdcfgs.emplace_back(SHRPX_OPT_FRONTEND_HTTP2_WINDOW_SIZE,
+                             StringRef{optarg});
+        break;
+      case 133:
+        // --frontend-http2-connection-window-size
+        cmdcfgs.emplace_back(SHRPX_OPT_FRONTEND_HTTP2_CONNECTION_WINDOW_SIZE,
+                             StringRef{optarg});
+        break;
+      case 134:
+        // --backend-http2-window-size
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_WINDOW_SIZE,
+                             StringRef{optarg});
+        break;
+      case 135:
+        // --backend-http2-connection-window-size
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_CONNECTION_WINDOW_SIZE,
+                             StringRef{optarg});
+        break;
+      case 136:
+        // --frontend-http2-encoder-dynamic-table-size
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_FRONTEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE,
+            StringRef{optarg});
+        break;
+      case 137:
+        // --frontend-http2-decoder-dynamic-table-size
+        cmdcfgs.emplace_back(
+            SHRPX_OPT_FRONTEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE,
+            StringRef{optarg});
+        break;
+      case 138:
+        // --backend-http2-encoder-dynamic-table-size
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_ENCODER_DYNAMIC_TABLE_SIZE,
+                             StringRef{optarg});
+        break;
+      case 139:
+        // --backend-http2-decoder-dynamic-table-size
+        cmdcfgs.emplace_back(SHRPX_OPT_BACKEND_HTTP2_DECODER_DYNAMIC_TABLE_SIZE,
+                             StringRef{optarg});
         break;
       default:
         break;

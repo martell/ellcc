@@ -358,7 +358,8 @@ void ConnectionHandler::graceful_shutdown_worker() {
 int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
                                          const UpstreamAddr *faddr) {
   if (LOG_ENABLED(INFO)) {
-    LLOG(INFO, this) << "Accepted connection. fd=" << fd;
+    LLOG(INFO, this) << "Accepted connection from "
+                     << util::numeric_name(addr, addrlen) << ", fd=" << fd;
   }
 
   if (get_config()->num_worker == 1) {
@@ -666,9 +667,16 @@ void ConnectionHandler::handle_ocsp_complete() {
 
 #ifndef OPENSSL_IS_BORINGSSL
   {
+#ifdef HAVE_ATOMIC_STD_SHARED_PTR
+    std::atomic_store_explicit(
+        &tls_ctx_data->ocsp_data,
+        std::make_shared<std::vector<uint8_t>>(std::move(ocsp_.resp)),
+        std::memory_order_release);
+#else  // !HAVE_ATOMIC_STD_SHARED_PTR
     std::lock_guard<std::mutex> g(tls_ctx_data->mu);
     tls_ctx_data->ocsp_data =
         std::make_shared<std::vector<uint8_t>>(std::move(ocsp_.resp));
+#endif // !HAVE_ATOMIC_STD_SHARED_PTR
   }
 #else  // OPENSSL_IS_BORINGSSL
   SSL_CTX_set_ocsp_response(ssl_ctx, ocsp_.resp.data(), ocsp_.resp.size());

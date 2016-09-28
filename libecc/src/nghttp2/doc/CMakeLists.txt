@@ -13,6 +13,7 @@ set(APIDOCS
   nghttp2_hd_deflate_get_num_table_entries.rst
   nghttp2_hd_deflate_get_table_entry.rst
   nghttp2_hd_deflate_hd.rst
+  nghttp2_hd_deflate_hd_vec.rst
   nghttp2_hd_deflate_new.rst
   nghttp2_hd_deflate_new2.rst
   nghttp2_hd_inflate_change_table_size.rst
@@ -23,6 +24,7 @@ set(APIDOCS
   nghttp2_hd_inflate_get_num_table_entries.rst
   nghttp2_hd_inflate_get_table_entry.rst
   nghttp2_hd_inflate_hd.rst
+  nghttp2_hd_inflate_hd2.rst
   nghttp2_hd_inflate_new.rst
   nghttp2_hd_inflate_new2.rst
   nghttp2_http2_strerror.rst
@@ -31,7 +33,9 @@ set(APIDOCS
   nghttp2_option_del.rst
   nghttp2_option_new.rst
   nghttp2_option_set_builtin_recv_extension_type.rst
+  nghttp2_option_set_max_deflate_dynamic_table_size.rst
   nghttp2_option_set_max_reserved_remote_streams.rst
+  nghttp2_option_set_max_send_header_block_length.rst
   nghttp2_option_set_no_auto_ping_ack.rst
   nghttp2_option_set_no_auto_window_update.rst
   nghttp2_option_set_no_http_messaging.rst
@@ -54,13 +58,15 @@ set(APIDOCS
   nghttp2_session_callbacks_set_on_begin_frame_callback.rst
   nghttp2_session_callbacks_set_on_begin_headers_callback.rst
   nghttp2_session_callbacks_set_on_data_chunk_recv_callback.rst
+  nghttp2_session_callbacks_set_on_extension_chunk_recv_callback.rst
   nghttp2_session_callbacks_set_on_frame_not_send_callback.rst
   nghttp2_session_callbacks_set_on_frame_recv_callback.rst
-  nghttp2_session_callbacks_set_on_extension_chunk_recv_callback.rst
   nghttp2_session_callbacks_set_on_frame_send_callback.rst
   nghttp2_session_callbacks_set_on_header_callback.rst
   nghttp2_session_callbacks_set_on_header_callback2.rst
   nghttp2_session_callbacks_set_on_invalid_frame_recv_callback.rst
+  nghttp2_session_callbacks_set_on_invalid_header_callback.rst
+  nghttp2_session_callbacks_set_on_invalid_header_callback2.rst
   nghttp2_session_callbacks_set_on_stream_close_callback.rst
   nghttp2_session_callbacks_set_pack_extension_callback.rst
   nghttp2_session_callbacks_set_recv_callback.rst
@@ -68,6 +74,9 @@ set(APIDOCS
   nghttp2_session_callbacks_set_send_callback.rst
   nghttp2_session_callbacks_set_send_data_callback.rst
   nghttp2_session_callbacks_set_unpack_extension_callback.rst
+  nghttp2_session_change_stream_priority.rst
+  nghttp2_session_check_request_allowed.rst
+  nghttp2_session_check_server_session.rst
   nghttp2_session_client_new.rst
   nghttp2_session_client_new2.rst
   nghttp2_session_client_new3.rst
@@ -79,7 +88,11 @@ set(APIDOCS
   nghttp2_session_find_stream.rst
   nghttp2_session_get_effective_local_window_size.rst
   nghttp2_session_get_effective_recv_data_length.rst
+  nghttp2_session_get_hd_deflate_dynamic_table_size.rst
+  nghttp2_session_get_hd_inflate_dynamic_table_size.rst
   nghttp2_session_get_last_proc_stream_id.rst
+  nghttp2_session_get_local_settings.rst
+  nghttp2_session_get_local_window_size.rst
   nghttp2_session_get_next_stream_id.rst
   nghttp2_session_get_outbound_queue_size.rst
   nghttp2_session_get_remote_settings.rst
@@ -88,20 +101,19 @@ set(APIDOCS
   nghttp2_session_get_stream_effective_local_window_size.rst
   nghttp2_session_get_stream_effective_recv_data_length.rst
   nghttp2_session_get_stream_local_close.rst
+  nghttp2_session_get_stream_local_window_size.rst
   nghttp2_session_get_stream_remote_close.rst
   nghttp2_session_get_stream_remote_window_size.rst
   nghttp2_session_get_stream_user_data.rst
   nghttp2_session_mem_recv.rst
   nghttp2_session_mem_send.rst
   nghttp2_session_recv.rst
-  nghttp2_session_change_stream_priority.rst
-  nghttp2_session_check_request_allowed.rst
-  nghttp2_session_check_server_session.rst
   nghttp2_session_resume_data.rst
   nghttp2_session_send.rst
   nghttp2_session_server_new.rst
   nghttp2_session_server_new2.rst
   nghttp2_session_server_new3.rst
+  nghttp2_session_set_local_window_size.rst
   nghttp2_session_set_next_stream_id.rst
   nghttp2_session_set_stream_user_data.rst
   nghttp2_session_terminate_session.rst

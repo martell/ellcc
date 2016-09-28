@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.14.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.15.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -44,9 +44,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 24)
+AC_SUBST(LT_CURRENT, 25)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 10)
+AC_SUBST(LT_AGE, 11)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -234,6 +234,26 @@ std::map<int, int>().emplace(1, 2);
     [have_std_map_emplace=no
      AC_MSG_RESULT([no])])
 
+# Check that std::atomic_* overloads for std::shared_ptr are
+# available.
+AC_MSG_CHECKING([whether std::atomic_* overloads for std::shared_ptr are available])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+[[
+#include <memory>
+]],
+[[
+auto a = std::make_shared<int>(1000000007);
+auto p = std::atomic_load(&a);
+++*p;
+std::atomic_store(&a, p);
+]])],
+    [AC_DEFINE([HAVE_ATOMIC_STD_SHARED_PTR], [1],
+               [Define to 1 if you have the std::atomic_* overloads for std::shared_ptr.])
+     have_atomic_std_shared_ptr=yes
+     AC_MSG_RESULT([yes])],
+    [have_atomic_std_shared_ptr=no
+     AC_MSG_RESULT([no])])
+
 CXXFLAGS=$save_CXXFLAGS
 
 AC_LANG_POP()
@@ -246,7 +266,7 @@ TESTLDADD=
 # Additional libraries required for programs under src directory.
 APPLDFLAGS=
 
-case "$host" in
+case "$host_os" in
   *android*)
     android_build=yes
     # android does not need -pthread, but needs followng 3 libs for C++
@@ -255,6 +275,12 @@ case "$host" in
   *)
     PTHREAD_LDFLAGS="-pthread"
     APPLDFLAGS="$APPLDFLAGS $PTHREAD_LDFLAGS"
+    ;;
+esac
+
+case "$host_os" in
+  *solaris*)
+    APPLDFLAGS="$APPLDFLAGS -lsocket -lnsl"
     ;;
 esac
 
@@ -720,6 +746,7 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wredundant-decls], [CFLAGS="$CFLAGS -Wredundant-decls"])
     # Only work with Clang for the moment
     AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
+    AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CFLAGS="$CFLAGS -Wsometimes-uninitialized"])
 
     # This is required because we pass format string as "const char*.
     AX_CHECK_COMPILE_FLAG([-Wno-format-nonliteral], [CFLAGS="$CFLAGS -Wno-format-nonliteral"])
@@ -729,6 +756,7 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS="$CXXFLAGS -Wall"])
     AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="$CXXFLAGS -Werror"])
     AX_CHECK_COMPILE_FLAG([-Wformat-security], [CXXFLAGS="$CXXFLAGS -Wformat-security"])
+    AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CXXFLAGS="$CXXFLAGS -Wsometimes-uninitialized"])
     AC_LANG_POP()
 fi
 
@@ -825,6 +853,7 @@ AC_MSG_NOTICE([summary of build options:
       C preprocessor: ${CPP}
       CPPFLAGS:       ${CPPFLAGS}
       WARNCFLAGS:     ${WARNCFLAGS}
+      WARNCXXFLAGS:   ${WARNCXXFLAGS}
       CXX1XCXXFLAGS:  ${CXX1XCXXFLAGS}
       EXTRACFLAG:     ${EXTRACFLAG}
       LIBS:           ${LIBS}

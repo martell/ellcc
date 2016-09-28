@@ -35,8 +35,6 @@
 #include "shrpx_client_handler.h"
 #include "shrpx_http2_session.h"
 #include "shrpx_log_config.h"
-#include "shrpx_connect_blocker.h"
-#include "shrpx_live_check.h"
 #include "shrpx_memcached_dispatcher.h"
 #ifdef HAVE_MRUBY
 #include "shrpx_mruby.h"
@@ -186,8 +184,6 @@ void Worker::replace_downstream_config(
     dst = std::make_shared<DownstreamAddrGroup>();
     dst->pattern = src.pattern;
 
-    // TODO for some reason, clang-3.6 which comes with Ubuntu 15.10
-    // does not value initialize with std::make_shared.
     auto shared_addr = std::make_shared<SharedDownstreamAddr>();
 
     shared_addr->addrs.resize(src.addrs.size());
@@ -419,13 +415,23 @@ void Worker::process_events() {
 ssl::CertLookupTree *Worker::get_cert_lookup_tree() const { return cert_tree_; }
 
 std::shared_ptr<TicketKeys> Worker::get_ticket_keys() {
-  std::lock_guard<std::mutex> g(m_);
+#ifdef HAVE_ATOMIC_STD_SHARED_PTR
+  return std::atomic_load_explicit(&ticket_keys_, std::memory_order_acquire);
+#else  // !HAVE_ATOMIC_STD_SHARED_PTR
+  std::lock_guard<std::mutex> g(ticket_keys_m_);
   return ticket_keys_;
+#endif // !HAVE_ATOMIC_STD_SHARED_PTR
 }
 
 void Worker::set_ticket_keys(std::shared_ptr<TicketKeys> ticket_keys) {
-  std::lock_guard<std::mutex> g(m_);
+#ifdef HAVE_ATOMIC_STD_SHARED_PTR
+  // This is single writer
+  std::atomic_store_explicit(&ticket_keys_, std::move(ticket_keys),
+                             std::memory_order_release);
+#else  // !HAVE_ATOMIC_STD_SHARED_PTR
+  std::lock_guard<std::mutex> g(ticket_keys_m_);
   ticket_keys_ = std::move(ticket_keys);
+#endif // !HAVE_ATOMIC_STD_SHARED_PTR
 }
 
 WorkerStat *Worker::get_worker_stat() { return &worker_stat_; }

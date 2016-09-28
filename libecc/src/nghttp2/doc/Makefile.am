@@ -57,6 +57,7 @@ APIDOCS= \
 	nghttp2_option_del.rst \
 	nghttp2_option_new.rst \
 	nghttp2_option_set_builtin_recv_extension_type.rst \
+	nghttp2_option_set_max_deflate_dynamic_table_size.rst \
 	nghttp2_option_set_max_reserved_remote_streams.rst \
 	nghttp2_option_set_max_send_header_block_length.rst \
 	nghttp2_option_set_no_auto_ping_ack.rst \
@@ -97,6 +98,9 @@ APIDOCS= \
 	nghttp2_session_callbacks_set_send_callback.rst \
 	nghttp2_session_callbacks_set_send_data_callback.rst \
 	nghttp2_session_callbacks_set_unpack_extension_callback.rst \
+	nghttp2_session_change_stream_priority.rst \
+	nghttp2_session_check_request_allowed.rst \
+	nghttp2_session_check_server_session.rst \
 	nghttp2_session_client_new.rst \
 	nghttp2_session_client_new2.rst \
 	nghttp2_session_client_new3.rst \
@@ -108,7 +112,11 @@ APIDOCS= \
 	nghttp2_session_find_stream.rst \
 	nghttp2_session_get_effective_local_window_size.rst \
 	nghttp2_session_get_effective_recv_data_length.rst \
+	nghttp2_session_get_hd_deflate_dynamic_table_size.rst \
+	nghttp2_session_get_hd_inflate_dynamic_table_size.rst \
 	nghttp2_session_get_last_proc_stream_id.rst \
+	nghttp2_session_get_local_settings.rst \
+	nghttp2_session_get_local_window_size.rst \
 	nghttp2_session_get_next_stream_id.rst \
 	nghttp2_session_get_outbound_queue_size.rst \
 	nghttp2_session_get_remote_settings.rst \
@@ -117,15 +125,13 @@ APIDOCS= \
 	nghttp2_session_get_stream_effective_local_window_size.rst \
 	nghttp2_session_get_stream_effective_recv_data_length.rst \
 	nghttp2_session_get_stream_local_close.rst \
+	nghttp2_session_get_stream_local_window_size.rst \
 	nghttp2_session_get_stream_remote_close.rst \
 	nghttp2_session_get_stream_remote_window_size.rst \
 	nghttp2_session_get_stream_user_data.rst \
 	nghttp2_session_mem_recv.rst \
 	nghttp2_session_mem_send.rst \
 	nghttp2_session_recv.rst \
-	nghttp2_session_change_stream_priority.rst \
-	nghttp2_session_check_request_allowed.rst \
-	nghttp2_session_check_server_session.rst \
 	nghttp2_session_resume_data.rst \
 	nghttp2_session_send.rst \
 	nghttp2_session_server_new.rst \

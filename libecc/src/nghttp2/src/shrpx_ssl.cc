@@ -72,6 +72,14 @@ namespace shrpx {
 
 namespace ssl {
 
+#if !OPENSSL_1_1_API
+namespace {
+const unsigned char *ASN1_STRING_get0_data(ASN1_STRING *x) {
+  return ASN1_STRING_data(x);
+}
+} // namespace
+#endif // !OPENSSL_1_1_API
+
 namespace {
 int next_proto_cb(SSL *s, const unsigned char **data, unsigned int *len,
                   void *arg) {
@@ -143,12 +151,6 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
   auto conn = static_cast<Connection *>(SSL_get_app_data(ssl));
   auto handler = static_cast<ClientHandler *>(conn->data);
   auto worker = handler->get_worker();
-  auto cert_tree = worker->get_cert_lookup_tree();
-  if (!cert_tree) {
-    return SSL_TLSEXT_ERR_OK;
-  }
-
-  std::array<uint8_t, NI_MAXHOST> buf;
 
   auto rawhost = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
   if (rawhost == nullptr) {
@@ -157,15 +159,24 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 
   auto len = strlen(rawhost);
   // NI_MAXHOST includes terminal NULL.
-  if (len == 0 || len + 1 > buf.size()) {
+  if (len == 0 || len + 1 > NI_MAXHOST) {
     return SSL_TLSEXT_ERR_OK;
   }
+
+  std::array<uint8_t, NI_MAXHOST> buf;
 
   auto end_buf = std::copy_n(rawhost, len, std::begin(buf));
 
   util::inp_strlower(std::begin(buf), end_buf);
 
   auto hostname = StringRef{std::begin(buf), end_buf};
+
+  handler->set_tls_sni(hostname);
+
+  auto cert_tree = worker->get_cert_lookup_tree();
+  if (!cert_tree) {
+    return SSL_TLSEXT_ERR_OK;
+  }
 
   auto idx = cert_tree->lookup(hostname);
   if (idx == -1) {
@@ -185,8 +196,13 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 namespace {
 std::shared_ptr<std::vector<uint8_t>>
 get_ocsp_data(TLSContextData *tls_ctx_data) {
+#ifdef HAVE_ATOMIC_STD_SHARED_PTR
+  return std::atomic_load_explicit(&tls_ctx_data->ocsp_data,
+                                   std::memory_order_acquire);
+#else  // !HAVE_ATOMIC_STD_SHARED_PTR
   std::lock_guard<std::mutex> g(tls_ctx_data->mu);
   return tls_ctx_data->ocsp_data;
+#endif // !HAVE_ATOMIC_STD_SHARED_PTR
 }
 } // namespace
 
@@ -269,11 +285,11 @@ int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
 
 namespace {
 SSL_SESSION *tls_session_get_cb(SSL *ssl,
-#if OPENSSL_101_API
+#if OPENSSL_1_1_API
                                 const unsigned char *id,
-#else  // !OPENSSL_101_API
+#else  // !OPENSSL_1_1_API
                                 unsigned char *id,
-#endif // !OPENSSL_101_API
+#endif // !OPENSSL_1_1_API
                                 int idlen, int *copy) {
   auto conn = static_cast<Connection *>(SSL_get_app_data(ssl));
   auto handler = static_cast<ClientHandler *>(conn->data);
@@ -1015,7 +1031,7 @@ int verify_hostname(X509 *cert, const StringRef &hostname,
         continue;
       }
 
-      auto name = reinterpret_cast<char *>(ASN1_STRING_data(altname->d.ia5));
+      auto name = ASN1_STRING_get0_data(altname->d.ia5);
       if (!name) {
         continue;
       }
@@ -1235,7 +1251,7 @@ int cert_lookup_tree_add_cert_from_x509(CertLookupTree *lt, size_t idx,
         continue;
       }
 
-      auto name = reinterpret_cast<char *>(ASN1_STRING_data(altname->d.ia5));
+      auto name = ASN1_STRING_get0_data(altname->d.ia5);
       if (!name) {
         continue;
       }

@@ -7,14 +7,14 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int nghttp2_hd_inflate_change_table_size(nghttp2_hd_inflater *inflater, size_t settings_hd_table_bufsize_max)
+.. function:: int nghttp2_hd_inflate_change_table_size(nghttp2_hd_inflater *inflater, size_t settings_max_dynamic_table_size)
 
     
     Changes header table size in the *inflater*.  This may trigger
     eviction in the dynamic table.
     
-    The *settings_hd_table_bufsize_max* should be the value transmitted
-    in SETTINGS_HEADER_TABLE_SIZE.
+    The *settings_max_dynamic_table_size* should be the value
+    transmitted in SETTINGS_HEADER_TABLE_SIZE.
     
     This function must not be called while header block is being
     inflated.  In other words, this function must be called after

@@ -36,7 +36,7 @@ functions, and it also interacts with it via many API function calls.
 An application can create as many :type:`nghttp2_session` object as it
 wants.  But single :type:`nghttp2_session` object must be used by a
 single thread at the same time.  This is not so hard to enforce since
-most event-based architecture applicatons use is single thread per
+most event-based architecture applications use is single thread per
 core, and handling one connection I/O is done by single thread.
 
 To feed input to :type:`nghttp2_session` object, one can use
@@ -176,6 +176,55 @@ header field if it is present (this does not include padding bytes).
 Any deviation results in stream error of type PROTOCOL_ERROR.  If
 error is found in PUSH_PROMISE frame, stream error is raised against
 promised stream.
+
+The order of transmission of the HTTP/2 frames
+----------------------------------------------
+
+This section describes the internals of libnghttp2 about the
+scheduling of transmission of HTTP/2 frames.  This is pretty much
+internal stuff, so the details could change in the future versions of
+the library.
+
+libnghttp2 categorizes HTTP/2 frames into 4 categories: urgent,
+regular, syn_stream, and data in the order of higher priority.
+
+The urgent category includes PING and SETTINGS.  They are sent with
+highest priority.  The order inside the category is FIFO.
+
+The regular category includes frames other than PING, SETTINGS, DATA,
+and HEADERS which does not create stream (which counts toward
+concurrent stream limit).  The order inside the category is FIFO.
+
+The syn_stream category includes HEADERS frame which creates stream,
+that counts toward the concurrent stream limit.
+
+The data category includes DATA frame, and the scheduling among DATA
+frames are determined by HTTP/2 dependency tree.
+
+If the application wants to send frames in the specific order, and the
+default transmission order does not fit, it has to schedule frames by
+itself using the callbacks (e.g.,
+:type:`nghttp2_on_frame_send_callback`).
+
+RST_STREAM has special side effect when it is submitted by
+`nghttp2_submit_rst_stream()`.  It cancels all pending HEADERS and
+DATA frames whose stream ID matches the one in the RST_STREAM frame.
+This may cause unexpected behaviour for the application in some cases.
+For example, suppose that application wants to send RST_STREAM after
+sending response HEADERS and DATA.  Because of the reason we mentioned
+above, the following code does not work:
+
+.. code-block:: c
+
+    nghttp2_submit_response(...)
+    nghttp2_submit_rst_stream(...)
+
+RST_STREAM cancels HEADERS (and DATA), and just RST_STREAM is sent.
+The correct way is use :type:`nghttp2_on_frame_send_callback`, and
+after HEADERS and DATA frames are sent, issue
+`nghttp2_submit_rst_stream()`.  FYI,
+:type:`nghttp2_on_frame_not_send_callback` tells you why frames are
+not sent.
 
 Implement user defined HTTP/2 non-critical extensions
 -----------------------------------------------------

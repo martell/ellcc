@@ -12,6 +12,9 @@
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
 
+/* Define to 1 if you have the std::atomic_* overloads for std::shared_ptr. */
+#undef HAVE_ATOMIC_STD_SHARED_PTR
+
 /* define if the Boost library is available */
 #undef HAVE_BOOST
 

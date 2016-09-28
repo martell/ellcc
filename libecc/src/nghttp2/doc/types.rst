@@ -162,8 +162,13 @@ Types (structs, unions and typedefs)
     achieved by returning :macro:`NGHTTP2_ERR_DEFERRED` without reading
     any data in this invocation.  The library removes DATA frame from
     the outgoing queue temporarily.  To move back deferred DATA frame
-    to outgoing queue, call `nghttp2_session_resume_data()`.  In case
-    of error, there are 2 choices. Returning
+    to outgoing queue, call `nghttp2_session_resume_data()`.
+    
+    If the application just wants to return from
+    `nghttp2_session_send()` or `nghttp2_session_mem_send()` without
+    sending anything, return :macro:`NGHTTP2_ERR_PAUSE`.
+    
+    In case of error, there are 2 choices. Returning
     :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` will close the stream
     by issuing RST_STREAM with :macro:`NGHTTP2_INTERNAL_ERROR`.  If a
     different error code is desirable, use
@@ -850,9 +855,11 @@ Types (structs, unions and typedefs)
     
     With this callback, application inspects the incoming invalid
     field, and it also can reset stream from this callback by returning
-    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, or using
-    `nghttp2_submit_rst_stream()` directly with the error code of
-    choice.
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.  By default, the
+    error code is :macro:`NGHTTP2_INTERNAL_ERROR`.  To change the error
+    code, call `nghttp2_submit_rst_stream()` with the error code of
+    choice in addition to returning
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.
 .. type:: typedef int (*nghttp2_on_invalid_header_callback2)( nghttp2_session *session, const nghttp2_frame *frame, nghttp2_rcbuf *name, nghttp2_rcbuf *value, uint8_t flags, void *user_data)
 
     
@@ -874,9 +881,11 @@ Types (structs, unions and typedefs)
     
     With this callback, application inspects the incoming invalid
     field, and it also can reset stream from this callback by returning
-    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`, or using
-    `nghttp2_submit_rst_stream()` directly with the error code of
-    choice.
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.  By default, the
+    error code is :macro:`NGHTTP2_INTERNAL_ERROR`.  To change the error
+    code, call `nghttp2_submit_rst_stream()` with the error code of
+    choice in addition to returning
+    :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE`.
 .. type:: typedef ssize_t (*nghttp2_select_padding_callback)(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payloadlen, void *user_data)
 
     

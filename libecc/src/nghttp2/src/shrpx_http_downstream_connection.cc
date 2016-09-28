@@ -80,12 +80,19 @@ void connect_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto downstream = dconn->get_downstream();
   auto upstream = downstream->get_upstream();
   auto handler = upstream->get_client_handler();
-  auto &resp = downstream->response();
 
-  // Do this so that dconn is not pooled
-  resp.connection_close = true;
+  downstream->pop_downstream_connection();
 
-  if (upstream->downstream_error(dconn, Downstream::EVENT_TIMEOUT) != 0) {
+  auto ndconn = handler->get_downstream_connection(downstream);
+  if (ndconn) {
+    if (downstream->attach_downstream_connection(std::move(ndconn)) == 0) {
+      return;
+    }
+  }
+
+  downstream->set_request_state(Downstream::CONNECT_FAIL);
+
+  if (upstream->on_downstream_abort_request(downstream, 504) != 0) {
     delete handler;
   }
 }
@@ -337,6 +344,10 @@ int HttpDownstreamConnection::push_request_headers() {
 
   auto &httpconf = get_config()->http;
 
+  // Set request_sent to true because we write request into buffer
+  // here.
+  downstream_->set_request_header_sent(true);
+
   // For HTTP/1.0 request, there is no authority in request.  In that
   // case, we use backend server's host nonetheless.
   auto authority = StringRef(downstream_hostport);
@@ -514,7 +525,13 @@ int HttpDownstreamConnection::push_request_headers() {
                       << downstream_->get_stream_id() << "\n" << nhdrs;
   }
 
-  signal_write();
+  // Don't call signal_write() if we anticipate request body.  We call
+  // signal_write() when we received request body chunk, and it
+  // enables us to send headers and data in one writev system call.
+  if (connect_method ||
+      (!req.http2_expect_body && req.fs.content_length == 0)) {
+    signal_write();
+  }
 
   return 0;
 }

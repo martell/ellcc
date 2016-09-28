@@ -312,10 +312,19 @@ int htp_hdrs_completecb(http_parser *htp) {
     ULOG(INFO, upstream) << "HTTP request headers\n" << ss.str();
   }
 
-  // set content-length if no transfer-encoding is given.  If
-  // transfer-encoding is given, leave req.fs.content_length to -1.
-  if (!req.fs.header(http2::HD_TRANSFER_ENCODING)) {
-    req.fs.content_length = htp->content_length;
+  // set content-length if method is not CONNECT, and no
+  // transfer-encoding is given.  If transfer-encoding is given, leave
+  // req.fs.content_length to -1.
+  if (method != HTTP_CONNECT && !req.fs.header(http2::HD_TRANSFER_ENCODING)) {
+    // http-parser returns (uint64_t)-1 if there is no content-length
+    // header field.  If we don't have both transfer-encoding, and
+    // content-length header field, we assume that there is no request
+    // body.
+    if (htp->content_length == std::numeric_limits<uint64_t>::max()) {
+      req.fs.content_length = 0;
+    } else {
+      req.fs.content_length = htp->content_length;
+    }
   }
 
   auto host = req.fs.header(http2::HD_HOST);
@@ -350,11 +359,6 @@ int htp_hdrs_completecb(http_parser *htp) {
     }
     // checking UF_HOST could be redundant, but just in case ...
     if (!(u.field_set & (1 << UF_SCHEMA)) || !(u.field_set & (1 << UF_HOST))) {
-      if (get_config()->http2_proxy && !faddr->alt_mode) {
-        // Request URI should be absolute-form for client proxy mode
-        return -1;
-      }
-
       req.no_authority = true;
 
       if (method == HTTP_OPTIONS && req.path == StringRef::from_lit("*")) {
@@ -394,6 +398,11 @@ int htp_hdrs_completecb(http_parser *htp) {
 #endif // HAVE_MRUBY
 
   // mruby hook may change method value
+
+  if (req.no_authority && get_config()->http2_proxy && !faddr->alt_mode) {
+    // Request URI should be absolute-form for client proxy mode
+    return -1;
+  }
 
   if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
     return 0;
@@ -1078,7 +1087,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     }
   }
 
-  if (!get_config()->http2_proxy) {
+  if (!get_config()->http2_proxy && !httpconf.no_server_rewrite) {
     buf->append("Server: ");
     buf->append(httpconf.server_name);
     buf->append("\r\n");
@@ -1202,9 +1211,11 @@ void HttpsUpstream::on_handler_delete() {
   }
 }
 
-int HttpsUpstream::on_downstream_reset(bool no_retry) {
+int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   int rv;
   std::unique_ptr<DownstreamConnection> dconn;
+
+  assert(downstream == downstream_.get());
 
   if (!downstream_->request_submission_ready()) {
     // Return error so that caller can delete handler

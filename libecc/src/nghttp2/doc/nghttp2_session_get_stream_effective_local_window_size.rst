@@ -15,4 +15,11 @@ Synopsis
     `nghttp2_submit_window_update()`.  This function takes into account
     that and returns effective window size.
     
+    This function does not take into account the amount of received
+    data from the remote endpoint.  Use
+    `nghttp2_session_get_stream_local_window_size()` to know the amount
+    of data the remote endpoint can send without receiving stream level
+    WINDOW_UPDATE frame.  Note that each stream is still subject to the
+    connection level flow control.
+    
     This function returns -1 if it fails.

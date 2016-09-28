@@ -7,12 +7,12 @@ Synopsis
 
 *#include <nghttp2/nghttp2.h>*
 
-.. function:: int nghttp2_hd_deflate_new(nghttp2_hd_deflater **deflater_ptr, size_t deflate_hd_table_bufsize_max)
+.. function:: int nghttp2_hd_deflate_new(nghttp2_hd_deflater **deflater_ptr, size_t max_deflate_dynamic_table_size)
 
     
     Initializes *\*deflater_ptr* for deflating name/values pairs.
     
-    The *deflate_hd_table_bufsize_max* is the upper bound of header
+    The *max_deflate_dynamic_table_size* is the upper bound of header
     table size the deflater will use.
     
     If this function fails, *\*deflater_ptr* is left untouched.
