@@ -47,7 +47,7 @@ public:
       : SelectionDAGISel(tm, OptLevel), Subtarget(nullptr),
         ForCodeSize(false) {}
 
-  const char *getPassName() const override {
+  StringRef getPassName() const override {
     return "AArch64 Instruction Selection";
   }
 
@@ -586,6 +586,11 @@ bool AArch64DAGToDAGISel::SelectArithExtendedRegister(SDValue N, SDValue &Reg,
       return false;
 
     Reg = N.getOperand(0);
+
+    // Don't match if free 32-bit -> 64-bit zext can be used instead.
+    if (Ext == AArch64_AM::UXTW &&
+        Reg->getValueType(0).getSizeInBits() == 32 && isDef32(*Reg.getNode()))
+      return false;
   }
 
   // AArch64 mandates that the RHS of the operation must use the smallest

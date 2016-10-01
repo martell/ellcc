@@ -18,8 +18,9 @@
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/MD5.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/SHA1.h"
 #include "llvm/Support/RandomNumberGenerator.h"
+#include "llvm/Support/SHA1.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace llvm;
 using namespace llvm::dwarf;
@@ -1005,6 +1006,9 @@ template <class ELFT> void OutputSection<ELFT>::writeTo(uint8_t *Buf) {
     for (InputSection<ELFT> *C : Sections)
       C->writeTo(Buf);
   }
+  // Linker scripts may have BYTE()-family commands with which you
+  // can write arbitrary bytes to the output. Process them if any.
+  Script<ELFT>::X->writeDataBytes(this->Name, Buf);
 }
 
 template <class ELFT>
@@ -1463,13 +1467,19 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
     else if (isa<DefinedRegular<ELFT>>(Body))
       ESym->st_shndx = SHN_ABS;
 
-    // On MIPS we need to mark symbol which has a PLT entry and requires pointer
-    // equality by STO_MIPS_PLT flag. That is necessary to help dynamic linker
-    // distinguish such symbols and MIPS lazy-binding stubs.
-    // https://sourceware.org/ml/binutils/2008-07/txt00000.txt
-    if (Config->EMachine == EM_MIPS && Body->isInPlt() &&
-        Body->NeedsCopyOrPltAddr)
-      ESym->st_other |= STO_MIPS_PLT;
+    if (Config->EMachine == EM_MIPS) {
+      // On MIPS we need to mark symbol which has a PLT entry and requires
+      // pointer equality by STO_MIPS_PLT flag. That is necessary to help
+      // dynamic linker distinguish such symbols and MIPS lazy-binding stubs.
+      // https://sourceware.org/ml/binutils/2008-07/txt00000.txt
+      if (Body->isInPlt() && Body->NeedsCopyOrPltAddr)
+        ESym->st_other |= STO_MIPS_PLT;
+      if (Config->Relocatable) {
+        auto *D = dyn_cast<DefinedRegular<ELFT>>(Body);
+        if (D && D->isMipsPIC())
+          ESym->st_other |= STO_MIPS_PIC;
+      }
+    }
     ++ESym;
   }
 }
@@ -1678,59 +1688,12 @@ template <class ELFT> void BuildIdSection<ELFT>::writeTo(uint8_t *Buf) {
   HashBuf = Buf + 16;
 }
 
-static uint64_t murmurHash64A(const void *Key, int Len) {
-  uint64_t Seed = 0;
-  const uint64_t M = 0xc6a4a7935bd1e995LLU;
-  const int R = 47;
-
-  uint64_t H = Seed ^ (Len * M);
-
-  const uint64_t *Data = (const uint64_t *)Key;
-  const uint64_t *End = Data + (Len / 8);
-
-  while (Data != End) {
-    uint64_t K = *Data++;
-
-    K *= M;
-    K ^= K >> R;
-    K *= M;
-
-    H ^= K;
-    H *= M;
-  }
-
-  const unsigned char *Data2 = (const unsigned char *)Data;
-  switch (Len & 7) {
-  case 7:
-    H ^= uint64_t(Data2[6]) << 48;
-  case 6:
-    H ^= uint64_t(Data2[5]) << 40;
-  case 5:
-    H ^= uint64_t(Data2[4]) << 32;
-  case 4:
-    H ^= uint64_t(Data2[3]) << 24;
-  case 3:
-    H ^= uint64_t(Data2[2]) << 16;
-  case 2:
-    H ^= uint64_t(Data2[1]) << 8;
-  case 1:
-    H ^= uint64_t(Data2[0]);
-    H *= M;
-  };
-
-  H ^= H >> R;
-  H *= M;
-  H ^= H >> R;
-
-  return H;
-}
-
 template <class ELFT>
 void BuildIdFastHash<ELFT>::writeBuildId(ArrayRef<uint8_t> Buf) {
   const endianness E = ELFT::TargetEndianness;
 
-  // 64-bit murmur2 hash
-  uint64_t Hash = murmurHash64A(Buf.data(), Buf.size());
+  // 64-bit xxhash
+  uint64_t Hash = xxHash64(StringRef((const char *)Buf.data(), Buf.size()));
   write64<E>(this->HashBuf, Hash);
 }
 
@@ -1777,7 +1740,10 @@ MipsReginfoOutputSection<ELFT>::MipsReginfoOutputSection()
 template <class ELFT>
 void MipsReginfoOutputSection<ELFT>::writeTo(uint8_t *Buf) {
   auto *R = reinterpret_cast<Elf_Mips_RegInfo *>(Buf);
-  R->ri_gp_value = Out<ELFT>::Got->getVA() + MipsGPOffset;
+  if (Config->Relocatable)
+    R->ri_gp_value = 0;
+  else
+    R->ri_gp_value = Out<ELFT>::Got->getVA() + MipsGPOffset;
   R->ri_gprmask = GprMask;
 }
 
@@ -1806,7 +1772,10 @@ void MipsOptionsOutputSection<ELFT>::writeTo(uint8_t *Buf) {
   Opt->section = 0;
   Opt->info = 0;
   auto *Reg = reinterpret_cast<Elf_Mips_RegInfo *>(Buf + sizeof(*Opt));
-  Reg->ri_gp_value = Out<ELFT>::Got->getVA() + MipsGPOffset;
+  if (Config->Relocatable)
+    Reg->ri_gp_value = 0;
+  else
+    Reg->ri_gp_value = Out<ELFT>::Got->getVA() + MipsGPOffset;
   Reg->ri_gprmask = GprMask;
 }
 

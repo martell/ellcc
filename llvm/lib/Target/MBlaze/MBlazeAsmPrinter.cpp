@@ -54,7 +54,7 @@ namespace {
       : AsmPrinter(TM, std::move(Streamer)) {
     }
 
-    const char *getPassName() const override {
+    StringRef getPassName() const override {
       return "MBlaze Assembly Printer";
     }
 

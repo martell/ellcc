@@ -114,7 +114,7 @@ static void *MsanAllocate(StackTrace *stack, uptr size,
   if (size > kMaxAllowedMallocSize) {
     Report("WARNING: MemorySanitizer failed to allocate %p bytes\n",
            (void *)size);
-    return allocator.ReturnNullOrDie();
+    return allocator.ReturnNullOrDieOnBadRequest();
   }
   void *res = allocator.Allocate(&cache, size, alignment, false);
   Metadata *meta = reinterpret_cast<Metadata*>(allocator.GetMetaData(res));
@@ -154,7 +154,7 @@ void MsanDeallocate(StackTrace *stack, void *p) {
 
 void *MsanCalloc(StackTrace *stack, uptr nmemb, uptr size) {
   if (CallocShouldReturnNullDueToOverflow(size, nmemb))
-    return allocator.ReturnNullOrDie();
+    return allocator.ReturnNullOrDieOnBadRequest();
   return MsanReallocate(stack, nullptr, nmemb * size, sizeof(u64), true);
 }
 

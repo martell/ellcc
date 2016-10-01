@@ -4,6 +4,7 @@
 # RUN: ld.lld -shared %t2.o -o %t2.so
 
 # RUN: echo "SECTIONS { \
+# RUN:  . = SIZEOF_HEADERS; \
 # RUN:  .plt  : { *(.plt) } \
 # RUN:  .text : { *(.text) } \
 # RUN:  . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE)); \
@@ -31,7 +32,7 @@
 # CHECK-NEXT:      SHF_ALLOC
 # CHECK-NEXT:      SHF_WRITE
 # CHECK-NEXT:    ]
-# CHECK-NEXT:    Address: 0x2000F0
+# CHECK-NEXT:    Address: 0x10F0
 # CHECK-NEXT:    Offset: 0x10F0
 # CHECK-NEXT:    Size:
 # CHECK-NEXT:    Link:
@@ -47,7 +48,7 @@
 # CHECK-NEXT:      SHF_ALLOC
 # CHECK-NEXT:      SHF_WRITE
 # CHECK-NEXT:    ]
-# CHECK-NEXT:    Address: 0x201000
+# CHECK-NEXT:    Address: 0x2000
 # CHECK-NEXT:    Offset: 0x2000
 # CHECK-NEXT:    Size:
 # CHECK-NEXT:    Link:

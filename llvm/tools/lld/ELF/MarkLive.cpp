@@ -54,7 +54,7 @@ struct ResolvedReloc {
 template <class ELFT>
 static typename ELFT::uint getAddend(InputSectionBase<ELFT> &Sec,
                                      const typename ELFT::Rel &Rel) {
-  return Target->getImplicitAddend(Sec.Data.begin(),
+  return Target->getImplicitAddend(Sec.Data.begin() + Rel.r_offset,
                                    Rel.getType(Config->Mips64EL));
 }
 
@@ -81,13 +81,6 @@ static ResolvedReloc<ELFT> resolveReloc(InputSectionBase<ELFT> &Sec,
 template <class ELFT>
 static void forEachSuccessor(InputSection<ELFT> &Sec,
                              std::function<void(ResolvedReloc<ELFT>)> Fn) {
-  // Skip over discarded sections. This in theory shouldn't happen, because
-  // the ELF spec doesn't allow a relocation to point to a deduplicated
-  // COMDAT section directly. Unfortunately this happens in practice (e.g.
-  // .eh_frame) so we need to add a check.
-  if (&Sec == &InputSection<ELFT>::Discarded)
-    return;
-
   ELFFile<ELFT> &Obj = Sec.getFile()->getObj();
   for (const typename ELFT::Shdr *RelSec : Sec.RelocSections) {
     if (RelSec->sh_type == SHT_RELA) {
@@ -166,8 +159,9 @@ scanEhFrameSection(EhInputSection<ELFT> &EH,
     scanEhFrameSection(EH, EObj.rels(EH.RelocSection), Enqueue);
 }
 
-// Sections listed below are special because they are used by the loader
-// just by being in an ELF file. They should not be garbage-collected.
+// We do not garbage-collect two types of sections:
+// 1) Sections used by the loader (.init, .fini, .ctors, .dtors, .jcr)
+// 2) Not allocatable sections which typically contain debugging information
 template <class ELFT> static bool isReserved(InputSectionBase<ELFT> *Sec) {
   switch (Sec->getSectionHdr()->sh_type) {
   case SHT_FINI_ARRAY:
@@ -183,7 +177,8 @@ template <class ELFT> static bool isReserved(InputSectionBase<ELFT> *Sec) {
     if (isValidCIdentifier(S))
       return true;
 
-    return S.startswith(".ctors") || S.startswith(".dtors") ||
+    bool IsAllocSec = Sec->getSectionHdr()->sh_flags & SHF_ALLOC;
+    return !IsAllocSec || S.startswith(".ctors") || S.startswith(".dtors") ||
            S.startswith(".init") || S.startswith(".fini") ||
            S.startswith(".jcr");
   }
@@ -196,7 +191,11 @@ template <class ELFT> void elf::markLive() {
   SmallVector<InputSection<ELFT> *, 256> Q;
 
   auto Enqueue = [&](ResolvedReloc<ELFT> R) {
-    if (!R.Sec)
+    // Skip over discarded sections. This in theory shouldn't happen, because
+    // the ELF spec doesn't allow a relocation to point to a deduplicated
+    // COMDAT section directly. Unfortunately this happens in practice (e.g.
+    // .eh_frame) so we need to add a check.
+    if (!R.Sec || R.Sec == &InputSection<ELFT>::Discarded)
       return;
 
     // Usually, a whole section is marked as live or dead, but in mergeable
@@ -208,8 +207,12 @@ template <class ELFT> void elf::markLive() {
     if (R.Sec->Live)
       return;
     R.Sec->Live = true;
+    // Add input section to the queue. We don't want to consider relocations
+    // from non-allocatable input sections, because we can bring those
+    // allocatable sections to living which otherwise would be dead.
     if (InputSection<ELFT> *S = dyn_cast<InputSection<ELFT>>(R.Sec))
-      Q.push_back(S);
+      if (S->getSectionHdr()->sh_flags & SHF_ALLOC)
+        Q.push_back(S);
   };
 
   auto MarkSymbol = [&](const SymbolBody *Sym) {

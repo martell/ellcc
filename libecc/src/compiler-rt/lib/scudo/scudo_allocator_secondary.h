@@ -42,7 +42,7 @@ class ScudoLargeMmapAllocator {
     uptr Ptr = MapBeg + sizeof(SecondaryHeader);
     // TODO(kostyak): add a random offset to Ptr.
     CHECK_GT(Ptr + Size, MapBeg);
-    CHECK_LT(Ptr + Size, MapEnd);
+    CHECK_LE(Ptr + Size, MapEnd);
     SecondaryHeader *Header = getHeader(Ptr);
     Header->MapBeg = MapBeg - PageSize;
     Header->MapSize = MapSize + 2 * PageSize;
@@ -51,10 +51,16 @@ class ScudoLargeMmapAllocator {
     return reinterpret_cast<void *>(Ptr);
   }
 
-  void *ReturnNullOrDie() {
+  void *ReturnNullOrDieOnBadRequest() {
     if (atomic_load(&MayReturnNull, memory_order_acquire))
       return nullptr;
-    ReportAllocatorCannotReturnNull();
+    ReportAllocatorCannotReturnNull(false);
+  }
+
+  void *ReturnNullOrDieOnOOM() {
+    if (atomic_load(&MayReturnNull, memory_order_acquire))
+      return nullptr;
+    ReportAllocatorCannotReturnNull(true);
   }
 
   void SetMayReturnNull(bool AllocatorMayReturnNull) {

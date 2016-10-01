@@ -3696,6 +3696,32 @@ static void handleOptimizeNoneAttr(Sema &S, Decl *D,
     D->addAttr(Optnone);
 }
 
+static void handleConstantAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  if (checkAttrMutualExclusion<CUDASharedAttr>(S, D, Attr.getRange(),
+                                               Attr.getName()))
+    return;
+  auto *VD = cast<VarDecl>(D);
+  if (!VD->hasGlobalStorage()) {
+    S.Diag(Attr.getLoc(), diag::err_cuda_nonglobal_constant);
+    return;
+  }
+  D->addAttr(::new (S.Context) CUDAConstantAttr(
+      Attr.getRange(), S.Context, Attr.getAttributeSpellingListIndex()));
+}
+
+static void handleSharedAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  if (checkAttrMutualExclusion<CUDAConstantAttr>(S, D, Attr.getRange(),
+                                                 Attr.getName()))
+    return;
+  auto *VD = cast<VarDecl>(D);
+  if (VD->hasExternalStorage()) {
+    S.Diag(Attr.getLoc(), diag::err_cuda_extern_shared) << VD;
+    return;
+  }
+  D->addAttr(::new (S.Context) CUDASharedAttr(
+      Attr.getRange(), S.Context, Attr.getAttributeSpellingListIndex()));
+}
+
 static void handleGlobalAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   if (checkAttrMutualExclusion<CUDADeviceAttr>(S, D, Attr.getRange(),
                                                Attr.getName()) ||
@@ -4941,29 +4967,85 @@ static void handleInterruptAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
 }
 
-static void handleAMDGPUNumVGPRAttr(Sema &S, Decl *D,
-                                    const AttributeList &Attr) {
-  uint32_t NumRegs;
-  Expr *NumRegsExpr = static_cast<Expr *>(Attr.getArgAsExpr(0));
-  if (!checkUInt32Argument(S, Attr, NumRegsExpr, NumRegs))
+static void handleAMDGPUFlatWorkGroupSizeAttr(Sema &S, Decl *D,
+                                              const AttributeList &Attr) {
+  uint32_t Min = 0;
+  Expr *MinExpr = Attr.getArgAsExpr(0);
+  if (!checkUInt32Argument(S, Attr, MinExpr, Min))
     return;
 
+  uint32_t Max = 0;
+  Expr *MaxExpr = Attr.getArgAsExpr(1);
+  if (!checkUInt32Argument(S, Attr, MaxExpr, Max))
+    return;
+
+  if (Min == 0 && Max != 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_argument_invalid)
+      << Attr.getName() << 0;
+    return;
+  }
+  if (Min > Max) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_argument_invalid)
+      << Attr.getName() << 1;
+    return;
+  }
+
   D->addAttr(::new (S.Context)
-             AMDGPUNumVGPRAttr(Attr.getLoc(), S.Context,
-                               NumRegs,
-                               Attr.getAttributeSpellingListIndex()));
+             AMDGPUFlatWorkGroupSizeAttr(Attr.getLoc(), S.Context, Min, Max,
+                                         Attr.getAttributeSpellingListIndex()));
+}
+
+static void handleAMDGPUWavesPerEUAttr(Sema &S, Decl *D,
+                                       const AttributeList &Attr) {
+  uint32_t Min = 0;
+  Expr *MinExpr = Attr.getArgAsExpr(0);
+  if (!checkUInt32Argument(S, Attr, MinExpr, Min))
+    return;
+
+  uint32_t Max = 0;
+  if (Attr.getNumArgs() == 2) {
+    Expr *MaxExpr = Attr.getArgAsExpr(1);
+    if (!checkUInt32Argument(S, Attr, MaxExpr, Max))
+      return;
+  }
+
+  if (Min == 0 && Max != 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_argument_invalid)
+      << Attr.getName() << 0;
+    return;
+  }
+  if (Max != 0 && Min > Max) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_argument_invalid)
+      << Attr.getName() << 1;
+    return;
+  }
+
+  D->addAttr(::new (S.Context)
+             AMDGPUWavesPerEUAttr(Attr.getLoc(), S.Context, Min, Max,
+                                  Attr.getAttributeSpellingListIndex()));
 }
 
 static void handleAMDGPUNumSGPRAttr(Sema &S, Decl *D,
                                     const AttributeList &Attr) {
-  uint32_t NumRegs;
-  Expr *NumRegsExpr = static_cast<Expr *>(Attr.getArgAsExpr(0));
-  if (!checkUInt32Argument(S, Attr, NumRegsExpr, NumRegs))
+  uint32_t NumSGPR = 0;
+  Expr *NumSGPRExpr = Attr.getArgAsExpr(0);
+  if (!checkUInt32Argument(S, Attr, NumSGPRExpr, NumSGPR))
     return;
 
   D->addAttr(::new (S.Context)
-             AMDGPUNumSGPRAttr(Attr.getLoc(), S.Context,
-                               NumRegs,
+             AMDGPUNumSGPRAttr(Attr.getLoc(), S.Context, NumSGPR,
+                               Attr.getAttributeSpellingListIndex()));
+}
+
+static void handleAMDGPUNumVGPRAttr(Sema &S, Decl *D,
+                                    const AttributeList &Attr) {
+  uint32_t NumVGPR = 0;
+  Expr *NumVGPRExpr = Attr.getArgAsExpr(0);
+  if (!checkUInt32Argument(S, Attr, NumVGPRExpr, NumVGPR))
+    return;
+
+  D->addAttr(::new (S.Context)
+             AMDGPUNumVGPRAttr(Attr.getLoc(), S.Context, NumVGPR,
                                Attr.getAttributeSpellingListIndex()));
 }
 
@@ -5417,11 +5499,17 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_NoMips16:
     handleSimpleAttribute<NoMips16Attr>(S, D, Attr);
     break;
-  case AttributeList::AT_AMDGPUNumVGPR:
-    handleAMDGPUNumVGPRAttr(S, D, Attr);
+  case AttributeList::AT_AMDGPUFlatWorkGroupSize:
+    handleAMDGPUFlatWorkGroupSizeAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_AMDGPUWavesPerEU:
+    handleAMDGPUWavesPerEUAttr(S, D, Attr);
     break;
   case AttributeList::AT_AMDGPUNumSGPR:
     handleAMDGPUNumSGPRAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_AMDGPUNumVGPR:
+    handleAMDGPUNumVGPRAttr(S, D, Attr);
     break;
   case AttributeList::AT_IBAction:
     handleSimpleAttribute<IBActionAttr>(S, D, Attr);
@@ -5466,8 +5554,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleCommonAttr(S, D, Attr);
     break;
   case AttributeList::AT_CUDAConstant:
-    handleSimpleAttributeWithExclusions<CUDAConstantAttr, CUDASharedAttr>(S, D,
-                                                                          Attr);
+    handleConstantAttr(S, D, Attr);
     break;
   case AttributeList::AT_PassObjectSize:
     handlePassObjectSizeAttr(S, D, Attr);
@@ -5577,8 +5664,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleSimpleAttribute<NoThrowAttr>(S, D, Attr);
     break;
   case AttributeList::AT_CUDAShared:
-    handleSimpleAttributeWithExclusions<CUDASharedAttr, CUDAConstantAttr>(S, D,
-                                                                          Attr);
+    handleSharedAttr(S, D, Attr);
     break;
   case AttributeList::AT_VecReturn:
     handleVecReturnAttr(S, D, Attr);
@@ -5974,11 +6060,19 @@ void Sema::ProcessDeclAttributeList(Scope *S, Decl *D,
     } else if (Attr *A = D->getAttr<VecTypeHintAttr>()) {
       Diag(D->getLocation(), diag::err_opencl_kernel_attr) << A;
       D->setInvalidDecl();
-    } else if (Attr *A = D->getAttr<AMDGPUNumVGPRAttr>()) {
+    } else if (Attr *A = D->getAttr<AMDGPUFlatWorkGroupSizeAttr>()) {
+      Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
+        << A << ExpectedKernelFunction;
+      D->setInvalidDecl();
+    } else if (Attr *A = D->getAttr<AMDGPUWavesPerEUAttr>()) {
       Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
         << A << ExpectedKernelFunction;
       D->setInvalidDecl();
     } else if (Attr *A = D->getAttr<AMDGPUNumSGPRAttr>()) {
+      Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
+        << A << ExpectedKernelFunction;
+      D->setInvalidDecl();
+    } else if (Attr *A = D->getAttr<AMDGPUNumVGPRAttr>()) {
       Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
         << A << ExpectedKernelFunction;
       D->setInvalidDecl();

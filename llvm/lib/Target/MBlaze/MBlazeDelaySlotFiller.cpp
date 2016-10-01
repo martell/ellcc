@@ -43,7 +43,7 @@ namespace {
     Filler(TargetMachine &tm)
       : MachineFunctionPass(ID), TM(tm) { }
 
-    const char *getPassName() const override {
+    StringRef getPassName() const override {
       return "MBlaze Delay Slot Filler";
     }
 

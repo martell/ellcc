@@ -21,6 +21,7 @@
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/raw_ostream.h"
+#include <climits>
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -274,7 +275,7 @@ template <class ELFT> void Writer<ELFT>::run() {
                                                 : createPhdrs();
     fixHeaders();
     if (ScriptConfig->HasSections) {
-      Script<ELFT>::X->assignAddresses();
+      Script<ELFT>::X->assignAddresses(Phdrs);
     } else {
       fixSectionAlignments();
       assignAddresses();
@@ -319,7 +320,7 @@ template <class ELFT> static void reportUndefined(SymbolBody *Sym) {
   if (Sym->File)
     Msg += " in " + getFilename(Sym->File);
   if (Config->UnresolvedSymbols == UnresolvedPolicy::Warn)
-    warning(Msg);
+    warn(Msg);
   else
     error(Msg);
 }
@@ -379,7 +380,7 @@ template <class ELFT> void Writer<ELFT>::copyLocalSymbols() {
   if (!Out<ELFT>::SymTab)
     return;
   for (elf::ObjectFile<ELFT> *F : Symtab<ELFT>::X->getObjectFiles()) {
-    const char *StrTab = F->getStringTable().data();
+    StringRef StrTab = F->getStringTable();
     for (SymbolBody *B : F->getLocalSymbols()) {
       auto *DR = dyn_cast<DefinedRegular<ELFT>>(B);
       // No reason to keep local undefined symbol in symtab.
@@ -387,7 +388,9 @@ template <class ELFT> void Writer<ELFT>::copyLocalSymbols() {
         continue;
       if (!includeInSymtab<ELFT>(*B))
         continue;
-      StringRef SymName(StrTab + B->getNameOffset());
+      if (B->getNameOffset() >= StrTab.size())
+        fatal(getFilename(F) + ": invalid symbol name offset");
+      StringRef SymName(StrTab.data() + B->getNameOffset());
       InputSectionBase<ELFT> *Sec = DR->Section;
       if (!shouldKeepInSymtab<ELFT>(Sec, SymName, *B))
         continue;
@@ -463,12 +466,17 @@ static bool compareSectionsNonScript(OutputSectionBase<ELFT> *A,
   if (AIsWritable != BIsWritable)
     return BIsWritable;
 
-  // For a corresponding reason, put non exec sections first (the program
-  // header PT_LOAD is not executable).
-  bool AIsExec = AFlags & SHF_EXECINSTR;
-  bool BIsExec = BFlags & SHF_EXECINSTR;
-  if (AIsExec != BIsExec)
-    return BIsExec;
+  if (!ScriptConfig->HasSections) {
+    // For a corresponding reason, put non exec sections first (the program
+    // header PT_LOAD is not executable).
+    // We only do that if we are not using linker scripts, since with linker
+    // scripts ro and rx sections are in the same PT_LOAD, so their relative
+    // order is not important.
+    bool AIsExec = AFlags & SHF_EXECINSTR;
+    bool BIsExec = BFlags & SHF_EXECINSTR;
+    if (AIsExec != BIsExec)
+      return BIsExec;
+  }
 
   // If we got here we know that both A and B are in the same PT_LOAD.
 
@@ -541,6 +549,8 @@ void PhdrEntry<ELFT>::add(OutputSectionBase<ELFT> *Sec) {
   if (!First)
     First = Sec;
   H.p_align = std::max<typename ELFT::uint>(H.p_align, Sec->getAlignment());
+  if (H.p_type == PT_LOAD)
+    Sec->FirstInPtLoad = First;
 }
 
 template <class ELFT>
@@ -1042,8 +1052,10 @@ std::vector<PhdrEntry<ELFT>> Writer<ELFT>::createPhdrs() {
   // Add the first PT_LOAD segment for regular output sections.
   uintX_t Flags = computeFlags<ELFT>(PF_R);
   Phdr *Load = AddHdr(PT_LOAD, Flags);
-  Load->add(Out<ELFT>::ElfHeader);
-  Load->add(Out<ELFT>::ProgramHeaders);
+  if (!ScriptConfig->HasSections) {
+    Load->add(Out<ELFT>::ElfHeader);
+    Load->add(Out<ELFT>::ProgramHeaders);
+  }
 
   Phdr TlsHdr(PT_TLS, PF_R);
   Phdr RelRo(PT_GNU_RELRO, PF_R);
@@ -1154,7 +1166,7 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
   for (OutputSectionBase<ELFT> *Sec : OutputSections) {
     uintX_t Alignment = Sec->getAlignment();
     if (Sec->PageAlign)
-      Alignment = std::max<uintX_t>(Alignment, Target->PageSize);
+      Alignment = std::max<uintX_t>(Alignment, Config->MaxPageSize);
 
     auto I = Config->SectionStartMap.find(Sec->getName());
     if (I != Config->SectionStartMap.end())
@@ -1182,14 +1194,19 @@ template <class ELFT, class uintX_t>
 static uintX_t getFileAlignment(uintX_t Off, OutputSectionBase<ELFT> *Sec) {
   uintX_t Alignment = Sec->getAlignment();
   if (Sec->PageAlign)
-    Alignment = std::max<uintX_t>(Alignment, Target->PageSize);
+    Alignment = std::max<uintX_t>(Alignment, Config->MaxPageSize);
   Off = alignTo(Off, Alignment);
 
-  // Relocatable output does not have program headers
-  // and does not need any other offset adjusting.
-  if (Config->Relocatable || !(Sec->getFlags() & SHF_ALLOC))
+  OutputSectionBase<ELFT> *First = Sec->FirstInPtLoad;
+  // If the section is not in a PT_LOAD, we have no other constraint.
+  if (!First)
     return Off;
-  return alignTo(Off, Target->PageSize, Sec->getVA());
+
+  // If two sections share the same PT_LOAD the file offset is calculated using
+  // this formula: Off2 = Off1 + (VA2 - VA1).
+  if (Sec == First)
+    return alignTo(Off, Target->MaxPageSize, Sec->getVA());
+  return First->getFileOffset() + Sec->getVA() - First->getVA();
 }
 
 template <class ELFT, class uintX_t>
@@ -1241,7 +1258,7 @@ template <class ELFT> void Writer<ELFT>::setPhdrs() {
       H.p_vaddr = First->getVA();
     }
     if (H.p_type == PT_LOAD)
-      H.p_align = Target->PageSize;
+      H.p_align = Config->MaxPageSize;
     else if (H.p_type == PT_GNU_RELRO)
       H.p_align = 1;
 

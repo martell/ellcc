@@ -81,9 +81,9 @@ struct UnpackedHeader {
   u8  Unused_0_     : 4;
   // 2nd 8 bytes
   u64 Offset        : 20; // Offset from the beginning of the backend
-                          // allocation to the beginning chunk itself, in
-                          // multiples of MinAlignment. See comment about its
-                          // maximum value and test in init().
+                          // allocation to the beginning of the chunk itself,
+                          // in multiples of MinAlignment. See comment about
+                          // its maximum value and test in init().
   u64 Unused_1_     : 28;
   u16 Salt          : 16;
 };
@@ -328,20 +328,20 @@ struct Allocator {
       dieWithMessage("ERROR: malloc alignment is not a power of 2\n");
     }
     if (Alignment > MaxAlignment)
-      return BackendAllocator.ReturnNullOrDie();
+      return BackendAllocator.ReturnNullOrDieOnBadRequest();
     if (Alignment < MinAlignment)
       Alignment = MinAlignment;
     if (Size == 0)
       Size = 1;
     if (Size >= MaxAllowedMallocSize)
-      return BackendAllocator.ReturnNullOrDie();
+      return BackendAllocator.ReturnNullOrDieOnBadRequest();
     uptr RoundedSize = RoundUpTo(Size, MinAlignment);
     uptr ExtraBytes = ChunkHeaderSize;
     if (Alignment > MinAlignment)
       ExtraBytes += Alignment;
     uptr NeededSize = RoundedSize + ExtraBytes;
     if (NeededSize >= MaxAllowedMallocSize)
-      return BackendAllocator.ReturnNullOrDie();
+      return BackendAllocator.ReturnNullOrDieOnBadRequest();
 
     void *Ptr;
     if (LIKELY(!ThreadTornDown)) {
@@ -352,7 +352,7 @@ struct Allocator {
                                       MinAlignment);
     }
     if (!Ptr)
-      return BackendAllocator.ReturnNullOrDie();
+      return BackendAllocator.ReturnNullOrDieOnOOM();
 
     // If requested, we will zero out the entire contents of the returned chunk.
     if (ZeroContents && BackendAllocator.FromPrimary(Ptr))
@@ -514,7 +514,7 @@ struct Allocator {
       initThread();
     uptr Total = NMemB * Size;
     if (Size != 0 && Total / Size != NMemB) // Overflow check
-      return BackendAllocator.ReturnNullOrDie();
+      return BackendAllocator.ReturnNullOrDieOnBadRequest();
     void *Ptr = allocate(Total, MinAlignment, FromMalloc);
     // If ZeroContents, the content of the chunk has already been zero'd out.
     if (!ZeroContents && Ptr && BackendAllocator.FromPrimary(Ptr))

@@ -1,5 +1,22 @@
 // RUN: %clang_cc1 -std=c++14 -fcoroutines -verify %s
 
+void no_coroutine_traits_bad_arg_await() {
+  co_await a; // expected-error {{include <coroutine>}}
+  // expected-error@-1 {{use of undeclared identifier 'a'}}
+}
+
+void no_coroutine_traits_bad_arg_yield() {
+  co_yield a; // expected-error {{include <coroutine>}}
+  // expected-error@-1 {{use of undeclared identifier 'a'}}
+}
+
+
+void no_coroutine_traits_bad_arg_return() {
+  co_return a; // expected-error {{include <coroutine>}}
+  // expected-error@-1 {{use of undeclared identifier 'a'}}
+}
+
+
 struct awaitable {
   bool await_ready();
   void await_suspend(); // FIXME: coroutine_handle
@@ -265,4 +282,12 @@ struct bad_promise_5 {
 // FIXME: This diagnostic is terrible.
 coro<bad_promise_5> bad_final_suspend() { // expected-error {{no member named 'await_ready' in 'not_awaitable'}}
   co_await a;
+}
+
+
+template<> struct std::coroutine_traits<int, int, const char**>
+{ using promise_type = promise; };
+
+int main(int, const char**) { // expected-error {{'main' cannot be a coroutine}}
+  co_await a; // expected-note {{function is a coroutine due to use of 'co_await' here}}
 }

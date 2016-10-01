@@ -55,7 +55,7 @@ public:
   TM(tm), Subtarget(nullptr) {}
 
   // Pass Name
-  const char *getPassName() const override {
+  StringRef getPassName() const override {
     return "MBlaze DAG->DAG Pattern Instruction Selection";
   }
 

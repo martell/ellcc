@@ -315,7 +315,6 @@ static typename ELFT::uint getSymVA(uint32_t Type, typename ELFT::uint A,
 template <class ELFT>
 template <class RelTy>
 void InputSection<ELFT>::relocateNonAlloc(uint8_t *Buf, ArrayRef<RelTy> Rels) {
-  const unsigned Bits = sizeof(uintX_t) * 8;
   for (const RelTy &Rel : Rels) {
     uint32_t Type = Rel.getType(Config->Mips64EL);
     uintX_t Offset = this->getOffset(Rel.r_offset);
@@ -331,8 +330,8 @@ void InputSection<ELFT>::relocateNonAlloc(uint8_t *Buf, ArrayRef<RelTy> Rels) {
     }
 
     uintX_t AddrLoc = this->OutSec->getVA() + Offset;
-    uint64_t SymVA =
-        SignExtend64<Bits>(getSymVA<ELFT>(Type, Addend, AddrLoc, Sym, R_ABS));
+    uint64_t SymVA = SignExtend64<sizeof(uintX_t) * 8>(
+        getSymVA<ELFT>(Type, Addend, AddrLoc, Sym, R_ABS));
     Target->relocateOne(BufLoc, Type, SymVA);
   }
 }
@@ -572,9 +571,16 @@ template <class ELFT> void MergeInputSection<ELFT>::splitIntoPieces() {
   else
     this->Pieces = splitNonStrings(Data, EntSize);
 
-  if (Config->GcSections)
-    for (uintX_t Off : LiveOffsets)
-      this->getSectionPiece(Off)->Live = true;
+  if (Config->GcSections) {
+    if (this->getSectionHdr()->sh_flags & SHF_ALLOC) {
+      for (uintX_t Off : LiveOffsets)
+        this->getSectionPiece(Off)->Live = true;
+      return;
+    }
+
+    for (SectionPiece &Piece : this->Pieces)
+      Piece.Live = true;
+  }
 }
 
 template <class ELFT>
@@ -613,10 +619,15 @@ typename ELFT::uint MergeInputSection<ELFT>::getOffset(uintX_t Offset) const {
   if (It != OffsetMap.end())
     return It->second;
 
+  if (!this->Live)
+    return 0;
+
   // If Offset is not at beginning of a section piece, it is not in the map.
   // In that case we need to search from the original section piece vector.
   const SectionPiece &Piece = *this->getSectionPiece(Offset);
-  assert(Piece.Live);
+  if (!Piece.Live)
+    return 0;
+
   uintX_t Addend = Offset - Piece.InputOff;
   return Piece.OutputOff + Addend;
 }
@@ -652,6 +663,8 @@ MipsReginfoInputSection<ELFT>::MipsReginfoInputSection(elf::ObjectFile<ELFT> *F,
     return;
   }
   Reginfo = reinterpret_cast<const Elf_Mips_RegInfo<ELFT> *>(Data.data());
+  if (Reginfo->ri_gp_value)
+    error(getName(this) + ": unsupported non-zero ri_gp_value");
 }
 
 template <class ELFT>
@@ -675,6 +688,8 @@ MipsOptionsInputSection<ELFT>::MipsOptionsInputSection(elf::ObjectFile<ELFT> *F,
     auto *O = reinterpret_cast<const Elf_Mips_Options<ELFT> *>(D.data());
     if (O->kind == ODK_REGINFO) {
       Reginfo = &O->getRegInfo();
+      if (Reginfo->ri_gp_value)
+        error(getName(this) + ": unsupported non-zero ri_gp_value");
       break;
     }
     D = D.slice(O->size);

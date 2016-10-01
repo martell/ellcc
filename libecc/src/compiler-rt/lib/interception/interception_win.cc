@@ -498,6 +498,7 @@ static size_t GetInstructionSize(uptr address, size_t* rel_offset = nullptr) {
     case 0xd9f748:    // 48 f7 d9 : neg rcx
     case 0xd12b48:    // 48 2b d1 : sub rdx, rcx
     case 0x07c1f6:    // f6 c1 07 : test cl, 0x7
+    case 0xc98548:    // 48 85 C9 : test rcx, rcx
     case 0xc0854d:    // 4d 85 c0 : test r8, r8
     case 0xc2b60f:    // 0f b6 c2 : movzx eax, dl
     case 0xc03345:    // 45 33 c0 : xor r8d, r8d
@@ -915,19 +916,18 @@ uptr InternalGetProcAddress(void *module, const char *func_name) {
   return 0;
 }
 
-static bool GetFunctionAddressInDLLs(const char *func_name, uptr *func_addr) {
-  *func_addr = 0;
+bool OverrideFunction(
+    const char *func_name, uptr new_func, uptr *orig_old_func) {
+  bool hooked = false;
   void **DLLs = InterestingDLLsAvailable();
-  for (size_t i = 0; *func_addr == 0 && DLLs[i]; ++i)
-    *func_addr = InternalGetProcAddress(DLLs[i], func_name);
-  return (*func_addr != 0);
-}
-
-bool OverrideFunction(const char *name, uptr new_func, uptr *orig_old_func) {
-  uptr orig_func;
-  if (!GetFunctionAddressInDLLs(name, &orig_func))
-    return false;
-  return OverrideFunction(orig_func, new_func, orig_old_func);
+  for (size_t i = 0; DLLs[i]; ++i) {
+    uptr func_addr = InternalGetProcAddress(DLLs[i], func_name);
+    if (func_addr &&
+        OverrideFunction(func_addr, new_func, orig_old_func)) {
+      hooked = true;
+    }
+  }
+  return hooked;
 }
 
 bool OverrideImportedFunction(const char *module_to_patch,

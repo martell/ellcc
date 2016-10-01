@@ -1502,6 +1502,14 @@ void computeKnownBits(const Value *V, APInt &KnownZero, APInt &KnownOne,
   // Start out not knowing anything.
   KnownZero.clearAllBits(); KnownOne.clearAllBits();
 
+  // We can't imply anything about undefs.
+  if (isa<UndefValue>(V))
+    return;
+
+  // There's no point in looking through other users of ConstantData for
+  // assumptions.  Confirm that we've handled them all.
+  assert(!isa<ConstantData>(V) && "Unhandled constant data!");
+
   // Limit search depth.
   // All recursive calls that increase depth must come after this.
   if (Depth == MaxDepth)
@@ -2840,9 +2848,14 @@ Value *llvm::GetPointerBaseWithConstantOffset(Value *Ptr, int64_t &Offset,
       ByteOffset += GEPOffset;
 
       Ptr = GEP->getPointerOperand();
-    } else if (Operator::getOpcode(Ptr) == Instruction::BitCast ||
-               Operator::getOpcode(Ptr) == Instruction::AddrSpaceCast) {
+    } else if (Operator::getOpcode(Ptr) == Instruction::BitCast) {
       Ptr = cast<Operator>(Ptr)->getOperand(0);
+    } else if (AddrSpaceCastInst *ASCI = dyn_cast<AddrSpaceCastInst>(Ptr)) {
+      Value *SourcePtr = ASCI->getPointerOperand();
+      // Don't look through addrspace cast which changes pointer size
+      if (BitWidth != DL.getPointerTypeSizeInBits(SourcePtr->getType()))
+        break;
+      Ptr = SourcePtr;
     } else if (GlobalAlias *GA = dyn_cast<GlobalAlias>(Ptr)) {
       if (GA->isInterposable())
         break;
@@ -3297,6 +3310,7 @@ static bool isKnownNonNullFromDominatingCondition(const Value *V,
                                                   const Instruction *CtxI,
                                                   const DominatorTree *DT) {
   assert(V->getType()->isPointerTy() && "V must be pointer type");
+  assert(!isa<ConstantData>(V) && "Did not expect ConstantPointerNull");
 
   unsigned NumUsesExplored = 0;
   for (auto *U : V->users()) {
@@ -3333,6 +3347,9 @@ static bool isKnownNonNullFromDominatingCondition(const Value *V,
 
 bool llvm::isKnownNonNullAt(const Value *V, const Instruction *CtxI,
                             const DominatorTree *DT) {
+  if (isa<ConstantPointerNull>(V) || isa<UndefValue>(V))
+    return false;
+
   if (isKnownNonNull(V))
     return true;
 

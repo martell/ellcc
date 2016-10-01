@@ -625,6 +625,79 @@ static Error checkDylibIdCommand(const MachOObjectFile *Obj,
   return Error::success();
 }
 
+static Error checkDyldCommand(const MachOObjectFile *Obj,
+                              const MachOObjectFile::LoadCommandInfo &Load,
+                              uint32_t LoadCommandIndex, const char *CmdName) {
+  if (Load.C.cmdsize < sizeof(MachO::dylinker_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) + " " +
+                          CmdName + " cmdsize too small");
+  MachO::dylinker_command D = getStruct<MachO::dylinker_command>(Obj, Load.Ptr);
+  if (D.name < sizeof(MachO::dylinker_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) + " " +
+                          CmdName + " name.offset field too small, not past "
+                          "the end of the dylinker_command struct");
+  if (D.name >= D.cmdsize)
+    return malformedError("load command " + Twine(LoadCommandIndex) + " " +
+                          CmdName + " name.offset field extends past the end "
+                          "of the load command");
+  // Make sure there is a null between the starting offset of the name and
+  // the end of the load command.
+  uint32_t i;
+  const char *P = (const char *)Load.Ptr;
+  for (i = D.name; i < D.cmdsize; i++)
+    if (P[i] == '\0')
+      break;
+  if (i >= D.cmdsize)
+    return malformedError("load command " + Twine(LoadCommandIndex) + " " +
+                          CmdName + " dyld name extends past the end of the "
+                          "load command");
+  return Error::success();
+}
+
+static Error checkVersCommand(const MachOObjectFile *Obj,
+                              const MachOObjectFile::LoadCommandInfo &Load,
+                              uint32_t LoadCommandIndex,
+                              const char **LoadCmd, const char *CmdName) {
+  if (Load.C.cmdsize != sizeof(MachO::version_min_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) + " " +
+                          CmdName + " has incorrect cmdsize");
+  if (*LoadCmd != nullptr)
+    return malformedError("more than one LC_VERSION_MIN_MACOSX, "
+                          "LC_VERSION_MIN_IPHONEOS, LC_VERSION_MIN_TVOS or "
+                          "LC_VERSION_MIN_WATCHOS command");
+  *LoadCmd = Load.Ptr;
+  return Error::success();
+}
+
+static Error checkRpathCommand(const MachOObjectFile *Obj,
+                               const MachOObjectFile::LoadCommandInfo &Load,
+                               uint32_t LoadCommandIndex) {
+  if (Load.C.cmdsize < sizeof(MachO::rpath_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) +
+                          " LC_RPATH cmdsize too small");
+  MachO::rpath_command R = getStruct<MachO::rpath_command>(Obj, Load.Ptr);
+  if (R.path < sizeof(MachO::rpath_command))
+    return malformedError("load command " + Twine(LoadCommandIndex) +
+                          " LC_RPATH path.offset field too small, not past "
+                          "the end of the rpath_command struct");
+  if (R.path >= R.cmdsize)
+    return malformedError("load command " + Twine(LoadCommandIndex) +
+                          " LC_RPATH path.offset field extends past the end "
+                          "of the load command");
+  // Make sure there is a null between the starting offset of the path and
+  // the end of the load command.
+  uint32_t i;
+  const char *P = (const char *)Load.Ptr;
+  for (i = R.path; i < R.cmdsize; i++)
+    if (P[i] == '\0')
+      break;
+  if (i >= R.cmdsize)
+    return malformedError("load command " + Twine(LoadCommandIndex) +
+                          " LC_RPATH library name extends past the end of the "
+                          "load command");
+  return Error::success();
+}
+
 Expected<std::unique_ptr<MachOObjectFile>>
 MachOObjectFile::create(MemoryBufferRef Object, bool IsLittleEndian,
                         bool Is64Bits) {
@@ -673,6 +746,12 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
   }
 
   const char *DyldIdLoadCmd = nullptr;
+  const char *FuncStartsLoadCmd = nullptr;
+  const char *SplitInfoLoadCmd = nullptr;
+  const char *CodeSignDrsLoadCmd = nullptr;
+  const char *VersLoadCmd = nullptr;
+  const char *SourceLoadCmd = nullptr;
+  const char *EntryPointLoadCmd = nullptr;
   for (unsigned I = 0; I < LoadCommandCount; ++I) {
     if (is64Bit()) {
       if (Load.C.cmdsize % 8 != 0) {
@@ -707,6 +786,18 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
     } else if (Load.C.cmd == MachO::LC_LINKER_OPTIMIZATION_HINT) {
       if ((Err = checkLinkeditDataCommand(this, Load, I, &LinkOptHintsLoadCmd,
                                           "LC_LINKER_OPTIMIZATION_HINT")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_FUNCTION_STARTS) {
+      if ((Err = checkLinkeditDataCommand(this, Load, I, &FuncStartsLoadCmd,
+                                          "LC_FUNCTION_STARTS")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_SEGMENT_SPLIT_INFO) {
+      if ((Err = checkLinkeditDataCommand(this, Load, I, &SplitInfoLoadCmd,
+                                          "LC_SEGMENT_SPLIT_INFO")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_DYLIB_CODE_SIGN_DRS) {
+      if ((Err = checkLinkeditDataCommand(this, Load, I, &CodeSignDrsLoadCmd,
+                                          "LC_DYLIB_CODE_SIGN_DRS")))
         return;
     } else if (Load.C.cmd == MachO::LC_DYLD_INFO) {
       if ((Err = checkDyldInfoCommand(this, Load, I, &DyldInfoLoadCmd,
@@ -762,6 +853,56 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
       if ((Err = checkDylibCommand(this, Load, I, "LC_LOAD_UPWARD_DYLIB")))
         return;
       Libraries.push_back(Load.Ptr);
+    } else if (Load.C.cmd == MachO::LC_ID_DYLINKER) {
+      if ((Err = checkDyldCommand(this, Load, I, "LC_ID_DYLINKER")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_LOAD_DYLINKER) {
+      if ((Err = checkDyldCommand(this, Load, I, "LC_LOAD_DYLINKER")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_DYLD_ENVIRONMENT) {
+      if ((Err = checkDyldCommand(this, Load, I, "LC_DYLD_ENVIRONMENT")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_VERSION_MIN_MACOSX) {
+      if ((Err = checkVersCommand(this, Load, I, &VersLoadCmd,
+                                  "LC_VERSION_MIN_MACOSX")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_VERSION_MIN_IPHONEOS) {
+      if ((Err = checkVersCommand(this, Load, I, &VersLoadCmd,
+                                  "LC_VERSION_MIN_IPHONEOS")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_VERSION_MIN_TVOS) {
+      if ((Err = checkVersCommand(this, Load, I, &VersLoadCmd,
+                                  "LC_VERSION_MIN_TVOS")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_VERSION_MIN_WATCHOS) {
+      if ((Err = checkVersCommand(this, Load, I, &VersLoadCmd,
+                                  "LC_VERSION_MIN_WATCHOS")))
+        return;
+    } else if (Load.C.cmd == MachO::LC_RPATH) {
+      if ((Err = checkRpathCommand(this, Load, I)))
+        return;
+    } else if (Load.C.cmd == MachO::LC_SOURCE_VERSION) {
+      if (Load.C.cmdsize != sizeof(MachO::source_version_command)) {
+        Err = malformedError("LC_SOURCE_VERSION command " + Twine(I) +
+                             " has incorrect cmdsize");
+        return;
+      }
+      if (SourceLoadCmd) {
+        Err = malformedError("more than one LC_SOURCE_VERSION command");
+        return;
+      }
+      SourceLoadCmd = Load.Ptr;
+    } else if (Load.C.cmd == MachO::LC_MAIN) {
+      if (Load.C.cmdsize != sizeof(MachO::entry_point_command)) {
+        Err = malformedError("LC_MAIN command " + Twine(I) +
+                             " has incorrect cmdsize");
+        return;
+      }
+      if (EntryPointLoadCmd) {
+        Err = malformedError("more than one LC_MAIN command");
+        return;
+      }
+      EntryPointLoadCmd = Load.Ptr;
     }
     if (I < LoadCommandCount - 1) {
       if (auto LoadOrErr = getNextLoadCommandInfo(this, I, Load))
