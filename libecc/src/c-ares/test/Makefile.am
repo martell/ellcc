@@ -13,9 +13,9 @@ CXXFLAGS += -Wall $(PTHREAD_CFLAGS)
 # Makefile.inc provides the TESTSOURCES, TESTHEADERS and FUZZSOURCES defines
 include Makefile.inc
 
-TESTS = arestest
+TESTS = arestest fuzzcheck.sh
 
-noinst_PROGRAMS = arestest aresfuzz
+noinst_PROGRAMS = arestest aresfuzz dnsdump
 arestest_SOURCES = $(TESTSOURCES) $(TESTHEADERS)
 arestest_LDADD = libgmock.la libgtest.la $(ARES_BLD_DIR)/libcares.la $(PTHREAD_LIBS)
 
@@ -32,5 +32,8 @@ libgtest_la_CPPFLAGS = -isystem $(GTEST_DIR)/include -I$(GTEST_DIR) -isystem $(G
 
 aresfuzz_SOURCES = $(FUZZSOURCES)
 aresfuzz_LDADD = $(ARES_BLD_DIR)/libcares.la
+
+dnsdump_SOURCES = $(DUMPSOURCES)
+dnsdump_LDADD = $(ARES_BLD_DIR)/libcares.la
 
 test: check
