@@ -267,8 +267,8 @@ void html::AddLineNumbers(Rewriter& R, FileID FID) {
   RB.InsertTextAfter(FileEnd - FileBeg, "</table>");
 }
 
-void html::AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
-                                             const char *title) {
+void html::AddHeaderFooterInternalBuiltinCSS(Rewriter &R, FileID FID,
+                                             StringRef title) {
 
   const llvm::MemoryBuffer *Buf = R.getSourceMgr().getBuffer(FID);
   const char* FileStart = Buf->getBufferStart();
@@ -282,7 +282,7 @@ void html::AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
   os << "<!doctype html>\n" // Use HTML 5 doctype
         "<html>\n<head>\n";
 
-  if (title)
+  if (!title.empty())
     os << "<title>" << html::EscapeText(title) << "</title>\n";
 
   os << "<style type=\"text/css\">\n"
@@ -324,6 +324,7 @@ void html::AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
       " .msgT { padding:0x; spacing:0x }\n"
       " .msgEvent { background-color:#fff8b4; color:#000000 }\n"
       " .msgControl { background-color:#bbbbbb; color:#000000 }\n"
+      " .msgNote { background-color:#ddeeff; color:#000000 }\n"
       " .mrange { background-color:#dfddf3 }\n"
       " .mrange { border-bottom:1px solid #6F9DBE }\n"
       " .PathIndex { font-weight: bold; padding:0px 5px; "
@@ -343,8 +344,12 @@ void html::AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
       "   border-collapse: collapse; border-spacing: 0px;\n"
       " }\n"
       " td.rowname {\n"
-      "   text-align:right; font-weight:bold; color:#444444;\n"
-      "   padding-right:2ex; }\n"
+      "   text-align: right;\n"
+      "   vertical-align: top;\n"
+      "   font-weight: bold;\n"
+      "   color:#444444;\n"
+      "   padding-right:2ex;\n"
+      " }\n"
       "</style>\n</head>\n<body>";
 
   // Generate header
