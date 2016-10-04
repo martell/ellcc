@@ -175,7 +175,7 @@ if [ "x${ecc}" != "x" ] ; then
     haslibs=yes
     WHY="build for ${host} with libecc using ecc"
   fi
-  if [ x${tuple} = "xi386-w64-mingw32" -o x${tuple} = "xx86_64-w64-mingw32" ]; then
+  if [ x${tuple} = "xx86_32-w64-mingw32" -o x${tuple} = "xx86_64-w64-mingw32" ]; then
     # To build for host with libecc:
     if [ -e ${ecc}-ar ]; then
       ar=${ecc}-ar

@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r283106.
 * Update the c-ares library to version 1.12.0.
 * Update to LLVM r283004.
 * Update the nghttp2 library to version 1.15.0.
