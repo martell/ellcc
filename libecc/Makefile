@@ -227,14 +227,13 @@ $(Configs):: musl.install
 	  mkdir -p libedit-build/$* ; \
 	  cp $(CPFLAGS) src/libedit/* libedit-build/$* ; \
 	  cd libedit-build/$* ; \
-	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
-	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
-	  AR=$(ELLCC)/bin/ecc-ar \
-	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	      ../../src/libedit/configure \
 	      --enable-shared=no  --prefix=$(ELLCC) \
-	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` ; \
+	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` \
+	      CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib ; \
 	fi
 
 %.libedit.build:
