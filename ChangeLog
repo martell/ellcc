@@ -1,5 +1,6 @@
 current SVN:
 
+* Fixed libedit configuration rules.
 * Update to LLVM r283106.
 * Update the c-ares library to version 1.12.0.
 * Update to LLVM r283004.
