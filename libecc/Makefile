@@ -156,7 +156,7 @@ $(Configs):: musl.install
 	$(MAKE) $(MFLAGS) $@.zlib.install
 
 %.zlib.configure:
-	$(OUT)if [ -e zlib-build/$*/Makefile ] ; then \
+	$(OUT)if [ -e zlib-build/$*/configure.log ] ; then \
 	  echo Configuring zlib for $* aready done ; \
 	else  \
 	  echo Configuring zlib for $* in zlib-build/$* ; \
@@ -171,7 +171,6 @@ $(Configs):: musl.install
 	fi
 
 %.zlib.build:
-	$(OUT)cp $(CPFLAGS) src/zlib/* zlib-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C zlib-build/$*
 
 %.zlib.install:
@@ -530,7 +529,7 @@ $(Configs):: musl.install
 	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
 	fi
 
-%.curl.build:
+%.curl.build: %.zlib.configure %.zlib.build %.zlib.install
 	$(OUT)cp $(CPFLAGS) src/curl/* curl-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/lib
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/src
